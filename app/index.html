@@ -1,0 +1,1058 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<title>Photobooth Studio</title>
+<style id="pageStyle">@page{size:4in 6in;margin:0}</style>
+<style>
+:root{--bg:#0e0f13;--app:#14161b;--side:#101216;--card:#1c1f26;--line:#2a2e37;--text:#edeef1;--muted:#9aa1ae;--accent:#ff6a3d;--onaccent:#1b0d06;--ok:#3dd68c;--bad:#ff6b81;--warn:#ffd23f;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px}
+button,.btn{font:inherit;cursor:pointer;min-height:40px;padding:0 14px;border-radius:9px;background:#262a33;border:1px solid #343944;color:var(--text);font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap}
+button:hover,.btn:hover{filter:brightness(1.12)}
+button:focus-visible,.btn:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.primary,.btn.primary{background:var(--accent);border:0;color:var(--onaccent);font-weight:800}
+button.danger{background:#3a161d;border-color:#5a1f2a;color:#ffc9d2}
+button.sm{min-height:32px;padding:0 10px;font-size:12.5px}
+button:disabled{opacity:.5;cursor:default}
+input,select{font:inherit;background:#101216;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:10px 12px;width:100%}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);padding:0}
+input[type=color]{padding:2px;height:40px}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--muted)}
+label.c{display:flex;align-items:center;gap:10px;font-size:13.5px;padding:6px 0}
+.hint{color:var(--muted);font-size:12.5px;line-height:1.55}
+.hint code{background:#0e1013;border:1px solid var(--line);padding:1px 6px;border-radius:6px;color:#ffd9cc;overflow-wrap:anywhere}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.view{display:none}.view.on{display:flex}
+[hidden]{display:none!important}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#000d;padding:12px 22px;border-radius:24px;display:none;z-index:90;max-width:90vw;text-align:center}
+.dot{display:inline-block;width:9px;height:9px;border-radius:5px;margin-right:6px;background:var(--muted)}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
+.pill{font-size:11px;padding:3px 9px;border-radius:20px;background:#262a33;color:#c4c9d2;margin-right:4px;display:inline-block}
+.pill.ok{background:#10331f;color:#6ee7a8}.pill.blue{background:#13284a;color:#8db8ff}.pill.bad{background:#3a161d;color:#ffc9d2}
+
+/* ---------- Login & home ---------- */
+#vLogin,#vHome{min-height:100%;align-items:center;justify-content:center;padding:24px max(16px,env(safe-area-inset-left))}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;width:min(420px,100%);display:flex;flex-direction:column;gap:14px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:800;font-size:18px}
+.brand span{width:36px;height:36px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:var(--onaccent);font-size:18px}
+.msg{min-height:1.4em;font-size:13px}.msg.bad{color:var(--bad)}.msg.ok{color:var(--ok)}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;width:min(720px,100%)}
+.role{all:unset;cursor:pointer;background:var(--card);border:2px solid var(--line);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:8px}
+.role:hover,.role:focus-visible{border-color:var(--accent)}
+.role b{font-size:18px}.role span{color:var(--muted);line-height:1.5}
+
+/* ---------- Booth (tablet) ---------- */
+#vBooth{position:fixed;inset:0;background:#000;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+#vBooth button{border-radius:999px;padding:0 26px;min-height:52px;font-size:1rem}
+#vBooth button.big{font-size:1.35rem;min-height:64px;padding:0 34px}
+#live{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#live.mirror{transform:scaleX(-1)}
+.bs{position:fixed;inset:0;display:none;z-index:2}
+.bs.on{display:flex}
+#bAttract{align-items:center;justify-content:center;flex-direction:column;background:radial-gradient(circle at center,rgba(0,0,0,.25),rgba(0,0,0,.78));text-align:center;padding:24px}
+#bAttract h1{font-size:clamp(2.6rem,9vw,7rem);margin:0;letter-spacing:.03em;font-family:Georgia,serif;font-style:italic;font-weight:600}
+#bAttract .sub{font-size:clamp(1rem,2.4vw,1.6rem);color:#e6e1ea;margin:10px 0 34px}
+#bStatus{position:fixed;left:max(14px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));z-index:3;background:rgba(0,0,0,.55);padding:6px 12px;border-radius:20px;font-size:12px}
+#bPick{flex-direction:column;align-items:center;justify-content:center;background:rgba(10,10,14,.93);padding:24px;gap:24px}
+#bPick h2{font-size:2rem;margin:0}
+#bCards{display:flex;flex-wrap:wrap;gap:18px;justify-content:center}
+.card{all:unset;cursor:pointer;background:var(--card);border:2px solid var(--line);border-radius:20px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.card:active,.card:focus-visible{border-color:var(--accent)}
+.card img{height:min(34vh,280px);box-shadow:0 8px 30px rgba(0,0,0,.5);border-radius:4px}
+.card span{font-weight:700}
+#bShoot{flex-direction:column;justify-content:space-between;align-items:center;pointer-events:none}
+#shotInfo{margin-top:22px;background:rgba(0,0,0,.6);padding:10px 26px;border-radius:40px;font-size:1.4rem;font-weight:800}
+#count{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-size:min(42vw,42vh);font-weight:900;text-shadow:0 0 60px rgba(0,0,0,.6);pointer-events:none}
+#count.pop{animation:pop .9s ease-out}
+@keyframes pop{0%{transform:scale(1.6);opacity:0}25%{transform:scale(1);opacity:1}100%{transform:scale(.85);opacity:.15}}
+#count.msg2{font-size:min(11vw,16vh)}
+#thumbs{display:flex;gap:10px;margin-bottom:24px;background:rgba(0,0,0,.5);padding:10px;border-radius:14px}
+#thumbs img,#thumbs div{height:80px;width:120px;object-fit:cover;border-radius:6px;border:2px solid #fff}
+#thumbs div{border-style:dashed;opacity:.5}
+#cancelShoot{position:fixed;top:max(16px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left));pointer-events:auto;background:rgba(0,0,0,.55)}
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:50}
+#flash.go{animation:flash .55s ease-out}
+@keyframes flash{0%{opacity:1}100%{opacity:0}}
+#bReview{background:rgba(10,10,14,.97);align-items:center;justify-content:center;gap:34px;padding:24px}
+#reviewImg{max-height:86vh;max-width:56vw;box-shadow:0 10px 50px rgba(0,0,0,.7);border-radius:4px;background:#fff}
+.rpanel{display:flex;flex-direction:column;gap:14px;min-width:280px;max-width:440px}
+.rpanel h2{margin:0;font-size:2rem}
+.filters button{min-height:44px!important;padding:0 14px!important;font-size:.95rem!important}
+.filters button.on{border-color:var(--accent);background:#3a1f14}
+.copies{display:flex;align-items:center;gap:16px;font-size:1.3rem}
+.copies button{width:56px;padding:0!important;font-size:1.6rem!important}
+#bDone{background:rgba(10,10,14,.97);align-items:center;justify-content:center;gap:50px;padding:24px;text-align:center;flex-wrap:wrap}
+#bDone h2{font-family:Georgia,serif;font-style:italic;font-size:clamp(2.4rem,6vw,4rem);margin:0 0 8px}
+#printStatus{font-size:1.3rem;margin:10px 0 26px;min-height:1.5em}
+#qrBox{background:#fff;color:#111;border-radius:18px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:8px}
+#qrCode{width:220px;height:220px}
+#qrCode img,#qrCode canvas{width:220px!important;height:220px!important}
+#bErr,#bMenu{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;text-align:center;padding:30px}
+#bErr.on,#bMenu.on{display:flex}
+#bMenu .panel{text-align:left}
+#hot{position:fixed;top:0;right:0;width:90px;height:90px;z-index:40}
+#busy{position:fixed;bottom:130px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);padding:10px 22px;border-radius:30px;display:none;font-weight:700;z-index:5}
+@media (max-aspect-ratio:1/1){#bReview{flex-direction:column;gap:16px}#reviewImg{max-width:92vw;max-height:50vh}}
+
+/* ---------- Admin (laptop) ---------- */
+#vAdmin{min-height:100%;background:var(--app)}
+#vAdmin nav{width:220px;flex:none;background:var(--side);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
+#vAdmin nav a{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:9px;color:#b4bac5;text-decoration:none;font-size:14px}
+#vAdmin nav a.on{background:#23262e;color:#fff;font-weight:700}
+#vAdmin nav .foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding:8px}
+#vAdmin main{flex:1;min-width:0;padding:22px 26px 60px}
+.sec{display:none}.sec.on{display:block}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 20px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.stat .k{font-size:12px;color:var(--muted)}.stat .v{font-size:24px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;min-width:0}
+.box h3{margin:0 0 12px;font-size:15px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.ev{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;flex-wrap:wrap}
+.ev.active{border-color:var(--accent)}
+.ev .info{flex:1;min-width:200px}.ev .name{font-weight:700;font-size:15px}
+.ovrow{display:grid;grid-template-columns:160px 110px 1fr;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.ovrow img{max-width:100px;max-height:80px;background:repeating-conic-gradient(#444 0 25%,#333 0 50%) 0 0/14px 14px;border-radius:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-weight:600;font-size:12px}
+.wrapx{overflow-x:auto}
+#gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
+#gal button{all:unset;cursor:pointer;background:#0e1013;border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px}
+#gal button:focus-visible{outline:3px solid var(--accent)}
+#gal img{width:100%;height:160px;object-fit:contain}
+#gal small{font-size:11.5px;color:var(--muted);text-align:center}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:70;padding:20px}
+.modal.on{display:flex}
+.modal .in{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;max-width:min(720px,100%);max-height:94vh;overflow:auto}
+#prevCanvas{max-width:100%;max-height:420px;background:#fff;border-radius:4px;display:block;margin:0 auto}
+.qr{background:#fff;padding:8px;border-radius:8px;width:136px;height:136px;flex:none}
+.qr img,.qr canvas{width:120px!important;height:120px!important}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#101216;border:1px solid var(--line);border-radius:12px;padding:14px}
+.switch b{font-size:15px}
+@media (max-width:820px){#vAdmin{flex-direction:column}#vAdmin nav{position:static;width:100%;height:auto;flex-direction:row;flex-wrap:wrap}#vAdmin nav .foot{margin:0;flex-direction:row}.ovrow{grid-template-columns:1fr}}
+
+/* ---------- Printing ---------- */
+#printArea{display:none}
+@media print{
+  html,body{background:#fff;height:auto;overflow:visible}
+  body>*:not(#printArea){display:none!important}
+  #printArea{display:block!important}
+  #printArea img{display:block;width:100%;height:100vh;object-fit:contain;break-after:page;page-break-after:always}
+  #printArea img:last-child{break-after:auto;page-break-after:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<section class="view" id="vLogin">
+  <form class="panel" id="loginForm" novalidate>
+    <div class="brand"><span>●</span>Photobooth Studio</div>
+    <p class="hint" style="margin:0">Log in with the same account on your laptop and your tablet. They connect to each other automatically.</p>
+    <label class="f">Email<input id="lEmail" type="email" autocomplete="email" required></label>
+    <label class="f">Password<input id="lPass" type="password" autocomplete="current-password" minlength="6" required></label>
+    <button class="primary" type="submit" id="lSubmit">Log in</button>
+    <button type="button" id="lToggle">First time? Create your account</button>
+    <div class="msg" id="lMsg" role="status"></div>
+  </form>
+</section>
+
+<!-- ================= HOME (choose device) ================= -->
+<section class="view" id="vHome" style="flex-direction:column;gap:22px">
+  <div class="brand"><span>●</span>Photobooth Studio</div>
+  <p class="hint" style="margin:0;text-align:center">Signed in as <b id="hEmail" style="color:#fff"></b>. What is this device?</p>
+  <div class="roles">
+    <button class="role" id="goBooth" type="button"><b>Booth</b><span>For the tablet. Guests take photos here and tap Print.</span></button>
+    <button class="role" id="goAdmin" type="button"><b>Admin board</b><span>For the laptop connected to the printer. Manage events, the gallery and printing.</span></button>
+  </div>
+  <button type="button" id="hSignOut">Sign out</button>
+</section>
+
+<!-- ================= BOOTH (tablet) ================= -->
+<section class="view" id="vBooth">
+  <video id="live" autoplay playsinline muted></video>
+  <div id="hot" aria-hidden="true"></div>
+  <div id="bStatus" aria-live="polite"><span class="dot"></span>Connecting…</div>
+
+  <div class="bs on" id="bAttract">
+    <h1 id="aTitle">Photobooth</h1>
+    <div class="sub" id="aSub">Touch the screen to take a photo</div>
+    <button class="primary big" id="startBtn" type="button">Touch to start</button>
+  </div>
+  <div class="bs" id="bPick">
+    <h2>Choose your style</h2>
+    <div id="bCards"></div>
+    <button type="button" id="pickBack">← Back</button>
+  </div>
+  <div class="bs" id="bShoot">
+    <div id="shotInfo">Photo 1 of 4</div>
+    <div id="count"></div>
+    <div id="thumbs"></div>
+    <button type="button" id="cancelShoot">✕ Cancel</button>
+  </div>
+  <div class="bs" id="bReview">
+    <img id="reviewImg" alt="Your photo">
+    <div class="rpanel">
+      <h2>Looking good!</h2>
+      <div id="filterWrap"><div class="hint" style="margin-bottom:8px;font-size:14px">Choose a filter</div><div class="row filters" id="filters"></div></div>
+      <div class="copies" id="copiesWrap"><span>Copies</span><button type="button" id="copMinus" aria-label="Fewer copies">−</button><b id="copNum">1</b><button type="button" id="copPlus" aria-label="More copies">+</button></div>
+      <button class="primary big" type="button" id="btnPrint">Print</button>
+      <div class="row"><button type="button" id="btnRetake" style="flex:1">↺ Retake</button><button type="button" id="btnDone" style="flex:1">Done</button></div>
+      <div class="hint" id="reviewTimer" style="font-size:14px"></div>
+    </div>
+  </div>
+  <div class="bs" id="bDone">
+    <div>
+      <h2>Thank you!</h2>
+      <div id="printStatus"></div>
+      <button class="primary" type="button" id="doneBtn">Back to start</button>
+      <div class="hint" id="doneTimer" style="margin-top:14px;font-size:14px"></div>
+    </div>
+    <div id="qrBox"><div id="qrCode" role="img" aria-label="QR code to download your photo"></div><b>Scan to download</b><span style="font-size:.85rem;color:#555">Opens on any phone with internet</span></div>
+  </div>
+  <div id="busy">Saving your photo…</div>
+  <div id="flash"></div>
+  <div id="bErr"><h2 id="errTitle">Something went wrong</h2><p class="hint" id="errMsg" style="font-size:15px;max-width:520px"></p><div class="row" style="justify-content:center"><button class="primary" type="button" id="errRetry">Try again</button><button type="button" id="errCancel">Cancel</button></div></div>
+  <div id="bMenu">
+    <div class="panel">
+      <h3 style="margin:0">Booth settings</h3>
+      <label class="f">Camera<select id="camSelect"></select></label>
+      <label class="c"><input type="checkbox" id="camMirror">Mirror the live view</label>
+      <div class="row"><button class="primary" type="button" id="menuClose">Back to booth</button><button type="button" id="menuExit">Exit booth</button></div>
+      <p class="hint" style="margin:0">Opened by holding the top-right corner for 3 seconds.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ADMIN (laptop) ================= -->
+<section class="view" id="vAdmin">
+  <nav aria-label="Admin menu">
+    <div class="brand" style="font-size:15px;padding:0 8px 16px"><span style="width:30px;height:30px;font-size:15px">●</span>Photobooth Studio</div>
+    <a href="#" data-sec="dash" class="on">Dashboard</a>
+    <a href="#" data-sec="events">Events</a>
+    <a href="#" data-sec="gallery">Gallery</a>
+    <a href="#" data-sec="printer">Printer</a>
+    <div class="foot">
+      <button type="button" id="aSwitch" class="sm">Switch device mode</button>
+      <button type="button" id="aSignOut" class="sm">Sign out</button>
+    </div>
+  </nav>
+  <main>
+    <!-- Dashboard -->
+    <section class="sec on" id="s-dash">
+      <h1>Dashboard</h1>
+      <p class="sub">Active event: <b id="dActive">—</b></p>
+      <div class="cards">
+        <div class="stat"><div class="k">Sessions (active event)</div><div class="v" id="dSessions">0</div></div>
+        <div class="stat"><div class="k">Prints today</div><div class="v" id="dPrints">0</div></div>
+        <div class="stat"><div class="k">Waiting to print</div><div class="v" id="dWaiting">0</div></div>
+        <div class="stat"><div class="k">Paper left (estimate)</div><div class="v" id="dPaper">—</div></div>
+      </div>
+      <div class="grid2">
+        <div class="box"><h3>Connected devices</h3><div id="dDevices" class="hint">Checking…</div></div>
+        <div class="box"><h3>Printing on this laptop</h3><div id="dPrinter" class="hint"></div><button type="button" class="sm" style="margin-top:10px" data-go="printer">Printer settings</button></div>
+        <div class="box"><h3>Open the booth on your tablet</h3>
+          <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><div class="qr" id="dAppQr"></div>
+          <p class="hint" style="margin:0">Scan this on the tablet (or open <code id="dAppUrl"></code>), log in with the same account, and choose <b>Booth</b>.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Events -->
+    <section class="sec" id="s-events">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px"><div><h1>Events</h1><p class="sub" style="margin:0">The active event is the one the tablet shows.</p></div><button class="primary" type="button" id="newEvent">+ New event</button></div>
+      <div id="eventList"></div>
+      <div id="editor" hidden>
+        <div class="row" style="justify-content:space-between;margin:18px 0 12px"><h2 style="margin:0" id="edTitle">Edit event</h2><div class="row"><button type="button" id="edActivate">Make active</button><button class="primary" type="button" id="edSave">Save</button></div></div>
+        <div class="grid2">
+          <div>
+            <div class="box"><h3>Event details</h3>
+              <div class="fgrid">
+                <label class="f">Event name (printed)<input id="edName"></label>
+                <label class="f">Date / second line<input id="edDate"></label>
+                <label class="f">Start screen title<input data-k="attractTitle"></label>
+                <label class="f">Start screen text<input data-k="attractSub"></label>
+                <label class="f">Background colour<input type="color" data-k="bgColor"></label>
+                <label class="f">Text colour<input type="color" data-k="textColor"></label>
+                <label class="f">Font<select data-k="font">
+                  <option value="Georgia, serif">Georgia (classic)</option>
+                  <option value="'Palatino Linotype', Palatino, serif">Palatino (elegant)</option>
+                  <option value="'Brush Script MT', 'Segoe Script', cursive">Handwritten script</option>
+                  <option value="'Trebuchet MS', sans-serif">Trebuchet (modern)</option>
+                  <option value="Impact, 'Arial Black', sans-serif">Impact (bold)</option>
+                  <option value="system-ui, sans-serif">System</option></select></label>
+                <label class="c" style="margin-top:20px"><input type="checkbox" data-k="showText">Print name &amp; date</label>
+              </div>
+            </div>
+            <div class="box"><h3>Guest session</h3>
+              <div class="fgrid">
+                <label class="f">Countdown (seconds)<input type="number" min="1" max="10" data-k="countdown"></label>
+                <label class="f">Pause between photos (seconds)<input type="number" min="0" max="10" step="0.5" data-k="gap"></label>
+                <label class="f">Default filter<select data-k="filter" id="edFilter"></select></label>
+                <label class="f">Return to start after (seconds)<input type="number" min="10" max="600" data-k="reviewTimeout"></label>
+                <label class="f">Default copies<input type="number" min="1" max="10" data-k="copies"></label>
+                <label class="f">Maximum copies per guest<input type="number" min="1" max="10" data-k="maxCopies"></label>
+                <label class="f">Booth exit PIN (optional)<input data-k="boothPin" inputmode="numeric"></label>
+              </div>
+              <div class="fgrid" style="margin-top:8px">
+                <label class="c"><input type="checkbox" data-k="allowFilter">Guests can choose a filter</label>
+                <label class="c"><input type="checkbox" data-k="allowRetake">Allow retakes</label>
+                <label class="c"><input type="checkbox" data-k="autoPrint">Print automatically</label>
+                <label class="c"><input type="checkbox" data-k="showQr">Show download QR code</label>
+              </div>
+            </div>
+            <div class="box"><h3>Layouts offered to guests</h3><div class="fgrid" id="edLayouts"></div></div>
+          </div>
+          <div>
+            <div class="box"><h3>Preview</h3><div class="row" style="margin-bottom:10px"><select id="prevLayout" style="width:auto" aria-label="Preview layout"></select></div><canvas id="prevCanvas"></canvas></div>
+            <div class="box"><h3>Frames (transparent PNG)</h3>
+              <p class="hint">Press <b>Template</b> for a size guide. Design the frame on top of it in Canva, keep the photo areas transparent, and export as PNG with "Transparent background".</p>
+              <div id="edOverlays"></div>
+              <div class="ovrow"><div><b>Background image</b><br><span class="hint">Optional</span></div><div id="bgPrev" class="hint">None</div>
+                <div class="row"><button type="button" class="sm" id="bgUp">Upload</button><button type="button" class="sm" id="bgRm">Remove</button><input type="file" accept="image/png,image/jpeg" id="bgFile" hidden></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Gallery -->
+    <section class="sec" id="s-gallery">
+      <div class="row" style="justify-content:space-between"><div><h1>Gallery</h1><p class="sub" id="gInfo"></p></div>
+        <div class="row"><select id="gPick" style="width:240px" aria-label="Choose event"></select><button type="button" id="gZip">Download all (ZIP)</button></div></div>
+      <div class="box"><h3>Online gallery link</h3>
+        <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><div class="qr" id="gQr"></div>
+          <div style="flex:1;min-width:0"><p class="hint" style="margin-top:0">Send this to your client, or print the QR code on a table card.</p><input id="gLink" readonly aria-label="Gallery link"><div class="row" style="margin-top:8px"><button type="button" class="sm" id="gCopy">Copy link</button><a class="btn" id="gOpen" target="_blank" rel="noopener" style="min-height:32px;font-size:12.5px">Open</a></div></div></div>
+      </div>
+      <div id="gal"></div>
+    </section>
+
+    <!-- Printer -->
+    <section class="sec" id="s-printer">
+      <h1>Printer</h1><p class="sub">Connect the DNP DS-RX1HS to this laptop with USB. When a guest taps Print on the tablet, this laptop prints it.</p>
+      <div class="grid2">
+        <div class="box">
+          <div class="switch"><div><b>This laptop prints</b><div class="hint" id="pState">Off</div></div><input type="checkbox" id="pOn" aria-label="This laptop prints"></div>
+          <div class="row" style="margin-top:12px"><button type="button" id="pTest">Test print</button></div>
+          <div class="hint" style="margin-top:14px">
+            <b style="color:#fff">Print without a pop-up every time (do this once):</b>
+            <ol style="padding-left:18px;margin:6px 0">
+              <li>In Windows, set the DNP as the <b>default printer</b>, with paper size <b>4x6</b>.</li>
+              <li>Right-click the desktop › New › Shortcut, and paste:<br><code id="kioskCmd"></code></li>
+              <li>Open the admin board from that shortcut. Prints then go straight to the DNP.</li>
+            </ol>
+            Keep this page open and the laptop awake during the event.
+          </div>
+        </div>
+        <div class="box"><h3>Paper counter</h3>
+          <div style="font-size:24px;font-weight:800;font-variant-numeric:tabular-nums" id="pCounter">—</div>
+          <div style="height:8px;border-radius:4px;background:#2a2e37;margin:10px 0"><div id="pBar" style="height:8px;border-radius:4px;background:var(--ok);width:0"></div></div>
+          <div class="row"><label class="f" style="width:150px">Roll capacity<input type="number" id="pCap" min="1"></label><button type="button" id="pCapSave" style="align-self:flex-end">Save</button><button type="button" id="pReset" style="align-self:flex-end">Reset (new roll)</button></div>
+          <p class="hint">A DNP RX1 4x6 roll = 700 prints.</p>
+        </div>
+      </div>
+      <div class="box"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Print queue</h3><button type="button" class="sm" id="qRefresh">Refresh</button></div>
+        <div class="wrapx"><table><thead><tr><th>Time</th><th>Job</th><th>Copies</th><th>Status</th><th></th></tr></thead><tbody id="qBody"></tbody></table></div></div>
+    </section>
+  </main>
+</section>
+
+<div class="modal" id="photoModal"><div class="in">
+  <img id="pmImg" alt="" style="max-width:100%;max-height:62vh;display:block;margin:0 auto 14px;background:#fff">
+  <div class="row" style="justify-content:center">
+    <label class="row hint">Copies <input type="number" id="pmCopies" value="1" min="1" max="10" style="width:70px"></label>
+    <button class="primary" type="button" id="pmPrint">Print again</button><a class="btn" id="pmOpen" target="_blank" rel="noopener">Open full size</a><button class="danger" type="button" id="pmDel">Delete</button><button type="button" id="pmClose">Close</button>
+  </div></div></div>
+
+<div id="toast" role="status"></div>
+<div id="printArea"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+'use strict';
+/* =====================================================================
+   Photobooth Studio — one website for the tablet (Booth) and the laptop
+   (Admin board + printing). Data lives in Supabase.
+   ===================================================================== */
+const SUPABASE_URL = 'https://dqeyaimxfkursttbdmyp.supabase.co';
+const PUBLIC_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxZXlhaW14Zmt1cnN0dGJkbXlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODc2NTQsImV4cCI6MjEwODg2MzY1NH0.T5tHvHVpNzNHwxYFASy8WO6xr1bvfBko9gxHCoxVQSc';
+const SITE = location.origin + location.pathname.replace(/app\/?(index\.html)?$/, '');
+const GALLERY_URL = /^https?:/.test(SITE) ? SITE : 'https://harizwer.github.io/photobooth-gallery/';
+const APP_URL = GALLERY_URL + 'app/';
+const sb = (window.__SB_FAKE__ || window.supabase).createClient(SUPABASE_URL, PUBLIC_KEY);
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = { get(k, d) { try { const v = localStorage.getItem('pb.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem('pb.' + k, JSON.stringify(v)); } catch (e) {} } };
+const deviceId = store.get('device', null) || (() => { const id = 'd' + Math.random().toString(36).slice(2, 10); store.set('device', id); return id; })();
+function toast(m, ms = 2800) { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._t); t._t = setTimeout(() => t.style.display = 'none', ms); }
+function show(view) { $$('.view').forEach(v => v.classList.toggle('on', v.id === view)); }
+const fileUrl = path => `${SUPABASE_URL}/storage/v1/object/public/photos/${path}`;
+const today = () => new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+function check(res) { if (res.error) throw new Error(res.error.message || String(res.error)); return res.data; }
+function qr(el, text, size) { el.innerHTML = ''; if (window.QRCode) new QRCode(el, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel.M }); else el.textContent = text; }
+
+/* ---------------- Layouts & drawing (300 DPI) ---------------- */
+const LAYOUTS = {
+  strip4: { name: '4-Photo Strip', w: 600, h: 1800, double: true, landscape: false, slots: [[40, 40, 520, 350], [40, 420, 520, 350], [40, 800, 520, 350], [40, 1180, 520, 350]], footer: [40, 1550, 520, 220] },
+  strip3: { name: '3-Photo Strip', w: 600, h: 1800, double: true, landscape: false, slots: [[40, 40, 520, 466], [40, 536, 520, 466], [40, 1032, 520, 466]], footer: [40, 1520, 520, 250] },
+  grid4: { name: '4-Photo Grid', w: 1200, h: 1800, double: false, landscape: false, slots: [[45, 45, 535, 700], [620, 45, 535, 700], [45, 785, 535, 700], [620, 785, 535, 700]], footer: [45, 1500, 1110, 270] },
+  trio: { name: '3 Photos Landscape', w: 1800, h: 1200, double: false, landscape: true, slots: [[50, 50, 1120, 940], [1200, 50, 550, 455], [1200, 535, 550, 455]], footer: [50, 1000, 1700, 170] },
+  single: { name: '1 Photo Landscape', w: 1800, h: 1200, double: false, landscape: true, slots: [[50, 50, 1700, 940]], footer: [50, 1000, 1700, 170] },
+};
+const FILTERS = {
+  none: ['Original', 'none'], bw: ['Black & White', 'grayscale(1) contrast(1.15)'], sepia: ['Sepia', 'sepia(.8) contrast(1.05)'],
+  vintage: ['Vintage', 'sepia(.35) contrast(.92) brightness(1.08) saturate(.8)'], warm: ['Warm', 'saturate(1.25) sepia(.15) brightness(1.04)'],
+  vivid: ['Vivid', 'saturate(1.5) contrast(1.1)'], soft: ['Soft', 'brightness(1.1) contrast(.9) saturate(1.05)'],
+};
+const DEFAULTS = { showText: true, textColor: '#333333', bgColor: '#ffffff', font: 'Georgia, serif', attractTitle: 'PHOTOBOOTH', attractSub: 'Touch the screen to take a photo',
+  layouts: ['strip4', 'grid4', 'single'], overlays: {}, bgImage: '', countdown: 3, gap: 2, filter: 'none', allowFilter: true, allowRetake: true,
+  copies: 1, maxCopies: 3, autoPrint: false, showQr: true, reviewTimeout: 60, boothPin: '' };
+const view = ev => ({ ...DEFAULTS, ...(ev ? ev.settings || {} : {}), name: ev ? ev.name : '', eventDate: ev ? ev.event_date : '' });
+
+const imgCache = {};
+function loadImg(src) {
+  if (!src) return Promise.resolve(null);
+  if (!imgCache[src]) imgCache[src] = new Promise(r => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+  return imgCache[src];
+}
+function drawCover(x, img, dx, dy, dw, dh) {
+  const iw = img.naturalWidth || img.videoWidth || img.width, ih = img.naturalHeight || img.videoHeight || img.height;
+  const s = Math.max(dw / iw, dh / ih), sw = dw / s, sh = dh / s;
+  x.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, dx, dy, dw, dh);
+}
+function fitText(x, text, maxW, size, font, weight = '') { do { x.font = `${weight} ${size}px ${font}`; size -= 2; } while (x.measureText(text).width > maxW && size > 10); }
+const FILTER_OK = (() => { try { const c = document.createElement('canvas').getContext('2d'); c.filter = 'grayscale(1)'; return c.filter === 'grayscale(1)'; } catch (e) { return false; } })();
+function manualFilter(x, key, sx, sy, sw, sh) {
+  if (key === 'none') return;
+  const d = x.getImageData(sx, sy, sw, sh), p = d.data;
+  for (let i = 0; i < p.length; i += 4) {
+    let r = p[i], g = p[i + 1], b = p[i + 2]; const l = .299 * r + .587 * g + .114 * b;
+    if (key === 'bw') r = g = b = (l - 128) * 1.15 + 128;
+    else if (key === 'sepia' || key === 'vintage') { const k = key === 'sepia' ? .8 : .35; r = r * (1 - k) + (l * 1.07 + 20) * k; g = g * (1 - k) + (l * .95 + 8) * k; b = b * (1 - k) + l * .78 * k; }
+    else if (key === 'vivid' || key === 'warm') { const s = key === 'vivid' ? 1.5 : 1.25; r = l + (r - l) * s; g = l + (g - l) * s; b = l + (b - l) * s; if (key === 'warm') { r += 10; b -= 8; } }
+    else if (key === 'soft') { r = (r - 128) * .9 + 140; g = (g - 128) * .9 + 140; b = (b - 128) * .9 + 140; }
+    p[i] = r; p[i + 1] = g; p[i + 2] = b;
+  }
+  x.putImageData(d, sx, sy);
+}
+async function renderDesign(ev, key, shots, filter = 'none') {
+  const L = LAYOUTS[key], c = document.createElement('canvas'); c.width = L.w; c.height = L.h;
+  const x = c.getContext('2d');
+  x.fillStyle = ev.bgColor || '#fff'; x.fillRect(0, 0, L.w, L.h);
+  const bg = await loadImg(ev.bgImage); if (bg) drawCover(x, bg, 0, 0, L.w, L.h);
+  L.slots.forEach(([sx, sy, sw, sh], i) => {
+    const shot = shots && shots[i];
+    if (shot) { x.save(); if (FILTER_OK) x.filter = (FILTERS[filter] || FILTERS.none)[1]; drawCover(x, shot, sx, sy, sw, sh); x.restore(); if (!FILTER_OK) manualFilter(x, filter, sx, sy, sw, sh); }
+    else { x.fillStyle = '#c9c9d1'; x.fillRect(sx, sy, sw, sh); x.fillStyle = '#8a8a96'; x.font = `bold ${Math.min(sw, sh) * .28}px system-ui`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(i + 1), sx + sw / 2, sy + sh / 2); }
+  });
+  const ov = await loadImg((ev.overlays || {})[key]); if (ov) x.drawImage(ov, 0, 0, L.w, L.h);
+  if (ev.showText) {
+    const [fx, fy, fw, fh] = L.footer, name = (ev.name || '').trim(), date = (ev.eventDate || '').trim();
+    x.fillStyle = ev.textColor || '#333'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    if (name) { fitText(x, name, fw * .92, Math.round(fh * (date ? .36 : .5)), ev.font, 'bold'); x.fillText(name, fx + fw / 2, fy + fh * (date ? .4 : .5)); }
+    if (date) { fitText(x, date, fw * .9, Math.round(fh * .17), ev.font); x.fillText(date, fx + fw / 2, fy + fh * .76); }
+  }
+  return c;
+}
+function toPrintCanvas(key, design) {
+  if (!LAYOUTS[key].double) return design;
+  const c = document.createElement('canvas'); c.width = 1200; c.height = 1800;
+  const x = c.getContext('2d'); x.drawImage(design, 0, 0); x.drawImage(design, 600, 0); return c;
+}
+function templateCanvas(key) {
+  const L = LAYOUTS[key], c = document.createElement('canvas'); c.width = L.w; c.height = L.h; const x = c.getContext('2d');
+  x.fillStyle = 'rgba(255,106,61,.22)'; x.fillRect(0, 0, L.w, L.h); x.textAlign = 'center'; x.textBaseline = 'middle';
+  L.slots.forEach(([sx, sy, sw, sh], i) => { x.clearRect(sx, sy, sw, sh); x.strokeStyle = '#ff6a3d'; x.lineWidth = 3; x.setLineDash([12, 8]); x.strokeRect(sx, sy, sw, sh); x.fillStyle = 'rgba(255,106,61,.9)'; x.font = `bold ${Math.min(sw, sh) * .1}px system-ui`; x.fillText(`PHOTO ${i + 1} (${sw}×${sh})`, sx + sw / 2, sy + sh / 2); });
+  const [fx, fy, fw, fh] = L.footer; x.setLineDash([6, 6]); x.strokeStyle = '#555'; x.strokeRect(fx, fy, fw, fh); x.fillStyle = '#333'; x.font = `${Math.min(fh * .18, 40)}px system-ui`; x.fillText('Text / logo area', fx + fw / 2, fy + fh / 2);
+  return c;
+}
+const toBlob = (c, type = 'image/jpeg', q = .92) => new Promise(r => c.toBlob(r, type, q));
+function scaled(c, max) { const s = Math.min(1, max / Math.max(c.width, c.height)); const o = document.createElement('canvas'); o.width = Math.round(c.width * s); o.height = Math.round(c.height * s); o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o; }
+
+/* ---------------- Account, events, live connection ---------------- */
+let USER = null, EVENTS = [], ACTIVE = null, ROLE = null, chan = null, devices = {}, jobChan = null;
+const printerOn = () => ROLE === 'admin' && store.get('printer', false);
+
+async function loadEvents() {
+  EVENTS = check(await sb.from('events').select('*').eq('owner', USER.id).order('created_at', { ascending: false }));
+  if (!EVENTS.length) {
+    const ev = check(await sb.from('events').insert({ id: 'e' + Date.now().toString(36), name: 'My First Event', event_date: today(), settings: {}, is_active: true }).select().single());
+    EVENTS = [ev];
+  }
+  ACTIVE = EVENTS.find(e => e.is_active) || EVENTS[0];
+}
+function track() {
+  if (!chan) return;
+  chan.track({ role: ROLE || 'home', printer: printerOn(), label: ROLE === 'booth' ? 'Tablet (Booth)' : ROLE === 'admin' ? 'Laptop (Admin board)' : 'Device', at: Date.now() }).catch(() => {});
+}
+function connectLive() {
+  if (chan) return;
+  chan = sb.channel('booth-' + USER.id, { config: { presence: { key: deviceId }, broadcast: { self: false } } });
+  chan.on('presence', { event: 'sync' }, () => { devices = chan.presenceState(); onDevices(); })
+      .on('broadcast', { event: 'event-updated' }, () => onEventUpdated())
+      .subscribe(status => { if (status === 'SUBSCRIBED') track(); });
+  jobChan = sb.channel('jobs-' + USER.id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'print_jobs', filter: `owner=eq.${USER.id}` }, payload => onJobChange(payload.new || payload.old))
+    .subscribe();
+}
+function deviceList() { return Object.entries(devices).filter(([k]) => k !== deviceId).map(([, v]) => v[0]).filter(Boolean); }
+function printerOnline() { return Object.entries(devices).some(([, v]) => v[0] && v[0].printer); }
+function onDevices() { if (ROLE === 'booth') boothStatus(); if (ROLE === 'admin') renderDevices(); }
+function onEventUpdated() { if (ROLE === 'booth') { if (B.session) B.pendingReload = true; else boothLoad(); } }
+function onJobChange(job) { if (!job) return; if (ROLE === 'booth') boothJob(job); if (ROLE === 'admin') { if ($('#s-printer').classList.contains('on')) loadQueue(); refreshStats(); runPrinter(); } }
+function announceEventUpdate() { if (chan) chan.send({ type: 'broadcast', event: 'event-updated', payload: {} }).catch(() => {}); }
+
+let wakeLock = null;
+async function keepAwake() { try { if (navigator.wakeLock && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => wakeLock = null); } } catch (e) {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && ROLE) keepAwake(); });
+
+/* ---------------- Login ---------------- */
+let signUpMode = false;
+$('#lToggle').onclick = () => { signUpMode = !signUpMode; $('#lSubmit').textContent = signUpMode ? 'Create account' : 'Log in'; $('#lToggle').textContent = signUpMode ? 'I already have an account' : 'First time? Create your account'; $('#lPass').autocomplete = signUpMode ? 'new-password' : 'current-password'; $('#lMsg').textContent = ''; };
+$('#loginForm').onsubmit = async e => {
+  e.preventDefault();
+  const email = $('#lEmail').value.trim(), password = $('#lPass').value, msg = $('#lMsg');
+  if (!email || password.length < 6) { msg.className = 'msg bad'; msg.textContent = 'Enter your email and a password of at least 6 characters.'; return; }
+  $('#lSubmit').disabled = true; msg.className = 'msg'; msg.textContent = signUpMode ? 'Creating your account…' : 'Logging in…';
+  try {
+    if (signUpMode) {
+      const r = await sb.auth.signUp({ email, password });
+      if (r.error) throw r.error;
+      if (!r.data.session) { const s = await sb.auth.signInWithPassword({ email, password }); if (s.error) throw s.error; }
+    } else {
+      const r = await sb.auth.signInWithPassword({ email, password });
+      if (r.error) throw r.error;
+    }
+    msg.textContent = '';
+  } catch (err) {
+    const m = String(err.message || err);
+    msg.className = 'msg bad';
+    msg.textContent = /Invalid login/i.test(m) ? 'Wrong email or password.'
+      : /Database error saving new user|not allowed/i.test(m) ? 'This email is not approved for this booth.'
+      : /already registered/i.test(m) ? 'This email already has an account. Choose "I already have an account" and log in.'
+      : /fetch|network/i.test(m) ? 'No internet connection. Check the WiFi and try again.' : m;
+  } finally { $('#lSubmit').disabled = false; }
+};
+async function signOut() { try { if (chan) await chan.untrack(); } catch (e) {} store.set('role', null); await sb.auth.signOut(); location.reload(); }
+$('#hSignOut').onclick = signOut; $('#aSignOut').onclick = signOut;
+
+async function enter(user) {
+  USER = user;
+  $('#hEmail').textContent = user.email || '';
+  try { await loadEvents(); } catch (e) { toast('Could not load your data: ' + e.message, 5000); }
+  connectLive();
+  const role = store.get('role', null);
+  if (role === 'booth') startBooth(); else if (role === 'admin') startAdmin(); else { ROLE = null; show('vHome'); track(); }
+}
+$('#goBooth').onclick = () => { store.set('role', 'booth'); startBooth(); };
+$('#goAdmin').onclick = () => { store.set('role', 'admin'); startAdmin(); };
+$('#aSwitch').onclick = () => { store.set('role', null); ROLE = null; show('vHome'); track(); };
+
+/* =====================================================================
+   BOOTH (tablet)
+   ===================================================================== */
+const B = { session: null, pendingReload: false, stream: null, reviewT: null, doneT: null, retry: null };
+let EV = view(null);
+let actx;
+const ac = () => actx || (actx = new (window.AudioContext || window.webkitAudioContext)());
+function beep(f = 880, d = .12) { try { const a = ac(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = f; g.gain.setValueAtTime(.25, a.currentTime); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + d); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + d); } catch (e) {} }
+function shutter() { try { const a = ac(), n = a.sampleRate * .18, b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); const s = a.createBufferSource(), g = a.createGain(); g.gain.value = .5; s.buffer = b; s.connect(g).connect(a.destination); s.start(); } catch (e) {} }
+function bs(id) { $$('.bs').forEach(s => s.classList.toggle('on', s.id === id)); $('#bStatus').hidden = id !== 'bAttract'; }
+
+async function startBooth() {
+  ROLE = 'booth'; show('vBooth'); bs('bAttract'); track(); keepAwake();
+  await boothLoad();
+  await startCamera();
+}
+async function boothLoad() {
+  try { await loadEvents(); } catch (e) {}
+  EV = view(ACTIVE);
+  $('#aTitle').textContent = EV.attractTitle || EV.name; $('#aSub').textContent = EV.attractSub || '';
+  $('#live').classList.toggle('mirror', store.get('mirror', true));
+  const box = $('#bCards'); box.innerHTML = '';
+  for (const k of layoutKeys()) {
+    const d = await renderDesign(EV, k, null);
+    const b = document.createElement('button'); b.className = 'card'; b.type = 'button';
+    b.innerHTML = `<img src="${d.toDataURL('image/jpeg', .7)}" alt=""><span>${LAYOUTS[k].name}</span>`;
+    b.onclick = () => startSession(k); box.appendChild(b);
+  }
+  boothStatus();
+}
+function boothStatus() {
+  const el = $('#bStatus');
+  el.innerHTML = printerOnline() ? '<span class="dot ok"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected';
+}
+async function startCamera() {
+  if (B.stream) B.stream.getTracks().forEach(t => t.stop());
+  const pref = store.get('camera', 'user');
+  const video = pref === 'user' || pref === 'environment' ? { facingMode: pref } : { deviceId: { exact: pref } };
+  try {
+    B.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...video, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    $('#live').srcObject = B.stream; await $('#live').play().catch(() => {});
+  } catch (e) {
+    showErr('Cannot open the camera', 'Allow camera access for this website in the browser settings, then tap Try again.', () => startCamera());
+  }
+}
+function layoutKeys() { const k = (EV.layouts || []).filter(x => LAYOUTS[x]); return k.length ? k : ['strip4']; }
+function goHome() {
+  B.session = null; clearInterval(B.reviewT); clearInterval(B.doneT);
+  $('#count').textContent = ''; $('#busy').style.display = 'none'; $('#bErr').classList.remove('on');
+  bs('bAttract');
+  if (B.pendingReload) { B.pendingReload = false; boothLoad(); }
+}
+function startFlow() {
+  ac(); keepAwake();
+  if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+  const keys = layoutKeys();
+  if (keys.length === 1) return startSession(keys[0]);
+  bs('bPick');
+}
+async function startSession(key) {
+  clearInterval(B.reviewT);
+  const me = B.session = { layout: key, shots: [], filter: EV.filter || 'none', copies: 1, saved: null, printed: false, jobId: null };
+  const L = LAYOUTS[key]; bs('bShoot');
+  const th = $('#thumbs'); th.innerHTML = '';
+  for (let i = 0; i < L.slots.length; i++) th.appendChild(document.createElement('div'));
+  for (let i = 0; i < L.slots.length; i++) {
+    $('#shotInfo').textContent = `Photo ${i + 1} of ${L.slots.length}`;
+    if (!(await countdown(me))) return;
+    const img = await takeShot(); if (B.session !== me) return;
+    me.shots.push(img);
+    th.children[i].replaceWith(Object.assign(document.createElement('img'), { src: img.src, alt: '' }));
+    if (i < L.slots.length - 1) { await sleep((EV.gap || 0) * 1000); if (B.session !== me) return; }
+  }
+  await sleep(400); if (B.session !== me) return;
+  await openReview();
+}
+async function countdown(me) {
+  const el = $('#count');
+  for (let n = EV.countdown || 3; n > 0; n--) {
+    if (B.session !== me) return false;
+    el.className = ''; void el.offsetWidth; el.textContent = n; el.className = 'pop'; beep(n === 1 ? 1320 : 880);
+    await sleep(1000);
+  }
+  if (B.session !== me) return false;
+  el.className = 'msg2'; el.textContent = 'Smile!'; await sleep(250);
+  return true;
+}
+async function takeShot() {
+  shutter(); const f = $('#flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+  const v = $('#live'), c = document.createElement('canvas');
+  c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  $('#count').textContent = ''; $('#count').className = '';
+  const img = new Image(); img.src = c.toDataURL('image/jpeg', .92); await img.decode().catch(() => {});
+  return img;
+}
+async function renderSession() {
+  const s = B.session;
+  s.design = await renderDesign(EV, s.layout, s.shots, s.filter);
+  s.printCanvas = toPrintCanvas(s.layout, s.design);
+  $('#reviewImg').src = s.design.toDataURL('image/jpeg', .85);
+  s.saved = null;
+}
+async function openReview() {
+  await renderSession();
+  const fw = $('#filters'); fw.innerHTML = ''; $('#filterWrap').hidden = !EV.allowFilter;
+  for (const [k, [label]] of Object.entries(FILTERS)) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.classList.toggle('on', k === B.session.filter);
+    b.onclick = async () => { B.session.filter = k; [...fw.children].forEach(c => c.classList.toggle('on', c === b)); await renderSession(); };
+    fw.appendChild(b);
+  }
+  const maxC = Math.max(1, EV.maxCopies || 1);
+  B.session.copies = Math.min(Math.max(1, EV.copies || 1), maxC);
+  $('#copNum').textContent = B.session.copies; $('#copiesWrap').hidden = maxC <= 1;
+  $('#btnRetake').hidden = EV.allowRetake === false; $('#btnPrint').disabled = false;
+  bs('bReview');
+  if (EV.autoPrint) return doPrint();
+  let left = EV.reviewTimeout || 60;
+  const tick = () => $('#reviewTimer').textContent = `Returning to the start screen in ${left}s`;
+  tick(); clearInterval(B.reviewT);
+  B.reviewT = setInterval(() => { left--; tick(); if (left <= 0) { clearInterval(B.reviewT); finish(); } }, 1000);
+  $('#bReview').onpointerdown = () => { left = EV.reviewTimeout || 60; tick(); };
+}
+async function savePhoto() {
+  const s = B.session; if (s.saved) return s.saved;
+  $('#busy').style.display = 'block';
+  try {
+    const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const path = `${ACTIVE.id}/${id}.jpg`, thumbPath = `${ACTIVE.id}/${id}-thumb.jpg`;
+    const full = await toBlob(s.printCanvas, 'image/jpeg', .93), thumb = await toBlob(scaled(s.printCanvas, 480), 'image/jpeg', .75);
+    check(await sb.storage.from('photos').upload(path, full, { contentType: 'image/jpeg', upsert: true }));
+    check(await sb.storage.from('photos').upload(thumbPath, thumb, { contentType: 'image/jpeg', upsert: true }));
+    check(await sb.from('photos').insert({ id, event_id: ACTIVE.id, path, thumb_path: thumbPath, layout: s.layout }));
+    s.saved = { id, path };
+    return s.saved;
+  } finally { $('#busy').style.display = 'none'; }
+}
+async function doPrint() {
+  const s = B.session; if (!s || s.printed) return;
+  $('#btnPrint').disabled = true; clearInterval(B.reviewT);
+  try {
+    const saved = await savePhoto();
+    const job = check(await sb.from('print_jobs').insert({ event_id: ACTIVE.id, photo_id: saved.id, path: saved.path, copies: s.copies, label: `${EV.name} · ${LAYOUTS[s.layout].name}` }).select().single());
+    s.printed = true; s.jobId = job.id;
+    openDone(printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It will start when the printer laptop is connected.');
+  } catch (e) {
+    $('#btnPrint').disabled = false;
+    showErr('Could not save your photo', netMsg(e), () => doPrint(), () => openReview());
+  }
+}
+async function finish() {
+  clearInterval(B.reviewT);
+  try { await savePhoto(); openDone(''); }
+  catch (e) { showErr('Could not save your photo', netMsg(e), () => finish(), () => goHome()); }
+}
+function netMsg(e) { const m = String(e && e.message || e); return /fetch|network|Failed/i.test(m) ? 'The tablet has no internet connection. Check the WiFi, then tap Try again.' : m; }
+function openDone(status) {
+  const s = B.session; clearInterval(B.reviewT);
+  $('#printStatus').textContent = status;
+  $('#qrBox').hidden = !(EV.showQr && s && s.saved);
+  if (!$('#qrBox').hidden) qr($('#qrCode'), `${GALLERY_URL}?e=${encodeURIComponent(ACTIVE.id)}&p=${encodeURIComponent(s.saved.id)}`, 220);
+  bs('bDone');
+  let left = 25; const tick = () => $('#doneTimer').textContent = `Going back automatically in ${left}s`;
+  tick(); clearInterval(B.doneT); B.doneT = setInterval(() => { left--; tick(); if (left <= 0) goHome(); }, 1000);
+}
+function boothJob(job) {
+  const s = B.session; if (!s || job.id !== s.jobId || !$('#bDone').classList.contains('on')) return;
+  const txt = { waiting: printerOnline() ? 'Sending to the printer…' : 'Waiting for the printer laptop…', printing: 'Printing…', done: 'Done! Collect your photo at the printer.', failed: 'Printer problem — please call the attendant.', cancelled: 'Print cancelled.' }[job.status];
+  if (txt) $('#printStatus').textContent = txt;
+}
+function showErr(title, msg, onRetry, onCancel) {
+  $('#errTitle').textContent = title; $('#errMsg').textContent = msg; $('#bErr').classList.add('on');
+  $('#errRetry').onclick = () => { $('#bErr').classList.remove('on'); onRetry && onRetry(); };
+  $('#errCancel').onclick = () => { $('#bErr').classList.remove('on'); (onCancel || goHome)(); };
+}
+$('#startBtn').onclick = startFlow;
+$('#bAttract').onclick = e => { if (e.target === $('#bAttract')) startFlow(); };
+$('#pickBack').onclick = goHome; $('#cancelShoot').onclick = goHome;
+$('#btnPrint').onclick = doPrint; $('#btnDone').onclick = finish; $('#doneBtn').onclick = goHome;
+$('#btnRetake').onclick = () => B.session && startSession(B.session.layout);
+$('#copMinus').onclick = () => { B.session.copies = Math.max(1, B.session.copies - 1); $('#copNum').textContent = B.session.copies; };
+$('#copPlus').onclick = () => { B.session.copies = Math.min(EV.maxCopies || 1, B.session.copies + 1); $('#copNum').textContent = B.session.copies; };
+// Hold the top-right corner for 3 seconds: booth settings
+let hotT; const hot = $('#hot');
+hot.addEventListener('pointerdown', () => { hotT = setTimeout(openBoothMenu, 3000); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(n => hot.addEventListener(n, () => clearTimeout(hotT)));
+async function openBoothMenu() {
+  if (EV.boothPin) { const p = prompt('Enter the booth PIN'); if (p !== EV.boothPin) { if (p !== null) toast('Wrong PIN'); return; } }
+  const sel = $('#camSelect'); let opts = '<option value="user">Front camera</option><option value="environment">Back camera</option>';
+  try { (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput').forEach((d, i) => opts += `<option value="${esc(d.deviceId)}">${esc(d.label || 'Camera ' + (i + 1))}</option>`); } catch (e) {}
+  sel.innerHTML = opts; sel.value = store.get('camera', 'user'); $('#camMirror').checked = store.get('mirror', true);
+  $('#bMenu').classList.add('on');
+}
+$('#camSelect').onchange = () => { store.set('camera', $('#camSelect').value); startCamera(); };
+$('#camMirror').onchange = () => { store.set('mirror', $('#camMirror').checked); $('#live').classList.toggle('mirror', $('#camMirror').checked); };
+$('#menuClose').onclick = () => $('#bMenu').classList.remove('on');
+$('#menuExit').onclick = () => { $('#bMenu').classList.remove('on'); if (B.stream) B.stream.getTracks().forEach(t => t.stop()); B.stream = null; store.set('role', null); ROLE = null; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); show('vHome'); track(); };
+document.addEventListener('keydown', e => {
+  if (ROLE !== 'booth' || $('#bMenu').classList.contains('on')) return;
+  const on = id => $('#' + id).classList.contains('on'), k = e.key.toLowerCase();
+  if (k === 'escape') return goHome();
+  if (on('bAttract') && (k === ' ' || k === 'enter')) { e.preventDefault(); startFlow(); }
+  else if (on('bPick')) { const n = parseInt(k, 10), keys = layoutKeys(); if (n >= 1 && n <= keys.length) startSession(keys[n - 1]); }
+  else if (on('bReview')) { if (k === 'p') doPrint(); else if (k === 'enter') finish(); }
+  else if (on('bDone') && (k === ' ' || k === 'enter')) { e.preventDefault(); goHome(); }
+});
+
+/* =====================================================================
+   ADMIN BOARD (laptop)
+   ===================================================================== */
+let editEv = null, galEvent = null, galPhotos = [], pmPhoto = null, station = null;
+async function startAdmin() {
+  ROLE = 'admin'; show('vAdmin'); track(); keepAwake();
+  $('#pOn').checked = store.get('printer', false); printerUi();
+  $('#kioskCmd').textContent = `"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --kiosk-printing ${APP_URL}`;
+  $('#dAppUrl').textContent = APP_URL; qr($('#dAppQr'), APP_URL, 120);
+  go('dash');
+  runPrinter();
+}
+function go(sec) {
+  $$('#vAdmin nav a').forEach(a => a.classList.toggle('on', a.dataset.sec === sec));
+  $$('.sec').forEach(s => s.classList.toggle('on', s.id === 's-' + sec));
+  if (sec === 'dash') refreshStats();
+  if (sec === 'events') renderEvents();
+  if (sec === 'gallery') loadGallery(galEvent || ACTIVE.id);
+  if (sec === 'printer') { loadQueue(); loadStation(); }
+}
+$$('#vAdmin nav a').forEach(a => a.onclick = e => { e.preventDefault(); go(a.dataset.sec); });
+$$('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+
+async function refreshStats() {
+  if (ROLE !== 'admin') return;
+  try {
+    await loadEvents();
+    $('#dActive').textContent = ACTIVE ? ACTIVE.name : '—';
+    const since = new Date(); since.setHours(0, 0, 0, 0);
+    const [ph, done, wait] = await Promise.all([
+      sb.from('photos').select('id', { count: 'exact', head: true }).eq('owner', USER.id).eq('event_id', ACTIVE.id),
+      sb.from('print_jobs').select('copies').eq('owner', USER.id).eq('status', 'done').gte('created_at', since.toISOString()),
+      sb.from('print_jobs').select('id', { count: 'exact', head: true }).eq('owner', USER.id).eq('status', 'waiting'),
+    ]);
+    $('#dSessions').textContent = ph.count ?? 0;
+    $('#dPrints').textContent = (done.data || []).reduce((a, j) => a + j.copies, 0);
+    $('#dWaiting').textContent = wait.count ?? 0;
+    await loadStation();
+  } catch (e) {}
+  renderDevices(); printerUi();
+}
+function renderDevices() {
+  const list = deviceList();
+  $('#dDevices').innerHTML = list.length ? list.map(d => `<div style="color:#fff;margin-bottom:6px"><span class="dot ok"></span>${esc(d.label)}${d.printer ? ' · prints' : ''}</div>`).join('') : '<span class="dot warn"></span>No other device is connected yet. Open the booth on your tablet.';
+}
+function printerUi() {
+  const on = printerOn();
+  $('#pState').textContent = on ? 'On — print jobs from the tablet print here' : 'Off — turn on to print from this laptop';
+  $('#dPrinter').innerHTML = on ? '<span class="dot ok"></span><b style="color:#fff">On.</b> Prints from the tablet come out of this laptop\'s default printer.' : '<span class="dot warn"></span><b style="color:#fff">Off.</b> Turn it on in Printer settings so this laptop prints.';
+}
+
+/* ---- Events ---- */
+function renderEvents() {
+  $('#eventList').innerHTML = EVENTS.map(e => `<div class="ev ${e.id === ACTIVE.id ? 'active' : ''}"><div class="info"><div class="name">${esc(e.name)}</div><div class="hint">${esc(e.event_date)}</div>
+    <div style="margin-top:6px">${e.id === ACTIVE.id ? '<span class="pill ok">Active on tablet</span>' : ''}<span class="pill">${(view(e).layouts || []).map(k => LAYOUTS[k] ? LAYOUTS[k].name : k).join(', ')}</span></div></div>
+    <div class="row">${e.id === ACTIVE.id ? '' : `<button class="primary" type="button" data-act="activate" data-id="${e.id}">Make active</button>`}<button type="button" data-act="edit" data-id="${e.id}">Edit</button><button type="button" data-act="gallery" data-id="${e.id}">Gallery</button><button class="danger" type="button" data-act="del" data-id="${e.id}">Delete</button></div></div>`).join('');
+}
+async function setActive(id) {
+  check(await sb.from('events').update({ is_active: false }).eq('owner', USER.id).neq('id', id));
+  check(await sb.from('events').update({ is_active: true }).eq('id', id));
+  await loadEvents(); announceEventUpdate();
+}
+$('#eventList').onclick = async e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const id = b.dataset.id;
+  try {
+    if (b.dataset.act === 'activate') { await setActive(id); toast('Event is now active on the tablet'); renderEvents(); }
+    if (b.dataset.act === 'edit') openEditor(id);
+    if (b.dataset.act === 'gallery') { galEvent = id; go('gallery'); }
+    if (b.dataset.act === 'del') {
+      if (EVENTS.length <= 1) return toast('You need at least one event.');
+      if (!confirm('Delete this event and all of its photos? This cannot be undone.')) return;
+      const photos = check(await sb.from('photos').select('path,thumb_path').eq('event_id', id));
+      const paths = photos.flatMap(p => [p.path, p.thumb_path]);
+      const ev = EVENTS.find(x => x.id === id), s = view(ev);
+      Object.values(s.overlays || {}).concat(s.bgImage || []).forEach(u => { const m = String(u).split('/object/public/photos/')[1]; if (m) paths.push(m.split('?')[0]); });
+      for (let i = 0; i < paths.length; i += 100) await sb.storage.from('photos').remove(paths.slice(i, i + 100));
+      check(await sb.from('events').delete().eq('id', id));
+      await loadEvents();
+      if (!EVENTS.some(x => x.is_active)) await setActive(EVENTS[0].id);
+      $('#editor').hidden = true; renderEvents();
+    }
+  } catch (err) { toast(err.message, 4000); }
+};
+$('#newEvent').onclick = async () => {
+  const name = prompt('Name of the new event:'); if (!name) return;
+  try { const ev = check(await sb.from('events').insert({ id: 'e' + Date.now().toString(36), name, event_date: today(), settings: {} }).select().single()); await loadEvents(); renderEvents(); openEditor(ev.id); }
+  catch (e) { toast(e.message, 4000); }
+};
+$('#edFilter').innerHTML = Object.entries(FILTERS).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('');
+$('#prevLayout').innerHTML = Object.entries(LAYOUTS).map(([k, L]) => `<option value="${k}">${L.name}</option>`).join('');
+function openEditor(id) {
+  const ev = EVENTS.find(e => e.id === id); if (!ev) return;
+  editEv = { id: ev.id, name: ev.name, event_date: ev.event_date, s: view(ev) };
+  $('#editor').hidden = false; $('#edTitle').textContent = 'Edit: ' + ev.name;
+  $('#edActivate').hidden = id === ACTIVE.id;
+  $('#edName').value = ev.name; $('#edDate').value = ev.event_date || '';
+  $$('#editor [data-k]').forEach(el => { const v = editEv.s[el.dataset.k]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v ?? ''; });
+  $('#edLayouts').innerHTML = Object.entries(LAYOUTS).map(([k, L]) => `<label class="c"><input type="checkbox" data-layout="${k}" ${editEv.s.layouts.includes(k) ? 'checked' : ''}>${L.name} <span class="hint">(${L.double ? '2x6 strip' : L.landscape ? '4x6 landscape' : '4x6 portrait'})</span></label>`).join('');
+  $('#prevLayout').value = editEv.s.layouts[0] || 'strip4';
+  renderOverlayRows(); refreshPreview();
+  $('#editor').scrollIntoView({ behavior: 'smooth' });
+}
+function readEditor() {
+  editEv.name = $('#edName').value.trim() || 'Untitled event'; editEv.event_date = $('#edDate').value.trim();
+  $$('#editor [data-k]').forEach(el => { editEv.s[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value; });
+  editEv.s.layouts = $$('[data-layout]').filter(c => c.checked).map(c => c.dataset.layout);
+  if (!editEv.s.layouts.length) editEv.s.layouts = ['strip4'];
+}
+function renderOverlayRows() {
+  const s = editEv.s;
+  $('#edOverlays').innerHTML = Object.entries(LAYOUTS).map(([k, L]) => `<div class="ovrow" data-ov="${k}"><div><b>${L.name}</b><br><span class="hint">${L.w} × ${L.h} px</span></div>
+    <div>${s.overlays[k] ? `<img src="${esc(s.overlays[k])}" alt="" crossorigin="anonymous">` : '<span class="hint">No frame</span>'}</div>
+    <div class="row"><button type="button" class="sm" data-a="tpl">Template</button><button type="button" class="sm" data-a="up">Upload</button>${s.overlays[k] ? '<button type="button" class="sm" data-a="rm">Remove</button>' : ''}<input type="file" accept="image/png" hidden></div></div>`).join('');
+  $('#bgPrev').innerHTML = s.bgImage ? `<img src="${esc(s.bgImage)}" alt="" style="max-width:100px;max-height:70px">` : 'None';
+}
+async function uploadAsset(file, name) {
+  const ext = file.type === 'image/png' ? 'png' : 'jpg';
+  const path = `${editEv.id}/${name}-${Date.now().toString(36)}.${ext}`;
+  check(await sb.storage.from('photos').upload(path, file, { contentType: file.type, upsert: true }));
+  return fileUrl(path);
+}
+$('#edOverlays').onclick = e => {
+  const b = e.target.closest('button[data-a]'); if (!b) return;
+  const row = b.closest('[data-ov]'), k = row.dataset.ov;
+  if (b.dataset.a === 'tpl') templateCanvas(k).toBlob(bl => { const a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = `template-${k}-${LAYOUTS[k].w}x${LAYOUTS[k].h}.png`; a.click(); }, 'image/png');
+  if (b.dataset.a === 'up') {
+    const f = row.querySelector('input');
+    f.onchange = async () => { if (!f.files[0]) return; toast('Uploading frame…'); try { editEv.s.overlays = { ...editEv.s.overlays, [k]: await uploadAsset(f.files[0], 'frame-' + k) }; renderOverlayRows(); $('#prevLayout').value = k; refreshPreview(); toast('Frame uploaded. Press Save.'); } catch (err) { toast(err.message, 4000); } };
+    f.click();
+  }
+  if (b.dataset.a === 'rm') { const o = { ...editEv.s.overlays }; delete o[k]; editEv.s.overlays = o; renderOverlayRows(); refreshPreview(); }
+};
+$('#bgUp').onclick = () => $('#bgFile').click();
+$('#bgFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { editEv.s.bgImage = await uploadAsset(f, 'background'); renderOverlayRows(); refreshPreview(); } catch (err) { toast(err.message, 4000); } };
+$('#bgRm').onclick = () => { editEv.s.bgImage = ''; renderOverlayRows(); refreshPreview(); };
+async function refreshPreview() {
+  readEditor();
+  const d = await renderDesign({ ...editEv.s, name: editEv.name, eventDate: editEv.event_date }, $('#prevLayout').value, null);
+  const c = $('#prevCanvas'); c.width = d.width; c.height = d.height; c.getContext('2d').drawImage(d, 0, 0);
+}
+$('#prevLayout').onchange = refreshPreview;
+$('#editor').addEventListener('change', e => { if (e.target.matches('[data-k],[data-layout],#edName,#edDate')) refreshPreview(); });
+$('#edSave').onclick = async () => {
+  readEditor();
+  try {
+    check(await sb.from('events').update({ name: editEv.name, event_date: editEv.event_date, settings: editEv.s, updated_at: new Date().toISOString() }).eq('id', editEv.id));
+    await loadEvents(); renderEvents(); announceEventUpdate();
+    $('#edTitle').textContent = 'Edit: ' + editEv.name;
+    toast(editEv.id === ACTIVE.id ? 'Saved — the tablet has been updated' : 'Saved');
+  } catch (e) { toast(e.message, 4000); }
+};
+$('#edActivate').onclick = async () => { await $('#edSave').onclick(); await setActive(editEv.id); renderEvents(); $('#edActivate').hidden = true; toast('This event is now active on the tablet'); };
+
+/* ---- Gallery ---- */
+async function loadGallery(id) {
+  galEvent = (EVENTS.find(e => e.id === id) || ACTIVE).id;
+  $('#gPick').innerHTML = EVENTS.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join(''); $('#gPick').value = galEvent;
+  const link = `${GALLERY_URL}?e=${encodeURIComponent(galEvent)}`;
+  $('#gLink').value = link; $('#gOpen').href = link; qr($('#gQr'), link, 120);
+  try {
+    galPhotos = check(await sb.from('photos').select('*').eq('event_id', galEvent).eq('owner', USER.id).order('created_at', { ascending: false }));
+    const printed = galPhotos.reduce((a, p) => a + (p.printed || 0), 0);
+    $('#gInfo').textContent = `${galPhotos.length} sessions · ${printed} prints`;
+    $('#gal').innerHTML = galPhotos.length ? galPhotos.map((p, i) => `<button type="button" data-i="${i}"><img src="${fileUrl(p.thumb_path)}" loading="lazy" alt="Photo ${galPhotos.length - i}"><small>#${galPhotos.length - i} · ${new Date(p.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}${p.printed ? ` · printed ${p.printed}×` : ''}</small></button>`).join('') : '<p class="hint">No photos yet. They appear here as soon as guests use the booth.</p>';
+  } catch (e) { toast(e.message, 4000); }
+}
+$('#gPick').onchange = () => loadGallery($('#gPick').value);
+$('#gCopy').onclick = async () => { try { await navigator.clipboard.writeText($('#gLink').value); toast('Link copied'); } catch (e) { $('#gLink').select(); } };
+$('#gal').onclick = e => {
+  const b = e.target.closest('button[data-i]'); if (!b) return;
+  pmPhoto = galPhotos[+b.dataset.i];
+  $('#pmImg').src = fileUrl(pmPhoto.path); $('#pmOpen').href = fileUrl(pmPhoto.path);
+  $('#photoModal').classList.add('on');
+};
+$('#pmClose').onclick = () => $('#photoModal').classList.remove('on');
+$('#pmPrint').onclick = async () => {
+  try { const ev = EVENTS.find(x => x.id === galEvent); check(await sb.from('print_jobs').insert({ event_id: galEvent, photo_id: pmPhoto.id, path: pmPhoto.path, copies: Math.max(1, Math.min(10, +$('#pmCopies').value || 1)), label: `${ev ? ev.name : ''} · reprint` })); toast('Sent to the printer'); }
+  catch (e) { toast(e.message, 4000); }
+};
+$('#pmDel').onclick = async () => {
+  if (!confirm('Delete this photo from the gallery?')) return;
+  try { await sb.storage.from('photos').remove([pmPhoto.path, pmPhoto.thumb_path]); check(await sb.from('photos').delete().eq('id', pmPhoto.id)); $('#photoModal').classList.remove('on'); loadGallery(galEvent); }
+  catch (e) { toast(e.message, 4000); }
+};
+$('#gZip').onclick = async () => {
+  if (!galPhotos.length) return toast('No photos to download yet.');
+  if (!window.JSZip) return toast('ZIP download is not available right now.');
+  const b = $('#gZip'); b.disabled = true;
+  try {
+    const zip = new JSZip(); let n = 0;
+    for (const p of galPhotos.slice().reverse()) { n++; b.textContent = `Preparing ${n}/${galPhotos.length}…`; zip.file(`photo-${String(n).padStart(3, '0')}.jpg`, await (await fetch(fileUrl(p.path))).blob()); }
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const ev = EVENTS.find(x => x.id === galEvent); const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `${(ev ? ev.name : 'event').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'event'}.zip`; a.click();
+  } catch (e) { toast('Download failed: ' + e.message, 4000); }
+  b.disabled = false; b.textContent = 'Download all (ZIP)';
+};
+
+/* ---- Printer (this laptop) ---- */
+let printBusy = false;
+$('#pOn').onchange = () => { store.set('printer', $('#pOn').checked); printerUi(); track(); runPrinter(); };
+async function loadStation() {
+  const r = await sb.from('station_settings').select('*').eq('owner', USER.id).maybeSingle();
+  station = r.data || null;
+  if (!station) { const ins = await sb.from('station_settings').insert({}).select().single(); station = ins.data || { media_capacity: 700, printed_since_reset: 0 }; }
+  const cap = station.media_capacity || 700, left = Math.max(0, cap - (station.printed_since_reset || 0));
+  $('#pCounter').textContent = `${left} / ${cap} sheets left`; $('#dPaper').textContent = left; $('#pCap').value = cap;
+  const pct = Math.max(0, Math.min(100, left / cap * 100));
+  $('#pBar').style.width = pct + '%'; $('#pBar').style.background = pct < 10 ? 'var(--bad)' : pct < 25 ? 'var(--warn)' : 'var(--ok)';
+}
+$('#pCapSave').onclick = async () => { check(await sb.from('station_settings').update({ media_capacity: Math.max(1, +$('#pCap').value || 700) }).eq('owner', USER.id)); loadStation(); toast('Saved'); };
+$('#pReset').onclick = async () => { if (!confirm('Reset the paper counter for a new roll?')) return; check(await sb.from('station_settings').update({ printed_since_reset: 0 }).eq('owner', USER.id)); loadStation(); };
+async function loadQueue() {
+  try {
+    const jobs = check(await sb.from('print_jobs').select('*').eq('owner', USER.id).order('created_at', { ascending: false }).limit(50));
+    const cls = { waiting: 'pill', printing: 'pill blue', done: 'pill ok', failed: 'pill bad', cancelled: 'pill' };
+    $('#qBody').innerHTML = jobs.length ? jobs.map(j => `<tr><td>${new Date(j.created_at).toLocaleTimeString('en-GB')}</td><td>${esc(j.label)}${j.error ? `<div class="hint" style="color:#ffb3c0">${esc(j.error)}</div>` : ''}</td><td>${j.copies}</td><td><span class="${cls[j.status] || 'pill'}">${esc(j.status)}</span></td>
+      <td>${['failed', 'cancelled', 'printing'].includes(j.status) ? `<button type="button" class="sm" data-q="retry" data-id="${j.id}">Print again</button>` : ''}${j.status === 'waiting' ? `<button type="button" class="sm" data-q="cancel" data-id="${j.id}">Cancel</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="5" class="hint">No print jobs yet.</td></tr>';
+  } catch (e) {}
+}
+$('#qRefresh').onclick = loadQueue;
+$('#qBody').onclick = async e => {
+  const b = e.target.closest('[data-q]'); if (!b) return;
+  try {
+    if (b.dataset.q === 'retry') check(await sb.from('print_jobs').update({ status: 'waiting', error: '', updated_at: new Date().toISOString() }).eq('id', b.dataset.id));
+    else check(await sb.from('print_jobs').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', b.dataset.id).eq('status', 'waiting'));
+    loadQueue(); runPrinter();
+  } catch (err) { toast(err.message, 4000); }
+};
+$('#pTest').onclick = async () => {
+  const c = document.createElement('canvas'); c.width = 1200; c.height = 1800; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, 1200, 1800); x.strokeStyle = '#000'; x.lineWidth = 6; x.strokeRect(12, 12, 1176, 1776);
+  x.fillStyle = '#000'; x.textAlign = 'center'; x.font = 'bold 80px system-ui'; x.fillText('TEST PRINT', 600, 840); x.font = '44px system-ui'; x.fillText('4x6 inch · 1200x1800', 600, 930); x.fillText(new Date().toLocaleString('en-GB'), 600, 1000);
+  try { await printImage(c.toDataURL('image/jpeg', .95), 1); } catch (e) { toast(e.message, 4000); }
+};
+async function printImage(src, copies) {
+  const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('Could not download the photo to print')); i.src = src; });
+  let url = src;
+  if (img.naturalWidth > img.naturalHeight) { // landscape -> rotate onto portrait 4x6 paper
+    const c = document.createElement('canvas'); c.width = img.naturalHeight; c.height = img.naturalWidth;
+    const x = c.getContext('2d'); x.translate(c.width, 0); x.rotate(Math.PI / 2); x.drawImage(img, 0, 0); url = c.toDataURL('image/jpeg', .95);
+  } else if (!src.startsWith('data:')) { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); url = c.toDataURL('image/jpeg', .95); }
+  const area = $('#printArea'); area.innerHTML = '';
+  for (let i = 0; i < Math.max(1, copies); i++) { const im = new Image(); im.src = url; im.alt = ''; area.appendChild(im); }
+  await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
+  await sleep(120);
+  window.print();
+  await sleep(300); area.innerHTML = '';
+}
+async function runPrinter() {
+  if (!printerOn() || printBusy || !USER) return;
+  printBusy = true;
+  try {
+    for (;;) {
+      const next = check(await sb.from('print_jobs').select('*').eq('owner', USER.id).eq('status', 'waiting').order('created_at', { ascending: true }).limit(1));
+      if (!next.length || !printerOn()) break;
+      const job = next[0];
+      const claimed = check(await sb.from('print_jobs').update({ status: 'printing', updated_at: new Date().toISOString() }).eq('id', job.id).eq('status', 'waiting').select());
+      if (!claimed.length) continue; // another laptop took it
+      try {
+        await printImage(fileUrl(job.path), job.copies);
+        check(await sb.from('print_jobs').update({ status: 'done', error: '', updated_at: new Date().toISOString() }).eq('id', job.id));
+        if (job.photo_id) { const p = (await sb.from('photos').select('printed').eq('id', job.photo_id).maybeSingle()).data; if (p) await sb.from('photos').update({ printed: (p.printed || 0) + job.copies }).eq('id', job.photo_id); }
+        if (station) { station.printed_since_reset = (station.printed_since_reset || 0) + job.copies; await sb.from('station_settings').update({ printed_since_reset: station.printed_since_reset }).eq('owner', USER.id); }
+      } catch (e) {
+        await sb.from('print_jobs').update({ status: 'failed', error: e.message, updated_at: new Date().toISOString() }).eq('id', job.id);
+      }
+    }
+  } catch (e) { /* offline: try again on the next tick */ }
+  printBusy = false;
+  if ($('#s-printer').classList.contains('on')) { loadQueue(); loadStation(); }
+}
+setInterval(() => { if (ROLE === 'admin') runPrinter(); }, 10000);
+
+/* ---------------- Start ---------------- */
+(async () => {
+  const { data } = await sb.auth.getSession();
+  if (data && data.session) enter(data.session.user); else show('vLogin');
+  sb.auth.onAuthStateChange((ev, session) => {
+    if (ev === 'SIGNED_IN' && session && (!USER || USER.id !== session.user.id)) enter(session.user);
+    if (ev === 'SIGNED_OUT') { USER = null; show('vLogin'); }
+  });
+})();
+</script>
+</body>
+</html>
