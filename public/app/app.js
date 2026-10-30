@@ -55,7 +55,7 @@ function mergeStudio(d) {
 }
 const cachedStudio = store.get('studio', null);
 // Older saved setting 'laptop' (removed): use the Canon on the tablet
-function fixOldSettings(o) { if (o && o.capture && !/^(dslr|user|environment)$/.test(o.capture.camera)) o.capture.camera = 'dslr'; o.modes = { photo: true, gif: false, boom: false, video: false }; o.capture.photoGif = false; return o; }   // photos only for now
+function fixOldSettings(o) { if (o && o.capture && !/^(dslr|user|environment)$/.test(o.capture.camera)) o.capture.camera = 'dslr'; o.modes = { photo: true, gif: false, boom: false, video: false }; if (o && o.capture && o.capture.photoGif === undefined) o.capture.photoGif = true; return o; }   // photo mode only; the strip boomerang is optional
 if (cachedStudio) S = mergeStudio(cachedStudio);
 const DEFAULT_LOGO = sz => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="#ff5a26" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3 7M21 12l-7 3M12 21l-3-7M3 12l7-3"/></svg>`;
 function applyBrand() {
