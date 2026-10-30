@@ -43,7 +43,7 @@ const STUDIO_DEFAULT = {
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   modes: { photo: true, gif: true, boom: true, video: false },
-  capture: { res: '4k', camera: 'user', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true },
+  capture: { res: '4k', camera: 'dslr', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true },
   types: [],
 };
 let S = structuredClone(STUDIO_DEFAULT);
@@ -54,7 +54,7 @@ function mergeStudio(d) {
 }
 const cachedStudio = store.get('studio', null);
 // Older saved setting 'laptop' (removed): use the Canon on the tablet
-function fixOldSettings(o) { if (o && o.capture && o.capture.camera === 'laptop') o.capture.camera = 'dslr'; return o; }
+function fixOldSettings(o) { if (o && o.capture && !/^(dslr|user|environment)$/.test(o.capture.camera)) o.capture.camera = 'dslr'; o.modes = { photo: true, gif: false, boom: false, video: false }; o.capture.photoGif = false; return o; }   // photos only for now
 if (cachedStudio) S = mergeStudio(cachedStudio);
 const DEFAULT_LOGO = sz => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="#ff5a26" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3 7M21 12l-7 3M12 21l-3-7M3 12l7-3"/></svg>`;
 function applyBrand() {
