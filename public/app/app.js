@@ -408,7 +408,7 @@ async function dslrConnect(pick) {
           await sleep(1500);
           for (let i = 1; i <= 6 && !liveOk; i++) {
             try { await withTimeout(cam.capturePreviewAsBlob(), 12000, HUNG); liveOk = true; await camLog(`live view OK (check ${i})`); }
-            catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) { markLiveBroken(); throw e; } await camLog(`live view check ${i}: ${e.message}`); await sleep(1500); }
+            catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) { markLiveBroken(); throw e; } await camLog(`live view check ${i}: ${e.message}`); if (/I\/O/i.test(e.message)) await usbClearHalts('live view check'); await sleep(1500); }
           }
         }
         // No camera settings are changed here: the Canon is used exactly as it is set on the camera.
@@ -427,7 +427,7 @@ async function dslrConnect(pick) {
     }
     if (lastErr) throw new Error(dslrHelp(lastErr));
     dslr = { cam, canvas: $('#dslrView'), running: true, lastFrame: Date.now(), noLive: !liveOk };
-    if (liveOk) { showDslrView(); dslr.loopDone = dslrLoop(dslr); }
+    if (liveOk) { showDslrView(); await sleep(400); dslr.loopDone = dslrLoop(dslr); }
     else {
       // No live view from this Canon: guests see the tablet camera for framing, photos are still taken with the Canon.
       dslr.loopDone = dslrKeepAlive(dslr);
@@ -482,6 +482,22 @@ async function dslrAutoConnect() {
     await dslrConnect(false); return true;
   } catch (e) { return false; }
 }
+// After a failed USB transfer the camera's USB channel can stay blocked ("stalled"), and every later
+// request then waits forever. Clear the blocked channels of the Canon's photo interface so it answers again.
+async function usbClearHalts(why) {
+  let n = 0;
+  try {
+    for (const d of await navigator.usb.getDevices()) {
+      if (!d.opened || !d.configuration) continue;
+      for (const itf of d.configuration.interfaces) {
+        const alt = itf.alternate; if (!alt || alt.interfaceClass !== 6) continue;
+        for (const ep of alt.endpoints) if (ep.type === 'bulk') { try { await d.clearHalt(ep.direction, ep.endpointNumber); n++; } catch (e) {} }
+      }
+    }
+  } catch (e) {}
+  if (n) camLog(`cleared ${n} blocked USB channel${n > 1 ? 's' : ''}${why ? ' (' + why + ')' : ''}`);
+  return n;
+}
 // Switch the Canon's live view (back) on. Used after every photo and after an I/O problem.
 async function liveViewOn(d) {
   try { await withTimeout(d.cam.setConfigValue('viewfinder', true), 8000, 'The Canon live view stopped answering'); }
@@ -507,6 +523,7 @@ async function dslrLoop(d) {
       if (/stopped answering|did not answer/.test(e.message)) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }   // the library is stuck: recover (photos only next time)
       const msg = dslrHelp(e);
       if (dslrCrashed || ++fails > 12) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
+      if (/I\/O/i.test(e.message)) await usbClearHalts('live view');
       await sleep(1500);   // the Canon is busy: give it a moment
       try { await liveViewOn(d); } catch (e2) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }  // then switch its live view back on before asking again
     }
@@ -590,7 +607,7 @@ const DSLR_SHOT_HELP = 'The Canon did not take the photo in time. Usually it cou
 async function dslrFullPhoto(d) {
   const t0 = performance.now(); let f;
   try { f = await withTimeout(d.cam.captureImageAsFile(), 20000, DSLR_SHOT_HELP); }
-  catch (e) { LV.captures.push(`photo FAILED after ${((performance.now() - t0) / 1000).toFixed(1)} s: ${e.message.slice(0, 60)}`); camLog('Canon photo failed: ' + e.message.slice(0, 80)); throw e; }
+  catch (e) { if (/I\/O/i.test(e.message)) await usbClearHalts('photo'); LV.captures.push(`photo FAILED after ${((performance.now() - t0) / 1000).toFixed(1)} s: ${e.message.slice(0, 60)}`); camLog('Canon photo failed: ' + e.message.slice(0, 80)); throw e; }
   LV.captures.push(`photo ${(f.size / 1048576).toFixed(1)} MB in ${((performance.now() - t0) / 1000).toFixed(1)} s`); if (LV.captures.length > 10) LV.captures.shift();
   let bmp;
   try { bmp = await createImageBitmap(f, { resizeWidth: 4000, resizeQuality: 'high' }); }
