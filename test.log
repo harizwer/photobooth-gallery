@@ -1,0 +1,58 @@
+== Android 10 (large transfers) (transfer 524288, photo 2300000 bytes)
+  PASS connect: {"ok":true,"model":"Canon EOS 750D"}
+  PASS photos go to the tablet (capture destination = 4)
+  PASS camera told there is free space
+  PASS live view on: {"ok":true}
+  PASS 20 live view frames (20) in 47 ms
+  PASS live view sent to the tablet
+  PASS photo downloaded intact: {"ok":true,"id":1,"size":2300000,"ms":409}
+  PASS transfer complete sent
+  PASS live view resumes after the photo (5/5)
+  PASS recovers from a USB stall and live view continues (10/10, resets 1)
+  PASS focus failure reported: {"ok":false,"error":"The Canon could not focus, so it did not take the photo. Add more light, or focus once and switch the lens to MF. (0xA102)"}
+  PASS next photo works after a focus failure
+  PASS connect again reuses the open connection
+  PASS photo when unplugged gives an error: {"ok":false,"error":"The Canon is not connected."}
+  PASS connect when unplugged: {"ok":false,"error":"No Canon found"}
+  PASS connect after plugging back in
+  PASS live view after plugging back in
+  PASS disconnect closes the session
+== small transfers, photo exactly 4 x 1 MB (transfer 16384, photo 4194304 bytes)
+  PASS connect: {"ok":true,"model":"Canon EOS 750D"}
+  PASS photos go to the tablet (capture destination = 4)
+  PASS camera told there is free space
+  PASS live view on: {"ok":true}
+  PASS 20 live view frames (20) in 46 ms
+  PASS live view sent to the tablet
+  PASS photo downloaded intact: {"ok":true,"id":1,"size":4194304,"ms":407}
+  PASS transfer complete sent
+  PASS live view resumes after the photo (5/5)
+  PASS recovers from a USB stall and live view continues (10/10, resets 1)
+  PASS focus failure reported: {"ok":false,"error":"The Canon could not focus, so it did not take the photo. Add more light, or focus once and switch the lens to MF. (0xA102)"}
+  PASS next photo works after a focus failure
+  PASS connect again reuses the open connection
+  PASS photo when unplugged gives an error: {"ok":false,"error":"The Canon is not connected."}
+  PASS connect when unplugged: {"ok":false,"error":"No Canon found"}
+  PASS connect after plugging back in
+  PASS live view after plugging back in
+  PASS disconnect closes the session
+== photo size multiple of 512 (transfer 524288, photo 1536512 bytes)
+  PASS connect: {"ok":true,"model":"Canon EOS 750D"}
+  PASS photos go to the tablet (capture destination = 4)
+  PASS camera told there is free space
+  PASS live view on: {"ok":true}
+  PASS 20 live view frames (20) in 46 ms
+  PASS live view sent to the tablet
+  PASS photo downloaded intact: {"ok":true,"id":1,"size":1536512,"ms":402}
+  PASS transfer complete sent
+  PASS live view resumes after the photo (5/5)
+  PASS recovers from a USB stall and live view continues (10/10, resets 1)
+  PASS focus failure reported: {"ok":false,"error":"The Canon could not focus, so it did not take the photo. Add more light, or focus once and switch the lens to MF. (0xA102)"}
+  PASS next photo works after a focus failure
+  PASS connect again reuses the open connection
+  PASS photo when unplugged gives an error: {"ok":false,"error":"The Canon is not connected."}
+  PASS connect when unplugged: {"ok":false,"error":"No Canon found"}
+  PASS connect after plugging back in
+  PASS live view after plugging back in
+  PASS disconnect closes the session
+ALL PASSED
