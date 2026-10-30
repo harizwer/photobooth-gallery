@@ -475,6 +475,11 @@ async function dslrAutoConnect() {
     await dslrConnect(false); return true;
   } catch (e) { return false; }
 }
+// Switch the Canon's live view (back) on. Used after every photo and after an I/O problem.
+async function liveViewOn(d) {
+  try { await withTimeout(d.cam.setConfigValue('viewfinder', true), 8000, 'The Canon live view stopped answering'); }
+  catch (e) { if (/stopped answering/.test(e.message)) throw e; }
+}
 const LV = { frames: 0, since: 0, slowest: 0, lastMs: 0, errors: 0, lastErr: '', events: 0, captures: [] };   // live view stats for the camera report
 async function dslrLoop(d) {
   const x = d.canvas.getContext('2d'); let fails = 0, lastEvents = Date.now();
@@ -489,13 +494,14 @@ async function dslrLoop(d) {
       if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
       x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
       // Full speed while guests look at the camera; a gentle keep-alive while the start screen covers it
-      await sleep(document.hidden ? 600 : (ROLE === 'booth' && $('#b-attract').classList.contains('on')) ? 500 : 90);   // calm pace: easier on the USB link
+      await sleep(document.hidden ? 600 : (ROLE === 'booth' && $('#b-attract').classList.contains('on')) ? 400 : 15);   // as fast as the Canon allows while guests look at it
     } catch (e) {
       LV.errors++; LV.lastErr = e.message; camLog('live view problem: ' + e.message);
       if (/stopped answering|did not answer/.test(e.message)) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }   // the library is stuck: recover (photos only next time)
       const msg = dslrHelp(e);
-      if (dslrCrashed || ++fails > 20) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
-      await sleep(1000);   // a USB hiccup usually clears within a few seconds: retry calmly (about 20 s in total)
+      if (dslrCrashed || ++fails > 12) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
+      await sleep(1500);   // the Canon is busy: give it a moment
+      try { await liveViewOn(d); } catch (e2) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }  // then switch its live view back on before asking again
     }
   }
 }
@@ -526,7 +532,7 @@ async function dslrRecover(force) {
   tries.push(Date.now()); try { sessionStorage.setItem('pb.dslrReloads', JSON.stringify(tries)); sessionStorage.setItem('pb.dslrRecovering', '1'); } catch (e) {}
   await camLog('reloading the page to reconnect the Canon');
   busy('Reconnecting the Canon…');
-  if (dslrOld) { try { await withTimeout(dslrOld.disconnect(), 3000, 'x'); } catch (e) {} dslrOld = null; }
+  if (dslrOld && !B.session) { try { await withTimeout(dslrOld.disconnect(), 3000, 'x'); } catch (e) {} } dslrOld = null;
   await freeUsb(); setTimeout(() => location.reload(), 600);
 }
 /* Keep the Canon connected without anyone touching it:
@@ -596,7 +602,12 @@ async function capturePhoto() {
       else toast(e.message, 9000);
       return live;
     }
-    finally { d.pause = false; clearTimeout(slowMsg); }
+    finally {
+      clearTimeout(slowMsg);
+      // After a photo the Canon has turned its live view off: give it a moment, switch it back on, THEN resume
+      if (!d.noLive && dslr === d) { await sleep(700); try { await liveViewOn(d); } catch (e) {} }
+      d.pause = false;
+    }
   }
   return grabFrame();
 }
@@ -1323,7 +1334,7 @@ $('#testShot').onclick = async () => {
     const b = $('#testShot'); b.disabled = true; $('#testInfo').textContent = 'Taking a Canon photo…'; const t0 = performance.now();
     try { dslr.pause = true; const c = await dslrFullPhoto(dslr); $('#testInfo').textContent = `Canon photo: ${c.width} × ${c.height} · took ${((performance.now() - t0) / 1000).toFixed(1)} s`; }
     catch (e) { $('#testInfo').textContent = e.message; }
-    finally { dslr.pause = false; b.disabled = false; }
+    finally { if (dslr && !dslr.noLive) { await sleep(700); try { await liveViewOn(dslr); } catch (e) {} } if (dslr) dslr.pause = false; b.disabled = false; }
     return;
   }
   const v = $('#testVideo'); if (!v.videoWidth) return;
