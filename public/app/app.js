@@ -43,7 +43,7 @@ const STUDIO_DEFAULT = {
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   modes: { photo: true, gif: true, boom: true, video: false },
-  capture: { res: '4k', camera: 'user', mirror: true, quality: 95, countdown: 3, videoSec: 10, maxCopies: 3 },
+  capture: { res: '4k', camera: 'user', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3 },
   types: [],
 };
 let S = structuredClone(STUDIO_DEFAULT);
@@ -119,13 +119,14 @@ async function compose(d, shots, filter = 'none', opts = {}) {
     if (name) { fitText(x, name, fw * .86, Math.round(fh * (date ? .34 : .46)), font, 'italic 600'); x.fillText(name, fx + fw / 2, fy + fh * (date ? .4 : .5)); }
     if (date) { fitText(x, date, fw * .8, Math.round(fh * .15), 'Geist, system-ui, sans-serif'); x.fillText(date, fx + fw / 2, fy + fh * .74); }
   }
-  if (opts.qrText) {
-    const side = Math.round(Math.min(W, H) * (d.paper === 'strip' ? .2 : .11)), m = Math.round(side * .18), pad = Math.round(side * .08);
-    const qx = S.printQr.pos === 'bl' ? m : W - side - m, qy = H - side - m;
-    x.fillStyle = '#fff'; x.fillRect(qx - pad, qy - pad, side + pad * 2, side + pad * 2);
-    const q = qrCanvas(opts.qrText, 256); x.imageSmoothingEnabled = false; x.drawImage(q, qx, qy, side, side); x.imageSmoothingEnabled = true;
-  }
+  if (opts.qrText) drawPrintQr(x, W, H, d, opts.qrText);
   return c;
+}
+function drawPrintQr(x, W, H, d, text) {
+  const side = Math.round(Math.min(W, H) * (d.paper === 'strip' ? .2 : .11)), m = Math.round(side * .18), pad = Math.round(side * .08);
+  const qx = S.printQr.pos === 'bl' ? m : W - side - m, qy = H - side - m;
+  x.fillStyle = '#fff'; x.fillRect(qx - pad, qy - pad, side + pad * 2, side + pad * 2);
+  const q = qrCanvas(text, 256); x.imageSmoothingEnabled = false; x.drawImage(q, qx, qy, side, side); x.imageSmoothingEnabled = true;
 }
 // What goes on the 4x6 sheet: strips are printed twice side by side.
 function printCanvas(d, design) {
@@ -311,7 +312,7 @@ async function boothLoad() {
   boothStatus();
 }
 function boothStatus() {
-  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? 'Canon DSLR' : 'Tablet camera'}`;
+  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? 'Canon DSLR' : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
 }
 $('#bModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) startFlow(b.dataset.mode); });
 
@@ -411,6 +412,7 @@ function dslrRecover() {
   let tries = []; try { tries = JSON.parse(sessionStorage.getItem('pb.dslrReloads') || '[]').filter(t => Date.now() - t < 5 * 60e3); } catch (e) {}
   if (tries.length >= 3) { toast('The Canon keeps stopping. Switch it off and on, check the cable and focus (MF), then choose Canon DSLR in Staff → Camera. Using the tablet camera for now.', 15000); B.recoverDslr = false; return; }
   tries.push(Date.now()); try { sessionStorage.setItem('pb.dslrReloads', JSON.stringify(tries)); sessionStorage.setItem('pb.dslrRecovering', '1'); } catch (e) {}
+  if (UPLOADS.size) { tries.pop(); try { sessionStorage.setItem('pb.dslrReloads', JSON.stringify(tries)); } catch (e) {} return; }   // wait for uploads, the watchdog tries again
   busy('Reconnecting the Canon…'); setTimeout(() => location.reload(), 400);
 }
 // Idle watchdog: if the Canon freezes while nobody is using the booth, reconnect it right away.
@@ -501,7 +503,11 @@ async function startSession(design) {
         if (!(await countdown(me, `Photo ${i + 1} of ${n}`))) return;
         flash(); const c = await capturePhoto(); if (B.session !== me) return;
         me.shots.push(c); $('#b-count').textContent = '';
-        if (i < n - 1) { await sleep(900); if (B.session !== me) return; }
+        if (i < n - 1) {   // pause between photos, showing the one just taken
+          const g = +S.capture.gap, gap = (Number.isFinite(g) ? Math.max(0, g) : 1) * 1000;
+          if (gap) { $('#shotPrev').src = scaled(c, 900).toDataURL('image/jpeg', .8); $('#shotPrev').hidden = false; $('#shotInfo').textContent = `Next photo in a moment…`; await sleep(gap); $('#shotPrev').hidden = true; }
+          if (B.session !== me) return;
+        }
       }
     } else if (me.mode === 'gif') {
       if (!(await countdown(me, 'GIF · get ready to move!'))) return;
@@ -564,8 +570,8 @@ async function makeGif(frames) {
 async function renderSession() {
   const s = B.session, box = $('#reviewMedia');
   if (s.mode === 'photo') {
-    s.design_c = await compose(s.design, s.shots, s.filter, { name: ACTIVE.name, date: ACTIVE.event_date });
-    box.innerHTML = `<img class="media ${s.design.paper === 'landscape' ? 'wide' : ''}" alt="Your photo" src="${scaled(s.design_c, 1400).toDataURL('image/jpeg', .85)}">`;
+    const prev = await compose({ ...s.design, output_long: 1400 }, s.shots, s.filter, { name: ACTIVE.name, date: ACTIVE.event_date });
+    box.innerHTML = `<img class="media ${s.design.paper === 'landscape' ? 'wide' : ''}" alt="Your photo" src="${prev.toDataURL('image/jpeg', .85)}">`;
   } else {
     if (!s.media) {
       busy(s.mode === 'gif' ? 'Making your GIF…' : s.mode === 'boom' ? 'Making your boomerang…' : 'Preparing your video…');
@@ -578,7 +584,6 @@ async function renderSession() {
     const url = URL.createObjectURL(s.media);
     box.innerHTML = s.mode === 'gif' ? `<img class="media wide" alt="Your GIF" src="${url}">` : `<video class="media wide" src="${url}" autoplay loop muted playsinline></video>`;
   }
-  s.saved = null;
 }
 async function openReview() {
   const s = B.session;
@@ -604,51 +609,76 @@ $('#cMinus').onclick = () => { if (!B.session) return; B.session.copies = Math.m
 $('#cPlus').onclick = () => { if (!B.session) return; B.session.copies = Math.min(S.capture.maxCopies || 1, B.session.copies + 1); $('#cNum').textContent = B.session.copies; };
 function busy(msg) { $('#busy').hidden = !msg; if (msg) $('#busyMsg').textContent = msg; }
 async function upload(path, blob, type) { check(await sb.storage.from('photos').upload(path, blob, { contentType: type, upsert: true })); }
-async function savePhoto() {
-  const s = B.session; if (s.saved) return s.saved;
-  busy('Saving your photo…');
-  try {
-    const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ev = ACTIVE.id;
-    const row = { id, event_id: ev, kind: s.mode, share_token: token(), print_token: token(), path: `${ev}/${id}.jpg`, thumb_path: `${ev}/${id}-thumb.jpg`, layout: s.design ? s.design.name : s.mode };
-    let full;
+/* ---------- Saving: the guest gets the QR at once; files upload in the background ---------- */
+const UPLOADS = new Set();   // saves still running (they keep retrying if the internet drops)
+function uploadsChanged() { if (ROLE === 'booth') boothStatus(); }
+window.addEventListener('beforeunload', e => { if (UPLOADS.size) { e.preventDefault(); e.returnValue = ''; } });
+async function retry(fn, label) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) { if (i >= 2 && !/fetch|network|Failed|timeout|5\d\d/i.test(String(e.message))) throw e; await sleep(Math.min(15000, 1500 * (i + 1))); }
+  }
+}
+const jpeg = (c, q) => toBlob(c, 'image/jpeg', q);
+// Starts saving the session (once) and returns its row straight away; s.savePromise finishes when everything is uploaded.
+function startSave(s) {
+  if (s.row) return s.row;
+  const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ev = ACTIVE.id, evName = ACTIVE.name, evDate = ACTIVE.event_date;
+  const row = s.row = { id, event_id: ev, kind: s.mode, share_token: token(), print_token: token(), path: `${ev}/${id}.jpg`, thumb_path: `${ev}/${id}-thumb.jpg`, layout: s.design ? s.design.name : s.mode };
+  if (s.mode === 'photo') row.print_path = `${ev}/${id}-print.jpg`;
+  const q = (S.capture.quality || 95) / 100, qrOn = !!S.printQr.on;
+  const job = (async () => {
+    await sleep(30);   // let the "Thank you" screen appear first
+    let full; const work = [];
     if (s.mode === 'photo') {
-      const withQr = S.printQr.on ? await compose(s.design, s.shots, s.filter, { name: ACTIVE.name, date: ACTIVE.event_date, qrText: `${SITE}?q=${row.print_token}` }) : s.design_c;
-      full = s.design_c;
-      row.print_path = `${ev}/${id}-print.jpg`;
-      await upload(row.print_path, await toBlob(printCanvas(s.design, withQr), 'image/jpeg', (S.capture.quality || 95) / 100), 'image/jpeg');
+      full = await compose(s.design, s.shots, s.filter, { name: evName, date: evDate });
+      let sheet = full;
+      if (qrOn) { sheet = document.createElement('canvas'); sheet.width = full.width; sheet.height = full.height; const x = sheet.getContext('2d'); x.drawImage(full, 0, 0); drawPrintQr(x, full.width, full.height, s.design, `${SITE}?q=${row.print_token}`); }
+      const printBlob = await jpeg(printCanvas(s.design, sheet), q);
+      work.push(retry(() => upload(row.print_path, printBlob, 'image/jpeg')));
     } else {
       full = s.poster;
       const ext = s.media.type === 'image/gif' ? 'gif' : s.media.type === 'video/mp4' ? 'mp4' : 'webm';
       row.media_path = `${ev}/${id}.${ext}`;
-      await upload(row.media_path, s.media, s.media.type);
+      work.push(retry(() => upload(row.media_path, s.media, s.media.type)));
     }
-    await upload(row.path, await toBlob(full, 'image/jpeg', (S.capture.quality || 95) / 100), 'image/jpeg');
-    await upload(row.thumb_path, await toBlob(scaled(full, 520), 'image/jpeg', .78), 'image/jpeg');
-    check(await sb.from('photos').insert(row));
-    s.saved = row; return row;
-  } finally { busy(false); }
+    const [fullBlob, thumbBlob] = await Promise.all([jpeg(full, q), jpeg(scaled(full, 520), .78)]);
+    work.push(retry(() => upload(row.path, fullBlob, 'image/jpeg')), retry(() => upload(row.thumb_path, thumbBlob, 'image/jpeg')));
+    await Promise.all(work);                                   // uploads run side by side
+    await retry(async () => { const r = await sb.from('photos').insert(row); if (r.error && !/duplicate/i.test(r.error.message)) throw new Error(r.error.message); });
+    s.shots = null;                                            // free memory
+    return row;
+  })();
+  UPLOADS.add(job); uploadsChanged();
+  s.savePromise = job.finally(() => { UPLOADS.delete(job); uploadsChanged(); });
+  s.savePromise.catch(e => toast('A photo could not be saved: ' + e.message, 8000));
+  return row;
 }
 function netMsg(e) { const m = String(e && e.message || e); return /fetch|network|Failed/i.test(m) ? 'The tablet has no internet connection. Check the WiFi, then tap Try again.' : m; }
 async function doPrint() {
   const s = B.session; if (!s || s.printed) return;
-  $('#printBtn').disabled = true; clearInterval(B.reviewT);
+  s.printed = true; $('#printBtn').disabled = true; clearInterval(B.reviewT);
+  startSave(s);
+  openDone('Getting your print ready…', true);
+  const copies = s.copies, label = `${ACTIVE.name} · ${s.design.name}`, ev = ACTIVE.id;
   try {
-    const saved = await savePhoto();
-    const job = check(await sb.from('print_jobs').insert({ event_id: ACTIVE.id, photo_id: saved.id, path: saved.print_path || saved.path, copies: s.copies, label: `${ACTIVE.name} · ${s.design.name}` }).select().single());
-    s.printed = true; s.jobId = job.id;
-    openDone(printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.', true);
-  } catch (e) { $('#printBtn').disabled = false; showErr('Could not save your photo', netMsg(e), () => doPrint(), () => openReview()); }
+    const row = await s.savePromise;
+    const job = await retry(async () => check(await sb.from('print_jobs').insert({ event_id: ev, photo_id: row.id, path: row.print_path || row.path, copies, label }).select().single()));
+    s.jobId = job.id;
+    if (B.session === s && $('#b-done').classList.contains('on')) { $('#printMsg').textContent = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.'; $('#printBar').style.width = '30%'; }
+  } catch (e) { if (B.session === s) $('#printMsg').textContent = 'Could not send the print. Please call the attendant.'; }
 }
-async function finish() {
+function finish() {
   clearInterval(B.reviewT);
-  try { await savePhoto(); openDone(B.session.mode === 'photo' ? 'Your photo is saved.' : 'Saved!', false); }
-  catch (e) { showErr('Could not save', netMsg(e), () => finish(), goHome); }
+  const s = B.session; if (!s) return;
+  startSave(s);
+  openDone(s.mode === 'photo' ? 'Your photo is saved.' : 'Saved!', false);
 }
 function openDone(status, printing) {
   const s = B.session; clearInterval(B.reviewT);
-  $('#printMsg').textContent = status; $('#printBarWrap').hidden = !printing; $('#printBar').style.width = printing ? '15%' : '0';
-  $('#gqrBox').hidden = !(s && s.saved);
-  if (s && s.saved) qr($('#guestQr'), shareLink(s.saved), 200);
+  $('#printMsg').textContent = status; $('#printBarWrap').hidden = !printing; $('#printBar').style.width = printing ? '10%' : '0';
+  $('#gqrBox').hidden = !(s && s.row);
+  if (s && s.row) qr($('#guestQr'), shareLink(s.row), 200);
   bscreen('b-done');
   let left = 30; const tick = () => $('#doneTimer').textContent = `Going back automatically in ${left}s`;
   tick(); clearInterval(B.doneT); B.doneT = setInterval(() => { left--; tick(); if (left <= 0) goHome(); }, 1000);
@@ -1072,7 +1102,7 @@ function renderModes() {
 function renderCaptureForm() {
   const c = S.capture;
   $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
-  $('#capCount').value = c.countdown; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
+  $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState();
 }
 function renderDslrState() { $('#dslrState').textContent = dslr ? 'Connected' : 'Not connected'; $('#dslrState').className = 'chip' + (dslr ? '' : ' mute'); $('#dslrTest').disabled = !dslr; if (dslr) $('#capCam').value = 'dslr'; }
@@ -1081,7 +1111,7 @@ $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
 $('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
-  Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
+  Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
 };
 let testStream = null;

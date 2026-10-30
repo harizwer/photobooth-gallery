@@ -100,7 +100,13 @@ async function save(item) {
 const fmtDate = d => d || '';
 
 async function showOne(tok) {
-  const d = await rpc('get_shared_photo', { tok });
+  let d = await rpc('get_shared_photo', { tok });
+  // Just taken? The booth may still be uploading it: wait up to ~40 s.
+  for (let i = 0; !d && i < 20; i++) {
+    message('Getting your photo ready…', 'It was just taken and is still uploading. This takes a few seconds.', false);
+    $('#main .msg').insertAdjacentHTML('afterbegin', '<div class="spin" aria-hidden="true"></div>');
+    await new Promise(r => setTimeout(r, 2000)); d = await rpc('get_shared_photo', { tok });
+  }
   if (!d) { studio(null); return message('Photo not found', 'This link is not valid any more. Ask the photobooth team if you still need your photo.'); }
   studio(d.studio); $('#eyebrow').textContent = 'Your photo from'; $('#title').textContent = d.event || ''; $('#date').textContent = fmtDate(d.date);
   if (d.expired) return message('This link has expired', 'Photo links on prints work for 24 hours. Ask the photobooth team if you still need your photo.');

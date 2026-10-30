@@ -274,3 +274,6 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .anum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .anum label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted)}
 .anum .in{height:32px;padding:0 8px;font-size:12px}
+#shotPrev{position:absolute;inset:0;margin:auto;max-width:86%;max-height:78%;object-fit:contain;border:8px solid #fff;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.7);z-index:2;animation:pop .25s ease-out}
+@keyframes pop{from{transform:scale(.92);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){#shotPrev{animation:none}}

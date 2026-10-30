@@ -193,6 +193,7 @@
           <label class="tog">Mirror the live preview (like a mirror)<input type="checkbox" id="capMirror"></label>
           <label class="field" for="capQ">Photo quality <span class="mono" id="capQv">95%</span><input type="range" id="capQ" min="70" max="100" value="95" style="accent-color:var(--accent)"></label>
           <label class="field" for="capCount">Countdown (seconds)<input class="in mono" type="number" id="capCount" min="1" max="10" value="3"></label>
+          <label class="field" for="capGap">Time between photos (seconds) — guests see the photo just taken<input class="in mono" type="number" id="capGap" min="0" max="10" step="0.5" value="2"></label>
           <label class="field" for="capVid">Video length (seconds)<input class="in mono" type="number" id="capVid" min="3" max="30" value="10"></label>
           <label class="field" for="capCopies">Most copies a guest can print<input class="in mono" type="number" id="capCopies" min="1" max="10" value="3"></label>
           <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">If a tablet camera can't record 4K, the booth uses its highest resolution.</div>
@@ -368,7 +369,7 @@
       <button class="btn rbtn" id="pickBack" style="padding:0 30px">← Back</button>
     </div>
   </div>
-  <div class="bs" id="b-shoot"><div class="shotinfo" id="shotInfo"></div><div id="b-count"></div><div class="flash" id="flash"></div><button class="btn ghost" id="cancelShoot" style="position:absolute;top:16px;left:16px">✕ Cancel</button></div>
+  <div class="bs" id="b-shoot"><img id="shotPrev" alt="The photo just taken" hidden><div class="shotinfo" id="shotInfo"></div><div id="b-count"></div><div class="flash" id="flash"></div><button class="btn ghost" id="cancelShoot" style="position:absolute;top:16px;left:16px">✕ Cancel</button></div>
   <div class="bs" id="b-review">
     <div id="reviewMedia"></div>
     <div class="rp">
