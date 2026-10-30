@@ -43,7 +43,7 @@ const STUDIO_DEFAULT = {
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   modes: { photo: true, gif: true, boom: true, video: false },
-  capture: { res: '4k', camera: 'auto', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true },
+  capture: { res: '4k', camera: 'user', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true },
   types: [],
 };
 let S = structuredClone(STUDIO_DEFAULT);
@@ -54,7 +54,7 @@ function mergeStudio(d) {
 }
 const cachedStudio = store.get('studio', null);
 // Older saved setting 'laptop' (removed): use the Canon on the tablet
-function fixOldSettings(o) { if (o && o.capture && !/^(auto|user|environment)$/.test(o.capture.camera)) o.capture.camera = 'auto'; o.modes = { photo: true, gif: false, boom: false, video: false }; o.capture.photoGif = false; return o; }   // photos only for now
+function fixOldSettings(o) { if (o && o.capture && o.capture.camera === 'laptop') o.capture.camera = 'dslr'; return o; }
 if (cachedStudio) S = mergeStudio(cachedStudio);
 const DEFAULT_LOGO = sz => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="#ff5a26" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3 7M21 12l-7 3M12 21l-3-7M3 12l7-3"/></svg>`;
 function applyBrand() {
@@ -312,62 +312,315 @@ async function boothLoad() {
   $('#bModes').innerHTML = list.length === 1
     ? `<button class="bmode first" data-mode="${list[0]}">Touch to start</button>`
     : list.map((m, i) => `<button class="bmode ${i === 0 ? 'first' : ''}" data-mode="${m}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m][1]}</svg>${MODE_INFO[m][0]}</button>`).join('');
-  $('#live').classList.toggle('mirror', !!S.capture.mirror);
+  $('#live').classList.toggle('mirror', !!S.capture.mirror); $('#dslrView').classList.toggle('mirror', false);
   boothStatus();
 }
 function boothStatus() {
-  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${B.stream ? (isExternal((B.stream.getVideoTracks()[0] || {}).label) ? 'Capture card (Canon)' : 'Tablet camera') : 'Camera off'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
+  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR ready · preview: tablet camera' : 'Canon DSLR · live view') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
 }
 $('#bModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) startFlow(b.dataset.mode); });
 
-/* ---------- Camera ----------
-   The booth uses a normal camera stream: the Canon through an HDMI-to-USB capture card (it shows up as a
-   camera), or the tablet's own camera. "Auto" picks the capture card whenever it is plugged in. */
-const MAXRES = [3840, 2160];
-const isExternal = label => /external|usb|uvc|capture|hdmi|cam ?link|video/i.test(label || '') && !/front|back|rear|facing (front|back)/i.test(label || '');
+/* ---------- Camera: tablet camera or Canon DSLR over USB ---------- */
+const MAXRES = [4096, 2160];   // ask for the best the camera can do; the device gives its highest
+let dslr = null; // { cam, canvas, running }
 function stopCamera() { if (B.stream) B.stream.getTracks().forEach(t => t.stop()); B.stream = null; }
-async function listCameras() { try { return (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) { return []; } }
-async function openStream(video) { return navigator.mediaDevices.getUserMedia({ audio: false, video: { ...video, width: { ideal: MAXRES[0] }, height: { ideal: MAXRES[1] }, frameRate: { ideal: 60 } } }); }
-// Opens the camera for this device: the one chosen in Staff → Camera, else Auto (capture card first, then front camera).
-async function openBestCamera() {
-  const chosen = store.get('camDevice', '');
-  if (chosen && chosen !== 'auto' && chosen !== 'user' && chosen !== 'environment') { try { return await openStream({ deviceId: { exact: chosen } }); } catch (e) {} }
-  if (chosen === 'user' || chosen === 'environment') { try { return await openStream({ facingMode: chosen }); } catch (e) {} }
-  // Auto: labels are only known after camera permission, so open something first, then switch to the capture card if there is one
-  let stream = null; try { stream = await openStream({ facingMode: 'user' }); } catch (e) { stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true }); }
-  const ext = (await listCameras()).find(d => isExternal(d.label));
-  if (ext && stream.getVideoTracks()[0].getSettings().deviceId !== ext.deviceId) {
-    try { const s2 = await openStream({ deviceId: { exact: ext.deviceId } }); stream.getTracks().forEach(t => t.stop()); return s2; } catch (e) {}
-  }
-  return stream;
-}
-function camLabel() { const t = B.stream && B.stream.getVideoTracks()[0]; if (!t) return ''; const st = t.getSettings(); return `${t.label || 'Camera'} · ${st.width || '?'} × ${st.height || '?'}${st.frameRate ? ' · ' + Math.round(st.frameRate) + ' fps' : ''}`; }
 async function startCamera() {
+  if (dslr && dslr.running && !dslr.noLive) { showDslrView(); return; }   // a connected Canon always wins
   stopCamera();
-  try { B.stream = await openBestCamera(); }
-  catch (e) { return showErr('Cannot open the camera', 'Allow camera access for this website in the browser settings. If you use the capture card, check it is plugged in and the Canon is on and showing its picture (Live View). Then tap Try again.', () => startCamera(), () => {}); }
-  const v = $('#live'); v.hidden = false; v.srcObject = B.stream; await v.play().catch(() => {});
-  B.stream.getVideoTracks()[0].addEventListener('ended', () => { if (ROLE === 'booth') { toast('The camera was disconnected. Reconnecting…', 5000); setTimeout(startCamera, 1500); } });
+  if (S.capture.camera === 'dslr' && !(dslr && dslr.running)) {
+    if (await dslrAutoConnect()) return;
+    if (!dslrCrashed) toast('Canon DSLR not connected. Using the tablet camera. Open Staff → Camera to connect it.', 5000);
+  }
+  const pref = S.capture.camera === 'dslr' ? 'user' : (store.get('camDevice', '') || S.capture.camera || 'user');
+  const [w, h] = MAXRES;
+  const base = pref === 'user' || pref === 'environment' ? { facingMode: pref } : { deviceId: { exact: pref } };
+  try {
+    B.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...base, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
+  } catch (e) {
+    try { B.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true }); }
+    catch (e2) { return showErr('Cannot open the camera', 'Allow camera access for this website in the browser settings, then tap Try again.', () => startCamera(), () => {}); }
+  }
+  const v = $('#live'); v.hidden = false; $('#dslrView').hidden = true; v.srcObject = B.stream; await v.play().catch(() => {});
   if (ROLE === 'booth') boothStatus();
 }
-// A replugged capture card: open it again by itself
-if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', () => { if (ROLE === 'booth' && !B.session) setTimeout(startCamera, 1200); });
-// One full-resolution frame from the camera. The preview may be mirrored like a mirror; the photo is saved the right way round.
+function showDslrView() { stopCamera(); $('#live').hidden = true; $('#dslrView').hidden = false; if (ROLE === 'booth') boothStatus(); }
+function dslrSupported() { return !!navigator.usb && window.crossOriginIsolated; }
+// The camera library can only hold ONE connection per page. After it crashes, only a page reload clears it.
+let dslrLib = null, dslrBusy = null, dslrCrashed = false;
+const isWindows = /Windows/i.test(navigator.userAgent), isAndroid = /Android/i.test(navigator.userAgent);
+function dslrHelp(e) {
+  const m = String(e && e.message || e);
+  const crash = (e && e.constructor && e.constructor.name === 'RuntimeError') || /memory access|out of bounds|unreachable|table index/i.test(m);
+  if (crash) dslrCrashed = true;
+  if (/No device selected|NotFoundError/i.test(m)) return 'No camera was chosen. Tap Connect again and pick the Canon in the list.';
+  if (/I\/O|claim|busy|access denied|SecurityError|NetworkError/i.test(m)) return 'The tablet could not take control of the Canon\'s USB connection (' + m + '). Another app on the tablet is probably holding the Canon. When Android shows “Choose an app for the USB device”, do NOT pick any app: press Back to close it. Force stop (or disable) OurBooth, Photos and MTP Host in Settings → Apps, and clear any “Always” default there. Then unplug the cable, plug it back in, close the pop-up with Back, reload this page and tap Connect once.';
+  const steps = isWindows
+    ? 'On a Windows laptop the camera needs the WinUSB driver first: install Zadig (zadig.akeo.ie), choose the Canon EOS 750D, pick WinUSB, click Replace Driver. Then reload this page.'
+    : 'When Android asks “Choose an app for the USB device”, press Back — do not pick Gallery, Photos, MTP Host or OurBooth. Force stop OurBooth and Photos in Settings → Apps. On the camera: Wi-Fi off, dial on P or M, power switch on ON (not video), lens on.';
+  return (crash ? 'The camera connection crashed. ' : 'Could not connect to the camera (' + m + '). ') + 'Unplug the USB cable, switch the camera off and on, plug it back in, reload this page, then tap Connect once. ' + steps;
+}
+async function dslrConnect(pick) {
+  if (!navigator.usb) throw new Error('This browser cannot use USB devices. Use Chrome on an Android tablet (iPad is not supported).');
+  if (!window.crossOriginIsolated) throw new Error('Open the booth from the Cloudflare address of this website to use the DSLR.');
+  if (dslrCrashed) throw new Error('Reload this page first (the camera connection crashed earlier), then tap Connect once.');
+  if (dslr && dslr.running) { if (!dslr.noLive) showDslrView(); return dslr.cam; }   // already connected: never open a second connection
+  if (dslrBusy) return dslrBusy;                       // a connect is already in progress
+  dslrBusy = (async () => {
+    CAMLOG.push('—'); await camLog(pick ? 'tapped Connect' : 'automatic reconnect');
+    if (pick) { try { sessionStorage.removeItem('pb.liveBroken'); sessionStorage.setItem('pb.dslrReloads', '[]'); } catch (e) {} }   // a manual Connect always starts fresh
+    try { if (!dslrLib) dslrLib = await import('../vendor/gphoto2/camera.js'); await camLog('camera library loaded'); }
+    catch (e) { await camLog('camera library failed to load: ' + e.message); throw new Error('The camera part of the website did not load. Check the internet and reload the page. (' + e.message + ')'); }
+    if (pick) {
+      await camLog('opening Chrome camera list');
+      try { await dslrLib.Camera.showPicker(); await camLog('camera chosen in the list'); }
+      catch (e) {
+        await camLog('camera list: ' + e.name + ': ' + e.message);
+        if (/No device selected|NotFoundError/i.test(e.name + e.message)) throw new Error('No camera was chosen. If the Chrome list was EMPTY, the tablet cannot see the Canon at all: check the OTG adapter and cable (try another one), turn on "OTG" in the tablet settings if it has that option, and make sure the Canon is switched on. If the Canon was in the list, tap it, then tap Connect.');
+        throw new Error(dslrHelp(e));
+      }
+    }
+    handedOff = false;
+    // Up to 3 tries. Before each one, free the camera from anything still holding it
+    // (another tab of this site, or a USB handle left open by an earlier connection).
+    let cam = null, lastErr = null, liveOk = false;
+    await releaseOtherTabs();
+    await camLog('connecting');
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (attempt > 1) setDslrMsg(`Connecting to the Canon… (try ${attempt} of 3)`);
+      await freeUsb();
+      cam = new dslrLib.Camera();
+      try {
+        // Every step has a time limit: a Canon that never answers must not freeze the booth.
+        await withTimeout(cam.connect(), 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
+        // Canon live view over this kind of USB link is unreliable (it freezes the Canon), while Canon photos are reliable.
+        // So the preview always comes from the tablet camera and the Canon only takes the photos.
+        const wantLive = S.capture.canonLive === true && !liveIsBroken();
+        if (!wantLive) await camLog('Canon takes the photos; preview from the tablet camera');
+        if (wantLive) {
+          // Start live view FIRST, before changing any camera setting (a Canon busy with a setting answers "I/O problem").
+          // It takes a moment to start (the mirror flips up), so wait, then give the first picture plenty of time.
+          try { await withTimeout(cam.setConfigValue('viewfinder', true), 8000, HUNG); await camLog('live view switched on'); } catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog('live view switch: ' + e.message); }
+          await sleep(1500);
+          for (let i = 1; i <= 6 && !liveOk; i++) {
+            try { await withTimeout(cam.capturePreviewAsBlob(), 12000, HUNG); liveOk = true; await camLog(`live view OK (check ${i})`); }
+            catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) { markLiveBroken(); throw e; } await camLog(`live view check ${i}: ${e.message}`); await sleep(1500); }
+          }
+        }
+        // No camera settings are changed here: the Canon is used exactly as it is set on the camera.
+        break;   // connected: with or without live view
+      }
+      catch (e) {
+        await camLog(`try ${attempt}: ${(e && e.constructor && e.constructor.name) || 'Error'}: ${e && e.message}`);
+        if (e.message === HUNG) {   // the library is now stuck waiting for the Canon: only a fresh page clears it
+          dslrCrashed = true; B.recoverDslr = true; lastErr = e; cam = null;
+          throw new Error('The Canon did not answer. The booth uses the tablet camera for now and reconnects the Canon by itself in a moment. If this keeps happening: switch the Canon off and on, and close the “Choose an app for the USB device” pop-up with Back.');
+        }
+        lastErr = e; try { await withTimeout(cam.disconnect(), 3000, 'x'); } catch (_) {} cam = null;
+        if (e && e.constructor && e.constructor.name === 'RuntimeError') break;   // the library crashed: only a page reload helps
+        await sleep(1500 * attempt);                                          // give the camera time to settle
+      }
+    }
+    if (lastErr) throw new Error(dslrHelp(lastErr));
+    dslr = { cam, canvas: $('#dslrView'), running: true, lastFrame: Date.now(), noLive: !liveOk };
+    if (liveOk) { showDslrView(); dslr.loopDone = dslrLoop(dslr); }
+    else {
+      // No live view from this Canon: guests see the tablet camera for framing, photos are still taken with the Canon.
+      dslr.loopDone = dslrKeepAlive(dslr);
+      setDslrMsg('Canon connected. Every photo is taken with the Canon; the preview uses the tablet camera (smooth and stable).');
+      $('#dslrView').hidden = true; B.stream || (ROLE === 'booth' && startCamera());
+    }
+    // Remember the choice so the booth reconnects to the Canon next time
+    if (S.capture.camera !== 'dslr') { S.capture.camera = 'dslr'; saveStudio().catch(() => {}); }
+    try { if (sessionStorage.getItem('pb.dslrRecovering')) { sessionStorage.removeItem('pb.dslrRecovering'); setTimeout(() => toast('Canon reconnected'), 500); } } catch (e) {}
+    return cam;
+  })();
+  try { return await dslrBusy; } finally { dslrBusy = null; }
+}
+const HUNG = 'The Canon did not answer in time';
+// If the Canon's live view freezes the USB link, use 'photos only' until the Canon is switched off and on.
+function liveIsBroken() { try { return sessionStorage.getItem('pb.liveBroken') === '1'; } catch (e) { return false; } }
+function markLiveBroken() { try { sessionStorage.setItem('pb.liveBroken', '1'); } catch (e) {} camLog('live view marked unstable'); }
+function setDslrMsg(t) { const a = $('#dslrInfo'), b = $('#bCamInfo'); if (a) a.textContent = t; if (b) b.textContent = t; }
+// Close any USB handle Chrome still has open to the camera; optionally reset the link (same as replugging).
+async function freeUsb() {
+  let list = []; try { list = await navigator.usb.getDevices(); } catch (e) { return; }
+  for (const d of list) { try { if (d.opened) await d.close(); } catch (e) {} }
+}
+/* ---------- Camera report: what happened on the last connect (to send to support) ---------- */
+const CAMLOG = (() => { try { return JSON.parse(sessionStorage.getItem('pb.camlog') || '[]'); } catch (e) { return []; } })();
+async function camLog(step) {
+  let devs = '';
+  try { devs = (await navigator.usb.getDevices()).map(d => `${d.manufacturerName || '?'} ${d.productName || '?'} [${(d.vendorId || 0).toString(16)}:${(d.productId || 0).toString(16)}] ${d.opened ? 'open' : 'closed'}`).join('; ') || 'none'; } catch (e) { devs = 'n/a'; }
+  CAMLOG.push(`${new Date().toLocaleTimeString('en-GB')} ${step} | USB devices: ${devs}`);
+  try { sessionStorage.setItem('pb.camlog', JSON.stringify(CAMLOG.slice(-40))); } catch (e) {}
+}
+function camReport() {
+  return ['Photobooth camera report', `Page: ${ROLE || '-'} · Camera setting: ${S.capture.camera} · Connected now: ${!!(dslr && dslr.running)}`, `Browser: ${navigator.userAgent}`, `Isolated: ${window.crossOriginIsolated} · WebUSB: ${!!navigator.usb} · Other tab had camera: ${otherTabHadCamera}`, ...(CAMLOG.length ? CAMLOG : ['(nothing recorded yet: tap Connect camera first, then copy the report)']),
+    `Live view: ${LV.frames} frames in ${LV.since ? Math.round((Date.now() - LV.since) / 1000) : 0} s · last frame ${dslr && dslr.lastFrame ? ((Date.now() - dslr.lastFrame) / 1000).toFixed(1) + ' s ago' : '-'} · last ${LV.lastMs} ms · slowest ${LV.slowest} ms · errors ${LV.errors}${LV.lastErr ? ' (' + LV.lastErr + ')' : ''} · event reads ${LV.events}`,
+    `Canon photos: ${LV.captures.join(' / ') || 'none yet'}`].join('\n');
+}
+// Only one tab can use the camera. Ask other open tabs of this site (on this tablet) to let go of it first.
+const camChan = 'BroadcastChannel' in window ? new BroadcastChannel('pb-camera') : null;
+let otherTabHadCamera = false, handedOff = false;   // handedOff: another tab took the camera, so this tab stops reconnecting
+if (camChan) camChan.onmessage = async e => {
+  if (e.data === 'release') { handedOff = true; if (dslr) { await dslrDisconnect(); camChan.postMessage('released'); if (ROLE === 'booth') { dslrCrashed = false; startCamera(); } toast('The Canon is being used in another tab of this website.', 6000); } }
+  if (e.data === 'released') otherTabHadCamera = true;
+};
+async function releaseOtherTabs() { if (!camChan) return; otherTabHadCamera = false; camChan.postMessage('release'); await sleep(700); if (otherTabHadCamera) await sleep(1500); }
+// Stop the live view and wait for it to finish before closing, so the library never uses a closed connection.
+async function dslrDisconnect() { const d = dslr; dslr = null; if (!d) return; d.running = false; try { await d.loopDone; } catch (e) {} try { await d.cam.disconnect(); } catch (e) {} }
+async function dslrAutoConnect() {
+  try {
+    if (!dslrSupported() || dslrCrashed || handedOff) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false;
+    let recovering = false; try { recovering = !!sessionStorage.getItem('pb.dslrRecovering'); } catch (e) {}
+    if (recovering) { await camLog('waiting 4 s so the Canon can settle'); await sleep(4000); }
+    await dslrConnect(false); return true;
+  } catch (e) { return false; }
+}
+// Switch the Canon's live view (back) on. Used after every photo and after an I/O problem.
+async function liveViewOn(d) {
+  try { await withTimeout(d.cam.setConfigValue('viewfinder', true), 8000, 'The Canon live view stopped answering'); }
+  catch (e) { if (/stopped answering/.test(e.message)) throw e; }
+}
+const LV = { frames: 0, since: 0, slowest: 0, lastMs: 0, errors: 0, lastErr: '', events: 0, captures: [] };   // live view stats for the camera report
+async function dslrLoop(d) {
+  const x = d.canvas.getContext('2d'); let fails = 0, lastEvents = Date.now();
+  Object.assign(LV, { frames: 0, since: Date.now(), slowest: 0, errors: 0, lastErr: '', events: 0 });
+  while (d.running && dslr === d) {
+    if (d.pause) { await sleep(60); continue; }
+    try {
+      const t0 = performance.now();
+      const blob = await withTimeout(d.cam.capturePreviewAsBlob(), 15000, 'The Canon live view stopped answering');
+      const bmp = await createImageBitmap(blob); fails = 0; d.lastFrame = Date.now();
+      LV.frames++; LV.lastMs = Math.round(performance.now() - t0); LV.slowest = Math.max(LV.slowest, LV.lastMs);
+      if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
+      x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
+      // Full speed while guests look at the camera; a gentle keep-alive while the start screen covers it
+      await sleep(document.hidden ? 600 : (ROLE === 'booth' && $('#b-attract').classList.contains('on')) ? 400 : 15);   // as fast as the Canon allows while guests look at it
+    } catch (e) {
+      LV.errors++; LV.lastErr = e.message; camLog('live view problem: ' + e.message);
+      if (/stopped answering|did not answer/.test(e.message)) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }   // the library is stuck: recover (photos only next time)
+      const msg = dslrHelp(e);
+      if (dslrCrashed || ++fails > 12) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
+      await sleep(1500);   // the Canon is busy: give it a moment
+      try { await liveViewOn(d); } catch (e2) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }  // then switch its live view back on before asking again
+    }
+  }
+}
+/* ---------- Keeping the Canon working during an event ----------
+   The camera library can get stuck if the Canon stops answering (most often it cannot focus).
+   Then: finish the session with the tablet camera, and once the guest is done, reload the page,
+   which reconnects the Canon automatically (at most 3 times in 5 minutes). */
+const dslrHealthy = () => !!(dslr && dslr.running && (dslr.noLive || Date.now() - (dslr.lastFrame || 0) < 25000));
+let dslrOld = null;   // the last Canon connection, closed properly before a reload
+function dslrFallback(reason) {
+  const d = dslr; if (!d) return Promise.resolve();
+  dslrOld = d.cam;
+  camLog('switched to the tablet camera' + (reason ? ': ' + String(reason).slice(0, 80) : ''));
+  dslr = null; d.running = false; dslrCrashed = true; B.recoverDslr = true;
+  toast('The Canon stopped responding. This session uses the tablet camera; the Canon reconnects by itself after it.' + (reason ? ' ' + reason : ''), 9000);
+  return ROLE === 'booth' ? startCamera() : Promise.resolve();
+}
+let gaveUpToast = 0;
+async function canonPresent() { try { return !!(navigator.usb && (await navigator.usb.getDevices()).length); } catch (e) { return false; } }
+async function dslrRecover(force) {
+  if (!(await canonPresent())) return;                 // camera off or unplugged: wait until it comes back
+  let tries = []; try { tries = JSON.parse(sessionStorage.getItem('pb.dslrReloads') || '[]').filter(t => Date.now() - t < 5 * 60e3); } catch (e) {}
+  if (tries.length >= 3) {                              // don't loop: try again a few minutes later
+    if (Date.now() - gaveUpToast > 120e3) { gaveUpToast = Date.now(); toast('The Canon keeps stopping. Switch the Canon OFF and ON again — it reconnects by itself. Using the tablet camera until then.', 12000); }
+    return;
+  }
+  if (UPLOADS.size || (!force && (B.session || !$('#b-attract').classList.contains('on')))) return;   // only when the booth is idle
+  tries.push(Date.now()); try { sessionStorage.setItem('pb.dslrReloads', JSON.stringify(tries)); sessionStorage.setItem('pb.dslrRecovering', '1'); } catch (e) {}
+  await camLog('reloading the page to reconnect the Canon');
+  busy('Reconnecting the Canon…');
+  if (dslrOld && !B.session) { try { await withTimeout(dslrOld.disconnect(), 3000, 'x'); } catch (e) {} } dslrOld = null;
+  await freeUsb(); setTimeout(() => location.reload(), 600);
+}
+/* Keep the Canon connected without anyone touching it:
+   - every few seconds while the booth is idle, reconnect it if it dropped
+   - when the camera is switched back on / plugged in, reconnect it
+   - when it is switched off / unplugged, carry on with the tablet camera meanwhile */
+let ensuring = false;
+async function dslrEnsure() {
+  if (ensuring || handedOff || ROLE !== 'booth' || S.capture.camera !== 'dslr' || B.session || dslrBusy || !dslrSupported()) return;
+  if (dslr && dslr.running) { if (!dslr.pause && !dslrHealthy()) dslrFallback(); return; }
+  ensuring = true;
+  try {
+    if (!(await canonPresent())) return;
+    if (dslrCrashed || B.recoverDslr) return dslrRecover();   // an old connection is stuck: a fresh page clears it
+    await dslrConnect(false); toast('Canon reconnected'); boothStatus();
+  } catch (e) { /* camera still waking up: try again next round */ }
+  finally { ensuring = false; }
+}
+setInterval(dslrEnsure, 4000);
+if (navigator.usb) {
+  // Canon switched on / plugged in: always a fresh start, even after the reconnect limit was reached
+  navigator.usb.addEventListener('connect', () => { try { sessionStorage.setItem('pb.dslrReloads', '[]'); sessionStorage.removeItem('pb.liveBroken'); } catch (e) {} camLog('Canon plugged in / switched on'); setTimeout(dslrEnsure, 2500); });
+  navigator.usb.addEventListener('disconnect', () => { if (dslr) dslrFallback('The Canon was switched off or unplugged — it reconnects by itself when it is back.'); });
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(dslrEnsure, 800); });
+// Without live view, talk to the Canon every 15 s so it stays awake and we notice if it drops.
+async function dslrKeepAlive(d) {
+  let fails = 0;
+  while (d.running && dslr === d) {
+    await sleep(20000); if (!d.running || dslr !== d || d.pause) continue;
+    try { await withTimeout(d.cam.consumeEvents(), 8000, 'no answer'); fails = 0; d.lastFrame = Date.now(); }
+    catch (e) { if (++fails >= 2 && dslr === d) { dslrFallback(); return; } }
+  }
+}
+// One frame from the live preview, at most `max` px on the long edge.
 function grabFrame(max = 4000) {
-  const src = $('#live'), w = src.videoWidth, h = src.videoHeight;
+  const canonView = dslr && !dslr.noLive, src = canonView ? dslr.canvas : $('#live');
+  const w = src.videoWidth || src.width, h = src.videoHeight || src.height;
   if (!w || !h) throw new Error('The camera is not ready yet.');
   const s = Math.min(1, max / Math.max(w, h)), c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(h * s);
-  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); return c;
+  const x = c.getContext('2d');
+  if (!canonView && S.capture.mirror) { x.translate(c.width, 0); x.scale(-1, 1); }
+  x.drawImage(src, 0, 0, c.width, c.height); return c;
 }
-async function capturePhoto() { return grabFrame(); }
-function liveStream() { return B.stream; }
 function withTimeout(promise, ms, msg) { let t; return Promise.race([promise, new Promise((_, rej) => { t = setTimeout(() => rej(new Error(msg)), ms); })]).finally(() => clearTimeout(t)); }
+const DSLR_SHOT_HELP = 'The Canon did not take the photo in time. Usually it could not focus: add more light, or focus once and switch the lens to MF. Also set the camera to JPEG (not RAW) and make sure an SD card is in.';
+// Canon photo (high resolution). Never waits more than 20 s: if the Canon hangs, the live view frame is used instead.
+async function dslrFullPhoto(d) {
+  const t0 = performance.now(); let f;
+  try { f = await withTimeout(d.cam.captureImageAsFile(), 20000, DSLR_SHOT_HELP); }
+  catch (e) { LV.captures.push(`photo FAILED after ${((performance.now() - t0) / 1000).toFixed(1)} s: ${e.message.slice(0, 60)}`); camLog('Canon photo failed: ' + e.message.slice(0, 80)); throw e; }
+  LV.captures.push(`photo ${(f.size / 1048576).toFixed(1)} MB in ${((performance.now() - t0) / 1000).toFixed(1)} s`); if (LV.captures.length > 10) LV.captures.shift();
+  let bmp;
+  try { bmp = await createImageBitmap(f, { resizeWidth: 4000, resizeQuality: 'high' }); }
+  catch (e) { throw new Error('The Canon sent a file the browser cannot read. Set Image quality on the camera to a JPEG setting (not RAW).'); }
+  const c = scaled(bmp, 4000); bmp.close && bmp.close(); return c;
+}
+async function capturePhoto() {
+  if (dslr && !dslrHealthy()) { await dslrFallback(); await sleep(700); }
+  const d = dslr;
+  if (d) {
+    d.pause = true; $('#shotInfo').textContent = 'Hold still…'; const slowMsg = setTimeout(() => { if (B.session) $('#shotInfo').textContent = 'Getting the photo from the Canon…'; }, 2500);
+    try { return await dslrFullPhoto(d); }
+    catch (e) {
+      const live = grabFrame();                       // last Canon live view frame, taken at the right moment
+      if (/did not take the photo in time/.test(e.message)) await dslrFallback(e.message);   // the library is stuck now
+      else toast(e.message, 9000);
+      return live;
+    }
+    finally {
+      clearTimeout(slowMsg);
+      // After a photo the Canon has turned its live view off: give it a moment, switch it back on, THEN resume
+      if (!d.noLive && dslr === d) { await sleep(700); try { await liveViewOn(d); } catch (e) {} }
+      d.pause = false;
+    }
+  }
+  return grabFrame();
+}
+function liveStream() { return dslr && !dslr.noLive ? dslr.canvas.captureStream(24) : B.stream; }
 
 /* ---------- Session flow ---------- */
 function goHome() {
   B.session = null; clearInterval(B.reviewT); clearInterval(B.doneT);
   $('#b-count').textContent = ''; $('#busy').hidden = true; $('#bErr').hidden = true;
   bscreen('b-attract');
+  if (B.recoverDslr) dslrRecover();
   if (B.pendingReload) { B.pendingReload = false; boothLoad(); }
 }
 function startFlow(mode) {
@@ -397,6 +650,7 @@ function flash() { shutter(); const f = $('#flash'); f.classList.remove('go'); v
 async function startSession(design) {
   clearInterval(B.reviewT); clearInterval(B.doneT);
   const me = B.session = { mode: B.mode, design, shots: [], filter: 'none', copies: 1, saved: null, printed: false, jobId: null };
+  if (dslr && !dslrHealthy()) { await dslrFallback(); await sleep(800); }
   bscreen('b-shoot');
   try {
     if (me.mode === 'photo') {
@@ -658,19 +912,22 @@ async function checkPin() {
   if (pin === want) { $('#pinPad').hidden = true; $('#staffMenu').hidden = false; fillCamMenu(); }
   else { $('#pinMsg').textContent = 'Wrong PIN. Try again.'; $('#pinMsg').style.color = '#ff8a80'; pin = ''; drawPins(); }
 }
-// Staff → Camera: choose which camera this tablet uses (Auto = capture card when plugged in, else front camera)
 async function fillCamMenu() {
-  let opts = '<option value="auto">Auto (capture card if plugged in)</option><option value="user">Tablet front camera</option><option value="environment">Tablet back camera</option>';
-  (await listCameras()).forEach((d, i) => opts += `<option value="${esc(d.deviceId)}">${esc(d.label || 'Camera ' + (i + 1))}${isExternal(d.label) ? ' (capture card)' : ''}</option>`);
-  $('#bCamSel').innerHTML = opts; $('#bCamSel').value = store.get('camDevice', '') || 'auto';
-  if (!$('#bCamSel').value) $('#bCamSel').value = 'auto';
+  let opts = '<option value="user">Front camera</option><option value="environment">Back camera</option>';
+  try { (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput').forEach((d, i) => opts += `<option value="${esc(d.deviceId)}">${esc(d.label || 'Camera ' + (i + 1))}</option>`); } catch (e) {}
+  if (navigator.usb) opts += '<option value="dslr">Canon DSLR (USB)</option>';
+  $('#bCamSel').innerHTML = opts; $('#bCamSel').value = dslr ? 'dslr' : (store.get('camDevice', '') || (S.capture.camera === 'dslr' ? 'user' : S.capture.camera));
   $('#bMirror').checked = !!S.capture.mirror;
-  $('#bCamInfo').textContent = camLabel();
+  const v = $('#live'); $('#bCamInfo').textContent = dslr ? 'Canon DSLR connected (USB)' : v.videoWidth ? `Camera: ${v.videoWidth} × ${v.videoHeight}` : '';
 }
-$('#bCamSel').onchange = async () => { store.set('camDevice', $('#bCamSel').value); $('#bCamInfo').textContent = 'Opening the camera…'; await startCamera(); fillCamMenu(); };
+$('#bCamSel').onchange = async () => {
+  if ($('#bCamSel').value === 'dslr' && dslrCrashed) { try { sessionStorage.removeItem('pb.dslrReloads'); } catch (e) {} S.capture.camera = 'dslr'; await saveStudio().catch(() => {}); return dslrRecover(true); }
+  if ($('#bCamSel').value === 'dslr') { $('#bCamInfo').textContent = 'Connecting…'; try { await dslrConnect(true); toast('Canon DSLR connected'); } catch (e) { $('#bCamInfo').textContent = e.message; return; } boothStatus(); return fillCamMenu(); }
+  store.set('camDevice', $('#bCamSel').value); await dslrDisconnect(); S.capture.camera = /^(user|environment)$/.test($('#bCamSel').value) ? $('#bCamSel').value : 'user'; saveStudio().catch(() => {}); startCamera().then(fillCamMenu); };
 $('#bMirror').onchange = () => { S.capture.mirror = $('#bMirror').checked; $('#live').classList.toggle('mirror', S.capture.mirror); saveStudio().catch(() => {}); };
+$('#bDslr').onclick = async () => { if (dslrCrashed) { try { sessionStorage.removeItem('pb.dslrReloads'); } catch (e) {} S.capture.camera = 'dslr'; await saveStudio().catch(() => {}); return dslrRecover(true); } const b = $('#bDslr'); b.disabled = true; $('#bCamInfo').textContent = 'Connecting…'; try { await dslrConnect(true); toast('Canon DSLR connected'); fillCamMenu(); } catch (e) { $('#bCamInfo').textContent = e.message; } b.disabled = false; };
 $('#pinCancel').onclick = goHome; $('#mBack').onclick = goHome;
-$('#mAdmin').onclick = () => { stopCamera(); store.set('role', 'admin'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); startAdmin(); };
+$('#mAdmin').onclick = () => { dslrDisconnect(); stopCamera(); store.set('role', 'admin'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); startAdmin(); };
 $('#mOut').onclick = signOut;
 // Hold the top-right corner for 3 seconds also opens the PIN screen
 { const hot = document.createElement('div'); hot.className = 'hot'; $('#b-attract').appendChild(hot); let t; hot.addEventListener('pointerdown', () => { t = setTimeout(openPin, 3000); }); ['pointerup', 'pointerleave', 'pointercancel'].forEach(n => hot.addEventListener(n, () => clearTimeout(t))); }
@@ -1025,50 +1282,91 @@ const MODES = [
   { key: 'boom', name: 'Boomerang', spec: 'High resolution', note: 'Video · plays forward and back' },
   { key: 'video', name: 'Video', spec: 'High resolution', note: 'Video with the length you choose' },
 ];
-function renderMedia() { renderModes(); renderCaptureForm(); fillCapCam(); }
+function renderMedia() { renderModes(); renderCaptureForm(); }
 function renderModes() {
   $('#modes').innerHTML = MODES.map(m => { const on = !!S.modes[m.key]; return `<button class="card mode ${on ? 'on' : ''}" data-m="${m.key}" aria-pressed="${on}"><div class="row" style="justify-content:space-between;width:100%"><span class="row" style="font-weight:600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m.key][1]}</svg>${m.name}</span><span class="chip ${on ? '' : 'mute'}">${on ? 'On' : 'Off'}</span></div><div class="mono" style="font-size:22px;font-weight:600">${m.spec}</div><div class="lbl">${m.note}</div></button>`; }).join('');
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capCam').value = store.get('camDevice', '') || 'auto'; if (!$('#capCam').value) $('#capCam').value = 'auto';
-  $('#capMirror').checked = !!c.mirror; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
-  $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capCopies').value = c.maxCopies;
+  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
+  renderDslrState();
 }
+function renderDslrState() { $('#dslrState').textContent = dslr ? 'Connected' : 'Not connected'; $('#dslrState').className = 'chip' + (dslr ? '' : ' mute'); $('#dslrTest').disabled = !dslr; if (dslr) $('#capCam').value = 'dslr'; }
+$('#modes').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; S.modes[b.dataset.m] = !S.modes[b.dataset.m]; if (!enabledModes().length) S.modes.photo = true; renderModes(); });
 $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
-$('#capCam').onchange = () => { store.set('camDevice', $('#capCam').value); if (testStream) { camTestOff(); $('#camOn').click(); } };
+$('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
-  Object.assign(S.capture, { mirror: $('#capMirror').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), maxCopies: n('#capCopies', 1, 10, 3) });
+  Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, photoGif: $('#capPhotoGif').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
 };
-// Camera check: opens the same camera the booth would use on this device (capture card or tablet camera)
 let testStream = null;
-function camTestOff() { if (testStream) testStream.getTracks().forEach(t => t.stop()); testStream = null; const v = $('#testVideo'); if (v) v.srcObject = null; $('#camChip').textContent = 'Off'; $('#camChip').className = 'chip mute'; $('#testShot').disabled = true; $('#camOn').textContent = 'Turn on camera'; $('#resBadge').textContent = '–'; $('#resLabel').textContent = 'Camera off'; }
+function camTestOff() { cancelAnimationFrame(testRaf); testRaf = 0; const td = $('#testDslr'); if (td) td.hidden = true; const tv = $('#testVideo'); if (tv) tv.hidden = false; if (testStream) testStream.getTracks().forEach(t => t.stop()); testStream = null; const v = $('#testVideo'); if (v) v.srcObject = null; $('#camChip').textContent = 'Off'; $('#camChip').className = 'chip mute'; $('#testShot').disabled = true; $('#camOn').textContent = 'Turn on camera'; $('#resBadge').textContent = '–'; $('#resLabel').textContent = 'Camera off'; }
+let testRaf = 0;
+async function dslrCheckOn() {
+  $('#camOn').disabled = true; $('#resLabel').textContent = 'Connecting to the Canon…';
+  try { await dslrConnect(true); } catch (e) { $('#camOn').disabled = false; $('#resLabel').textContent = 'Canon not connected'; $('#testInfo').textContent = e.message; return; }
+  $('#camOn').disabled = false; renderDslrState();
+  if (dslr && dslr.noLive) {
+    testRaf = 1;
+    try { testStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } } }); const v = $('#testVideo'); v.hidden = false; $('#testDslr').hidden = true; v.srcObject = testStream; await v.play().catch(() => {}); } catch (e) {}
+    $('#resBadge').textContent = 'DSLR'; $('#resLabel').textContent = 'Canon connected · this preview is the tablet camera; every photo is taken with the Canon.'; $('#camChip').textContent = 'Canon DSLR'; $('#camChip').className = 'chip'; $('#testShot').disabled = false; $('#camOn').textContent = 'Turn off camera'; return; }
+  const out = $('#testDslr'), x = out.getContext('2d'); out.hidden = false; $('#testVideo').hidden = true;
+  const draw = () => { const src = $('#dslrView'); if (src.width) { if (out.width !== src.width) { out.width = src.width; out.height = src.height; } x.drawImage(src, 0, 0); $('#resLabel').textContent = `Canon live view ${src.width} × ${src.height} · photos at full resolution`; } testRaf = requestAnimationFrame(draw); };
+  draw();
+  $('#resBadge').textContent = 'DSLR'; $('#camChip').textContent = 'Canon DSLR'; $('#camChip').className = 'chip'; $('#testShot').disabled = false; $('#camOn').textContent = 'Turn off camera';
+}
 $('#camOn').onclick = async () => {
-  if (testStream) return camTestOff();
+  if (testStream || testRaf) return camTestOff();
+  if ($('#capCam').value === 'dslr') return dslrCheckOn();
+  const [w, h] = MAXRES, cam = $('#capCam').value;
   try {
-    testStream = await openBestCamera();
-    const v = $('#testVideo'); v.srcObject = testStream; await v.play().catch(() => {}); await sleep(400);
-    const t = testStream.getVideoTracks()[0], st = t.getSettings();
-    $('#resBadge').textContent = isExternal(t.label) ? 'CAPTURE CARD' : 'TABLET';
-    $('#resLabel').textContent = `${t.label || 'Camera'} · ${st.width || v.videoWidth} × ${st.height || v.videoHeight}${st.frameRate ? ' · ' + Math.round(st.frameRate) + ' fps' : ''}`;
+    testStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: cam === 'environment' ? 'environment' : 'user', width: { ideal: w }, height: { ideal: h } } });
+    const v = $('#testVideo'); v.srcObject = testStream; await v.play().catch(() => {});
+    await sleep(400);
+    const s = testStream.getVideoTracks()[0].getSettings();
+    $('#resBadge').textContent = 'HIGH';
+    $('#resLabel').textContent = `${s.width || v.videoWidth} × ${s.height || v.videoHeight}${s.frameRate ? ' · ' + Math.round(s.frameRate) + ' fps' : ''}`;
     $('#camChip').textContent = 'On'; $('#camChip').className = 'chip'; $('#testShot').disabled = false; $('#camOn').textContent = 'Turn off camera';
-    fillCapCam();
   } catch (e) { toast('Cannot open a camera on this device: ' + e.message, 4000); }
 };
-// The camera list (names are only known after camera permission was given once)
-async function fillCapCam() {
-  const keep = store.get('camDevice', '') || 'auto';
-  let opts = '<option value="auto">Auto — capture card if plugged in, else front camera</option><option value="user">Tablet front camera</option><option value="environment">Tablet back camera</option>';
-  (await listCameras()).forEach((d, i) => { if (d.label) opts += `<option value="${esc(d.deviceId)}">${esc(d.label)}${isExternal(d.label) ? ' (capture card)' : ''}</option>`; });
-  $('#capCam').innerHTML = opts; $('#capCam').value = keep; if (!$('#capCam').value) $('#capCam').value = 'auto';
-}
 $('#testShot').onclick = async () => {
+  if (testRaf && dslr) {
+    const b = $('#testShot'); b.disabled = true; $('#testInfo').textContent = 'Taking a Canon photo…'; const t0 = performance.now();
+    try { dslr.pause = true; const c = await dslrFullPhoto(dslr); $('#testInfo').textContent = `Canon photo: ${c.width} × ${c.height} · took ${((performance.now() - t0) / 1000).toFixed(1)} s`; }
+    catch (e) { $('#testInfo').textContent = e.message; }
+    finally { if (dslr && !dslr.noLive) { await sleep(700); try { await liveViewOn(dslr); } catch (e) {} } if (dslr) dslr.pause = false; b.disabled = false; }
+    return;
+  }
   const v = $('#testVideo'); if (!v.videoWidth) return;
   const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
   const b = await toBlob(c, 'image/jpeg', (+$('#capQ').value || 95) / 100);
   $('#testInfo').textContent = `Last test: ${c.width} × ${c.height} · ${(b.size / 1048576).toFixed(1)} MB`;
+};
+$('#dslrConnect').onclick = async () => {
+  const b = $('#dslrConnect'); b.disabled = true; $('#dslrInfo').textContent = 'Connecting…';
+  try { await dslrConnect(true); $('#dslrInfo').textContent = 'Live view on. Photos use the camera\'s full resolution.'; renderDslrState(); toast('Canon DSLR connected'); }
+  catch (e) { $('#dslrInfo').textContent = e.message + ' If it still fails, tap “Copy camera report” and send it to support.'; }
+  b.disabled = false;
+};
+$('#bReport').onclick = () => $('#dslrReport').click();
+$('#dslrReport').onclick = async () => {
+  const r = camReport();
+  try { await navigator.clipboard.writeText(r); toast('Camera report copied. Paste it in your message to support.'); }
+  catch (e) { modal(`<div class="row" style="justify-content:space-between"><b>Camera report</b><button class="ico" data-close aria-label="Close">✕</button></div><textarea class="in ta mono" rows="12" readonly style="font-size:11px">${esc(r)}</textarea><p class="lbl" style="margin:0">Take a screenshot of this and send it to support.</p>`, 640); }
+};
+// Forget the USB permission so Chrome asks again (fixes a stale permission on some tablets)
+$('#dslrForget').onclick = async () => {
+  if (!navigator.usb) return toast('This browser cannot use USB devices.');
+  await dslrDisconnect();
+  try { for (const d of await navigator.usb.getDevices()) { try { if (d.opened) await d.close(); } catch (e) {} if (d.forget) await d.forget(); } } catch (e) {}
+  toast('Camera permission reset. Unplug the Canon, plug it back in, reload this page and tap Connect camera.', 9000);
+};
+$('#dslrTest').onclick = async () => {
+  if (!dslr) return;
+  try { const f = await dslr.cam.captureImageAsFile(); const bmp = await createImageBitmap(f); $('#dslrInfo').textContent = `DSLR test photo: ${bmp.width} × ${bmp.height} · ${(f.size / 1048576).toFixed(1)} MB`; }
+  catch (e) { $('#dslrInfo').textContent = 'Test photo failed: ' + e.message; }
 };
 
 /* ---- Gallery & share ---- */

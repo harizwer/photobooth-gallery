@@ -1,4 +1,7 @@
+# Lets the tablet talk to the Canon DSLR over USB (the camera library needs these).
 /*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 
