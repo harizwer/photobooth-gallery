@@ -76,9 +76,10 @@ jobs:
         if: always()
         shell: bash
         run: |
-          git fetch -q origin apk-build
-          git checkout -q -B results origin/apk-build
-          rm -rf emulator-${{ matrix.api }} && mkdir emulator-${{ matrix.api }} && cp -r out-emu/* emulator-${{ matrix.api }}/ 2>/dev/null || true
-          git add -f emulator-${{ matrix.api }}
+          git clone -q --depth 5 --branch apk-build "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" pub
+          rm -rf pub/emulator-${{ matrix.api }} && mkdir pub/emulator-${{ matrix.api }}
+          cp -r out-emu/* pub/emulator-${{ matrix.api }}/ 2>/dev/null || true
+          cd pub
+          git add -A
           git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Emulator Android API ${{ matrix.api }}, build ${{ github.run_number }} (${{ job.status }})" || true
-          git push -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" HEAD:apk-build
+          for i in 1 2 3; do git push -q origin HEAD:apk-build && break; git pull -q --rebase origin apk-build; done

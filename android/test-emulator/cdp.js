@@ -7,9 +7,10 @@ const ws = new WebSocket(page.webSocketDebuggerUrl);
 let n = 0; const wait = new Map();
 const send = (method, params) => new Promise(res => { const id = ++n; wait.set(id, res); ws.send(JSON.stringify({ id, method, params })); });
 ws.onmessage = m => { const d = JSON.parse(m.data); if (wait.has(d.id)) { wait.get(d.id)(d); wait.delete(d.id); } };
-const check = `(async () => {
-  const out = {};
+const check = `(async () => { const out = {}; try {
   out.page = location.href; out.title = document.title; out.ua = navigator.userAgent;
+  out.bodyText = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, 400);
+  if (location.protocol !== 'https:') return JSON.stringify(out, null, 1);
   out.hasBridge = !!window.PBNative;
   if (!window.PBNative) return JSON.stringify(out);
   out.version = PBNative.version(); out.present = PBNative.present(); out.status = JSON.parse(PBNative.status());
@@ -24,8 +25,8 @@ const check = `(async () => {
   catch (e) { out.tabletCamera = 'ERROR ' + e.name + ': ' + e.message; }
   out.loginScreen = !!document.querySelector('#v-login.on');
   out.boothCodeLoaded = typeof window.__pbNativeDone === 'function';
-  out.bodyText = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').slice(0, 300);
   out.log = PBNative.log();
+  } catch (e) { out.exception = String(e); }
   return JSON.stringify(out, null, 1);
 })()`;
 ws.onopen = async () => {
