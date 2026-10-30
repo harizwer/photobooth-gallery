@@ -1,0 +1,35 @@
+10-30 16:44:11.530  1664  1664 D AndroidRuntime: >>>>>> START com.android.internal.os.ZygoteInit uid 0 <<<<<<
+10-30 16:44:11.570  1665  1665 D AndroidRuntime: >>>>>> START com.android.internal.os.ZygoteInit uid 0 <<<<<<
+10-30 16:44:11.612  1664  1664 I AndroidRuntime: Using default boot image
+10-30 16:44:11.612  1664  1664 I AndroidRuntime: Leaving lock profiling enabled
+10-30 16:44:11.617  1665  1665 I AndroidRuntime: Using default boot image
+10-30 16:44:11.617  1665  1665 I AndroidRuntime: Leaving lock profiling enabled
+10-30 16:44:15.247  2174  2174 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+10-30 16:44:15.329  2191  2191 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+10-30 16:44:16.651  2427  2427 I bootstat: Canonical boot reason: reboot,factory_reset
+10-30 16:44:18.404  2748  2748 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-30 16:44:18.410  2748  2748 I AndroidRuntime: Using default boot image
+10-30 16:44:18.410  2748  2748 I AndroidRuntime: Leaving lock profiling enabled
+10-30 16:44:18.634  2748  2748 D AndroidRuntime: Calling main entry com.android.commands.input.Input
+10-30 16:44:18.664  2748  2748 D AndroidRuntime: Shutting down VM
+10-30 16:44:19.719  1906  1944 I PackageManager.DexOptimizer: Running dexopt (dexoptNeeded=1) on: /data/app/my.photobooth.booth-vJbVjn_QJtdULcVIQLh2-Q==/base.apk pkg=my.photobooth.booth isa=x86_64 dexoptFlags=boot_complete,profile_guided,public,enable_hidden_api_checks targetFilter=speed-profile oatDir=/data/app/my.photobooth.booth-vJbVjn_QJtdULcVIQLh2-Q==/oat classLoaderContext=PCL[]
+10-30 16:44:19.719  1789  1971 V installd: DexInv: --- BEGIN '/data/app/my.photobooth.booth-vJbVjn_QJtdULcVIQLh2-Q==/base.apk' ---
+10-30 16:44:20.180  2935  2935 I dex2oat : /apex/com.android.runtime/bin/dex2oat --input-vdex-fd=-1 --output-vdex-fd=10 --resolve-startup-const-strings=true --max-image-block-size=524288 --compiler-filter=speed-profile --classpath-dir=/data/app/my.photobooth.booth-vJbVjn_QJtdULcVIQLh2-Q== --class-loader-context=PCL[] --generate-mini-debug-info --compact-dex-level=none --compilation-reason=install
+10-30 16:44:20.687  3043  3077 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+10-30 16:44:20.824  3043  3086 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+10-30 16:44:20.828  3043  3069 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+10-30 16:44:20.829  3043  3101 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+10-30 16:44:20.948  3043  3101 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+10-30 16:44:21.713  1789  1971 V installd: DexInv: --- END '/data/app/my.photobooth.booth-vJbVjn_QJtdULcVIQLh2-Q==/base.apk' (success) ---
+10-30 16:44:21.906  1906  3200 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=my.photobooth.booth/.MainActivity} from uid 2000
+10-30 16:44:21.930  3316  3316 W hotobooth.boot: Unexpected CPU variant for X86 using defaults: x86_64
+10-30 16:44:21.931  1906  1933 I ActivityManager: Start proc 3316:my.photobooth.booth/u0a116 for activity {my.photobooth.booth/my.photobooth.booth.MainActivity}
+10-30 16:44:22.138  3316  3316 I hotobooth.boot: The ClassLoaderContext is a special shared library.
+10-30 16:44:22.173  3316  3316 E chromium: [ERROR:filesystem_posix.cc(89)] stat /data/user/0/my.photobooth.booth/cache/WebView/Crashpad: No such file or directory (2)
+10-30 16:44:22.173  3316  3316 E chromium: [ERROR:filesystem_posix.cc(62)] mkdir /data/user/0/my.photobooth.booth/cache/WebView/Crashpad: No such file or directory (2)
+10-30 16:44:22.185  1906  1933 I ActivityManager: Start proc 3380:com.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0/u0ai9000 for  {my.photobooth.booth/org.chromium.content.app.SandboxedProcessService0}
+10-30 16:44:22.560  1906  1931 I ActivityTaskManager: Displayed my.photobooth.booth/.MainActivity: +548ms
+10-30 16:44:22.663  3316  3424 I chatty  : uid=10116(my.photobooth.booth) Chrome_InProcGp identical 2 lines
+10-30 16:44:22.678  1906  2144 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.packageinstaller/.PackageInstalledReceiver
+10-30 16:44:22.678  1906  1932 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.gallery3d/.app.PackagesMonitor
+10-30 16:44:22.678  1906  1932 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.musicfx/.Compatibility$Receiver
