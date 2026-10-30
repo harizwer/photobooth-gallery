@@ -1,0 +1,9 @@
+[ {
+   "description": "{\"attached\":true,\"empty\":false,\"height\":640,\"never_attached\":false,\"screenX\":0,\"screenY\":0,\"visible\":true,\"width\":320}",
+   "devtoolsFrontendUrl": "https://chrome-devtools-frontend.appspot.com/serve_rev/@2d54072eb2f350d37f3f304c4ba0fafcddbd7e82/inspector.html?ws=localhost:9222/devtools/page/66CAFB5D9957DF205F6CFAD4831D7AB9",
+   "id": "66CAFB5D9957DF205F6CFAD4831D7AB9",
+   "title": "Photobooth Studio",
+   "type": "page",
+   "url": "https://photobooth-studio.harizwer03.workers.dev/app/",
+   "webSocketDebuggerUrl": "ws://localhost:9222/devtools/page/66CAFB5D9957DF205F6CFAD4831D7AB9"
+} ]
