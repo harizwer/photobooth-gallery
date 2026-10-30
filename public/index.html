@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0a0a0b">
+<title>Your photo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,600&display=swap">
+<style>
+/* Guest page: one photo (from a guest QR) or a whole album (from the admin's album QR) */
+:root{--bg:#0a0a0b;--fg:#f2f2f3;--muted:#a3a3a9;--line:rgba(255,255,255,.14);--accent:#ff5a26;--accent-deep:#e8400f;--on-accent:#1a0700;--sans:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;--script:'Playfair Display',Georgia,serif;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:radial-gradient(120% 60% at 70% 0%,#2a2a2e 0%,#141416 50%,#0a0a0b 100%) fixed,#0a0a0b;color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;min-height:100vh;margin:0 auto;padding:max(28px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:20px}
+header{text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:#d4d4d8;margin-bottom:10px}
+.brand img{width:26px;height:26px;object-fit:contain;border-radius:6px}
+.cap{font-size:11px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase}
+h1{font-family:var(--script);font-style:italic;font-weight:600;font-size:clamp(30px,8vw,48px);line-height:1.1;margin:4px 0 0;text-wrap:balance}
+.date{font-size:13px;color:var(--muted)}
+main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
+.media{max-width:100%;max-height:62vh;border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.6);background:#111;display:block}
+.actions{width:min(390px,100%);display:flex;flex-direction:column;gap:10px}
+.btn{font:inherit;cursor:pointer;height:50px;border-radius:14px;border:1px solid var(--line);background:linear-gradient(180deg,#2b2b2f,#1c1c1f);color:var(--fg);font-size:15px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;padding:0 18px}
+.btn.pri{background:linear-gradient(180deg,var(--accent),var(--accent-deep));border-color:#ff6a3a;color:var(--on-accent);font-weight:700;font-size:16px;height:54px}
+.btn:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.msg{text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;max-width:320px}
+.msg b{font-size:18px}
+.msg p{margin:0;color:var(--muted)}
+.spin{width:32px;height:32px;border-radius:50%;border:3px solid #2a2a2e;border-top-color:var(--accent);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.grid{width:100%;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.grid button{all:unset;cursor:pointer;position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;background:#1c1c1f;border:1px solid var(--line)}
+.grid button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.grid img{width:100%;height:100%;object-fit:cover;display:block}
+.tag{position:absolute;top:8px;left:8px;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:var(--accent);color:var(--on-accent)}
+.viewer{position:fixed;inset:0;background:rgba(5,5,6,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px;z-index:10}
+.viewer[hidden]{display:none}
+.viewer .media{max-height:calc(100vh - 120px)}
+.bar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.pin{display:flex;gap:10px;width:min(320px,100%)}
+.pin input{flex:1;min-width:0;height:50px;border-radius:14px;border:1px solid var(--line);background:#1a1a1c;color:var(--fg);font:inherit;font-size:20px;text-align:center;letter-spacing:.3em}
+footer{text-align:center;color:var(--muted);font-size:12px}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand" id="brand" hidden></div>
+    <div class="cap" id="eyebrow"></div>
+    <h1 id="title"></h1>
+    <div class="date" id="date"></div>
+  </header>
+  <main id="main"><div class="msg"><div class="spin" aria-hidden="true"></div><p>Loading…</p></div></main>
+  <footer id="foot"></footer>
+</div>
+<div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-label="Photo">
+  <div id="vMedia"></div>
+  <div class="bar"><button class="btn pri" id="vSave">Save</button><button class="btn" id="vClose">Close</button></div>
+</div>
+<script>
+'use strict';
+const SUPABASE_URL = 'https://dqeyaimxfkursttbdmyp.supabase.co';
+const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxZXlhaW14Zmt1cnN0dGJkbXlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODc2NTQsImV4cCI6MjEwODg2MzY1NH0.T5tHvHVpNzNHwxYFASy8WO6xr1bvfBko9gxHCoxVQSc';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fileUrl = p => `${SUPABASE_URL}/storage/v1/object/public/photos/${p}`;
+const q = new URLSearchParams(location.search);
+async function rpc(fn, body) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('Could not load (' + r.status + ')');
+  return r.json();
+}
+function studio(s) {
+  s = s || {}; const name = s.brand || 'Photobooth Studio';
+  $('#brand').hidden = false; $('#brand').innerHTML = (s.logo ? `<img src="${esc(s.logo)}" alt="">` : '') + `<span>${esc(name)}</span>`;
+  $('#foot').textContent = s.footer || ('Photos by ' + name); document.title = name;
+}
+function message(title, text, icon = true) {
+  $('#main').innerHTML = `<div class="msg">${icon ? '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#a3a3a9" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' : ''}<b>${esc(title)}</b><p>${esc(text)}</p></div>`;
+}
+const isVideo = k => k === 'boom' || k === 'video';
+function mediaHtml(item, cls = 'media') {
+  if (isVideo(item.kind) && item.media) return `<video class="${cls}" src="${esc(fileUrl(item.media))}" poster="${esc(fileUrl(item.path))}" autoplay loop muted playsinline controls></video>`;
+  return `<img class="${cls}" src="${esc(fileUrl(item.kind === 'gif' && item.media ? item.media : item.path))}" alt="Your photobooth ${item.kind === 'gif' ? 'GIF' : 'photo'}">`;
+}
+async function save(item) {
+  const path = item.media || item.path, name = path.split('/').pop();
+  try {
+    const blob = await (await fetch(fileUrl(path))).blob();
+    const file = new File([blob], name, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] }) && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) { await navigator.share({ files: [file] }); return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { if (e.name !== 'AbortError') window.open(fileUrl(path), '_blank'); }
+}
+const fmtDate = d => d || '';
+
+async function showOne(tok) {
+  const d = await rpc('get_shared_photo', { tok });
+  if (!d) { studio(null); return message('Photo not found', 'This link is not valid any more. Ask the photobooth team if you still need your photo.'); }
+  studio(d.studio); $('#eyebrow').textContent = 'Your photo from'; $('#title').textContent = d.event || ''; $('#date').textContent = fmtDate(d.date);
+  if (d.expired) return message('This link has expired', 'Photo links on prints work for 24 hours. Ask the photobooth team if you still need your photo.');
+  const item = { kind: d.kind, path: d.path, media: d.media_path };
+  $('#eyebrow').textContent = { photo: 'Your photo from', gif: 'Your GIF from', boom: 'Your boomerang from', video: 'Your video from' }[d.kind] || 'Your photo from';
+  const label = { photo: 'Save photo', gif: 'Save GIF', boom: 'Save boomerang', video: 'Save video' }[d.kind] || 'Save';
+  $('#main').innerHTML = mediaHtml(item) + `<div class="actions"><button class="btn pri" id="save"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></svg>${label}</button>${navigator.share ? '<button class="btn" id="share">Share</button>' : ''}</div>`;
+  $('#save').onclick = () => save(item);
+  if ($('#share')) $('#share').onclick = () => navigator.share({ title: d.event || 'Photo', url: location.href }).catch(() => {});
+}
+async function showAlbum(tok, pin = '') {
+  const d = await rpc('get_album', { tok, pin });
+  studio(d.studio); $('#eyebrow').textContent = 'Photo album'; $('#title').textContent = d.event || ''; $('#date').textContent = fmtDate(d.date);
+  if (d.status === 'missing') return message('Album not found', 'This album link is not valid any more.');
+  if (d.status === 'off') return message('This album is closed', 'The photobooth team has switched this album off.');
+  if (d.status === 'expired') return message('This album has expired', 'Ask the photobooth team if you still need the photos.');
+  if (d.status === 'pin') {
+    $('#main').innerHTML = `<form class="msg" id="pinForm"><b>Enter the album PIN</b><p>${d.wrong ? 'That PIN is not right. Try again.' : 'The photobooth team gave you a PIN for this album.'}</p><div class="pin"><input id="pin" inputmode="numeric" autocomplete="off" maxlength="8" aria-label="PIN" required><button class="btn pri" style="height:50px">Open</button></div></form>`;
+    $('#pin').focus();
+    $('#pinForm').onsubmit = e => { e.preventDefault(); showAlbum(tok, $('#pin').value.trim()); };
+    return;
+  }
+  const list = d.photos || [];
+  if (!list.length) return message('No photos yet', 'Photos appear here as soon as guests use the booth.', false);
+  $('#date').textContent = [fmtDate(d.date), `${list.length} ${list.length === 1 ? 'photo' : 'photos'}`].filter(Boolean).join(' · ');
+  const tag = { gif: 'GIF', boom: 'BOOMERANG', video: 'VIDEO' };
+  $('#main').innerHTML = `<div class="grid">${list.map((p, i) => `<button data-i="${i}" aria-label="Open photo ${i + 1}"><img src="${esc(fileUrl(p.thumb))}" alt="" loading="lazy">${tag[p.kind] ? `<span class="tag">${tag[p.kind]}</span>` : ''}</button>`).join('')}</div>`;
+  let cur = null;
+  $('#main').onclick = e => { const b = e.target.closest('[data-i]'); if (!b) return; cur = list[+b.dataset.i]; $('#vMedia').innerHTML = mediaHtml(cur); $('#viewer').hidden = false; $('#vClose').focus(); };
+  $('#vSave').onclick = () => cur && save(cur);
+  $('#vClose').onclick = () => { $('#viewer').hidden = true; $('#vMedia').innerHTML = ''; };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#vClose').click(); });
+}
+(async () => {
+  try {
+    if (q.get('album')) await showAlbum(q.get('album'));
+    else if (q.get('p') || q.get('q')) await showOne(q.get('p') || q.get('q'));
+    else { studio(null); message('Scan your QR code', 'Open the link from the QR code at the photobooth to see your photo.', false); }
+  } catch (e) { studio(null); message('Could not load', 'Check your internet connection and try again.'); }
+})();
+</script>
+</body>
+</html>

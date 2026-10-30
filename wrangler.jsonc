@@ -1,0 +1,9 @@
+{
+  // Cloudflare Workers static site: serves this folder as-is (no build step).
+  "name": "photobooth-studio",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "404-page"
+  }
+}

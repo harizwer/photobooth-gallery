@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0a0a0b">
+<title>Photobooth Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&family=Playfair+Display:ital,wght@1,600&display=swap">
+<link rel="stylesheet" href="app.css">
+<style>@page{size:4in 6in;margin:0}</style>
+</head>
+<body>
+
+<!-- ================= LOG IN ================= -->
+<section class="view glow" id="v-login" aria-label="Log in">
+  <div class="login">
+    <div class="art">
+      <div class="brand"><span class="logo" data-logo data-size="26"></span><span data-brand>Photobooth Studio</span></div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <h1>One login for the laptop and the tablet.</h1>
+        <p class="muted" style="margin:0;max-width:380px">Log in on both devices with the same username. They find each other automatically.</p>
+      </div>
+    </div>
+    <form id="loginForm" novalidate>
+      <div><div class="lbl">Welcome back</div><h2 style="margin:6px 0 0;font-size:28px;font-weight:600">Log in</h2></div>
+      <label class="field" for="lUser">Username
+        <span class="inwrap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8a8a90" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><input id="lUser" autocomplete="username" autocapitalize="none" spellcheck="false"></span>
+      </label>
+      <label class="field" for="lPass">Password
+        <span class="inwrap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8a8a90" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg><input id="lPass" type="password" autocomplete="current-password"><button type="button" class="ico" id="lEye" aria-label="Show password"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span>
+      </label>
+      <button class="btn pri" type="submit" id="lSubmit" style="height:50px;font-size:15px">Log in</button>
+      <p class="lbl" id="lMsg" style="margin:0;min-height:20px" role="status"></p>
+    </form>
+  </div>
+</section>
+
+<!-- ================= CHOOSE DEVICE ================= -->
+<section class="view glow" id="v-devices" aria-label="Choose device" style="flex-direction:column;gap:22px">
+  <div class="brand"><span class="logo" data-logo data-size="26"></span><span data-brand>Photobooth Studio</span></div>
+  <p class="muted" style="margin:0;text-align:center">Logged in as <b style="color:#fff" id="whoami"></b>. What is this device?</p>
+  <div class="roles">
+    <button class="role" id="roleBooth"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff5a26" stroke-width="1.8" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></svg><b>Booth</b><span class="muted">For the tablet. Guests take photos here and tap Print.</span></button>
+    <button class="role" id="roleAdmin"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff5a26" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg><b>Admin board</b><span class="muted">For the laptop with the printer. Events, templates, gallery and printing.</span></button>
+  </div>
+  <button class="btn ghost" data-logout>Log out</button>
+</section>
+
+<!-- ================= ADMIN BOARD ================= -->
+<section class="view glow" id="v-admin" aria-label="Admin board">
+  <nav class="side" aria-label="Admin menu">
+    <div class="brand"><span class="logo" data-logo data-size="24"></span><span data-brand>Photobooth Studio</span></div>
+    <div class="grp">General</div>
+    <button class="nav" data-go="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>Home</button>
+    <button class="nav" data-go="events"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Events<span class="badge" id="evCount">0</span></button>
+    <button class="nav" data-go="gallery"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-9 8"/></svg>Gallery &amp; share</button>
+    <div class="grp">Tools</div>
+    <button class="nav" data-go="templates"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>Template editor</button>
+    <button class="nav" data-go="media"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Capture &amp; media</button>
+    <button class="nav" data-go="printer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 8V3h10v5"/><rect x="3" y="8" width="18" height="9" rx="2"/><rect x="7" y="14" width="10" height="7"/></svg>Printer<span class="badge" id="qBadge" hidden>0</span></button>
+    <div class="grp">Other</div>
+    <button class="nav" data-go="studio"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M3 14l5-4 4 3 3-2 6 4"/></svg>Studio settings</button>
+    <button class="nav" data-go="accounts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Accounts &amp; PIN</button>
+    <button class="nav" data-go="guest"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>Guest view (preview)</button>
+    <div class="spacer" style="flex:1;min-height:20px"></div>
+    <div class="card status" style="padding:14px;display:flex;gap:12px;align-items:center"><span class="dot" id="sideDot"></span><div><div style="font-size:13px;font-weight:600" id="sideDev">Tablet not connected</div><div class="lbl" style="font-size:12px" id="sidePrn">Printing off on this laptop</div></div></div>
+  </nav>
+
+  <main class="main">
+    <div class="top">
+      <div class="crumb">Dashboard / <b id="crumb">Home</b></div>
+      <label class="search" for="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cmd" placeholder="Search events or go to a page" list="cmdList"><datalist id="cmdList"></datalist></label>
+      <div class="row" style="gap:4px">
+        <button class="ico" id="swDevice" aria-label="Switch device" title="Switch device"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg></button>
+        <button class="ico" data-logout aria-label="Log out" title="Log out" id="avatar" style="background:linear-gradient(180deg,#3a3a3e,#222225);border-radius:50%;font-weight:700;font-size:13px">?</button>
+      </div>
+    </div>
+
+    <!-- HOME -->
+    <section class="sec" id="s-home">
+      <div class="wrap" style="align-items:flex-end;justify-content:space-between;gap:16px">
+        <div>
+          <div class="lbl">Total sessions · all events</div>
+          <div class="row" style="margin-top:6px"><span class="mono big" id="hTotal">0</span><span class="chip" id="hTrend" hidden></span></div>
+          <div class="row lbl" style="margin-top:6px;gap:14px;flex-wrap:wrap" id="hKinds"></div>
+        </div>
+        <div class="row" style="flex-wrap:wrap">
+          <button class="btn pri" data-act="newEvent"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New event</button>
+          <button class="btn" data-go="gallery"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 7h10v10M7 17L17 7"/></svg>Share album</button>
+        </div>
+      </div>
+      <div class="grid-auto" id="homeEvents"></div>
+      <div class="wrap">
+        <div class="card" style="flex:3 1 440px">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="lbl">Captures by hour · <span id="activeName"></span></div><span class="chip mute" id="hPeak" hidden></span></div>
+          <div class="mono num" style="margin-top:6px" id="hActive">0</div>
+          <svg class="sparkline" id="hourChart" viewBox="0 0 600 160" preserveAspectRatio="none" aria-label="Captures by hour for the active event"></svg>
+          <div class="hours" id="hourLbls"></div>
+        </div>
+        <div class="card" style="flex:2 1 300px">
+          <div class="row" style="justify-content:space-between"><div class="lbl">Sessions in the last 7 days</div></div>
+          <div class="mono num" style="margin-top:6px" id="hWeek">0</div>
+          <div class="bars" id="bars"></div>
+        </div>
+      </div>
+      <div class="wrap">
+        <div class="card" style="flex:1 1 280px">
+          <div class="row" style="justify-content:space-between"><div class="lbl">Recent activity</div><button class="btn sm" data-go="gallery">See all</button></div>
+          <div id="activity" style="margin-top:6px"></div>
+        </div>
+        <div class="card" style="flex:1 1 280px">
+          <div class="row" style="justify-content:space-between"><div class="lbl">Devices</div></div>
+          <div id="hDevices" style="margin-top:10px"></div>
+          <div class="lbl" style="margin-top:12px">Paper left</div>
+          <div class="mono num"><span id="hPaper">–</span> <span class="lbl">sheets</span></div>
+        </div>
+        <div class="card" style="flex:1 1 260px">
+          <div class="row" style="justify-content:space-between"><div class="lbl">Busy hours · all events</div><span class="chip" id="heatPeak" hidden></span></div>
+          <div class="heat" id="heat"></div>
+          <div class="row lbl" style="justify-content:space-between;margin-top:10px;font-size:11.5px"><span>12 PM</span><span>11 PM</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EVENTS -->
+    <section class="sec" id="s-events">
+      <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">Events</h2><div class="lbl">The active event is the one the tablet shows. Each event uses the templates of its event type.</div></div><button class="btn pri" data-act="newEvent">+ New event</button></div>
+      <div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Event</th><th>Type</th><th>Date</th><th>Templates</th><th>Sessions</th><th></th></tr></thead><tbody id="evTable"></tbody></table></div></div>
+    </section>
+
+    <!-- TEMPLATE EDITOR -->
+    <section class="sec" id="s-templates">
+      <div class="wrap" style="justify-content:space-between;align-items:center">
+        <div><h2 class="title">Template editor</h2><div class="lbl">Pick an event type, then a template. Upload a PNG frame and the photo areas are found automatically.</div></div>
+        <div class="row" style="flex-wrap:wrap"><button class="btn" id="tPreview">Preview with sample photos</button><button class="btn pri" id="tSave">Save template</button></div>
+      </div>
+      <div class="wrap" style="align-items:stretch">
+        <div class="card" style="flex:1 1 230px;max-width:280px;display:flex;flex-direction:column;gap:8px">
+          <div class="cap">Event type</div>
+          <div id="typeList" style="display:flex;flex-direction:column;gap:4px"></div>
+          <button class="type" id="addType" style="color:#ff8a5c">+ New event type</button>
+          <div class="cap" style="margin-top:10px" id="tplHead">Templates</div>
+          <div id="tplList" style="display:flex;flex-direction:column;gap:8px"></div>
+          <button class="btn sm" id="addTpl">+ New template</button>
+        </div>
+        <div class="card" style="flex:3 1 420px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="flex-wrap:wrap;gap:8px">
+            <input class="in" id="tName" aria-label="Template name" style="width:220px" placeholder="Template name">
+            <label class="btn sm" for="pngFile" style="cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Upload PNG frame</label>
+            <input type="file" id="pngFile" accept="image/png" hidden>
+            <button class="btn sm pri" id="detectBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>Auto-detect photo areas</button>
+            <button class="btn sm" id="drawArea">+ Draw area</button>
+            <button class="btn sm" id="tDelete">Delete template</button>
+            <span class="lbl" style="margin-left:auto" id="frameName"></span>
+          </div>
+          <div class="banner ok" id="detectMsg"></div>
+          <div class="stage"><div class="frame-wrap" id="frameWrap"><img id="frameImg" alt="Template frame" crossorigin="anonymous"><div class="qrmark" id="tplQr" hidden><i></i><span>QR · 24 h</span></div></div></div>
+        </div>
+        <div class="card" style="flex:1 1 250px;max-width:300px;display:flex;flex-direction:column;gap:14px">
+          <div class="cap">Output</div>
+          <label class="field" for="tPaper">Paper<select class="in" id="tPaper"><option value="strip">2x6 strip (2 per 4x6 sheet)</option><option value="portrait">4x6 portrait</option><option value="landscape">4x6 landscape</option></select></label>
+          <label class="field" for="tRes">Resolution<select class="in" id="tRes"><option value="3840">4K · up to 3840 px long edge</option><option value="2700">2K · 2700 px long edge</option><option value="1800">Print · 1800 px long edge</option></select></label>
+          <div class="cap">Photo areas</div>
+          <div id="areaList" style="display:flex;flex-direction:column;gap:8px"></div>
+          <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Small QR on the print<br><span class="lbl" style="font-size:12px">Link lasts 24 hours · applies to all prints</span></span><input type="checkbox" id="tplQrOn"></label>
+          <label class="field" for="tFit">Photo fit<select class="in" id="tFit"><option value="cover">Fill the area (crop edges)</option><option value="contain">Fit inside (no crop)</option></select></label>
+          <label class="field" for="tType">Event type<select class="in" id="tType"></select></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- CAPTURE & MEDIA -->
+    <section class="sec" id="s-media">
+      <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">What guests can create</h2><div class="lbl">Turn each type on or off, and choose the quality.</div></div><button class="btn pri" id="mediaSave">Save</button></div>
+      <div class="grid-auto" id="modes"></div>
+      <div class="wrap">
+        <div class="card" style="flex:3 1 440px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><div class="lbl">Camera check · this device</div><span class="chip mute" id="camChip">Off</span></div>
+          <div class="preview"><video id="testVideo" muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>
+            <div style="position:absolute;top:12px;left:12px;display:flex;gap:6px;z-index:1"><span class="mono" style="font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;background:var(--accent);color:var(--on-accent)" id="resBadge">–</span><span class="mono" style="font-size:11px;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.6)" id="resLabel">Camera off</span></div>
+          </div>
+          <div class="row" style="flex-wrap:wrap"><button class="btn" id="camOn">Turn on camera</button><button class="btn pri" id="testShot" disabled>Take a test photo</button><span class="lbl" id="testInfo" style="margin-left:auto"></span></div>
+          <p class="lbl" style="margin:0">Open this page on the tablet to check the tablet's own camera.</p>
+        </div>
+        <div class="card" style="flex:2 1 300px;display:flex;flex-direction:column;gap:12px">
+          <div class="cap">Quality</div>
+          <label class="field" for="capRes">Capture resolution<select class="in" id="capRes"><option value="4k">4K · 3840 × 2160 (best)</option><option value="1440">1440p · 2560 × 1440</option><option value="1080">1080p · 1920 × 1080 (fastest upload)</option></select></label>
+          <label class="field" for="capCam">Camera on the tablet<select class="in" id="capCam"><option value="user">Front camera</option><option value="environment">Back camera</option><option value="dslr">Canon DSLR plugged into the tablet (USB)</option></select></label>
+          <label class="tog">Mirror the live preview (like a mirror)<input type="checkbox" id="capMirror"></label>
+          <label class="field" for="capQ">Photo quality <span class="mono" id="capQv">95%</span><input type="range" id="capQ" min="70" max="100" value="95" style="accent-color:var(--accent)"></label>
+          <label class="field" for="capCount">Countdown (seconds)<input class="in mono" type="number" id="capCount" min="1" max="10" value="3"></label>
+          <label class="field" for="capVid">Video length (seconds)<input class="in mono" type="number" id="capVid" min="3" max="30" value="10"></label>
+          <label class="field" for="capCopies">Most copies a guest can print<input class="in mono" type="number" id="capCopies" min="1" max="10" value="3"></label>
+          <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">If a tablet camera can't record 4K, the booth uses its highest resolution.</div>
+        </div>
+      </div>
+      <div class="card" id="dslrCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">
+        <div style="flex:2 1 360px;min-width:0;display:flex;flex-direction:column;gap:8px">
+          <div class="row" style="flex-wrap:wrap"><b style="font-size:15px">Canon DSLR over USB, plugged into the tablet</b><span class="chip mute" id="dslrState">Not connected</span><span class="chip hot">Experimental</span></div>
+          <p class="lbl" style="margin:0;line-height:1.55">Connect the Canon EOS 750D to the tablet with a USB cable (USB-C OTG adapter), turn the camera on, then tap Connect camera <b style="color:#fff">on the tablet</b>. The booth uses the camera's live view for the preview and takes full-quality photos with the DSLR. Set the camera to JPEG (not RAW).</p>
+          <p class="lbl" style="margin:0;line-height:1.55"><b style="color:#fff">Works on:</b> Android tablets in Chrome. <b style="color:#fff">Does not work on iPad</b>, because Apple doesn't let websites use USB devices.</p>
+        </div>
+        <div style="flex:1 1 220px;display:flex;flex-direction:column;gap:10px">
+          <button class="btn pri" id="dslrConnect">Connect camera</button>
+          <button class="btn" id="dslrTest" disabled>Take a DSLR test photo</button>
+          <div class="lbl mono" id="dslrInfo" style="font-size:12px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GALLERY & SHARE -->
+    <section class="sec" id="s-gallery">
+      <div class="wrap" style="justify-content:space-between;align-items:center">
+        <div><h2 class="title" id="gTitle"></h2><div class="lbl mono" id="gCount"></div></div>
+        <div class="row" style="flex-wrap:wrap"><select class="in" id="gEvent" style="width:240px" aria-label="Event"></select><button class="btn" id="gZip">Download all (ZIP)</button></div>
+      </div>
+      <div class="wrap" style="align-items:flex-start">
+        <div style="flex:3 1 460px;min-width:0;display:flex;flex-direction:column;gap:14px">
+          <div class="row" style="flex-wrap:wrap;gap:8px" id="gFilters">
+            <button class="pill on" data-f="all">All</button><button class="pill" data-f="photo">Photos</button><button class="pill" data-f="gif">GIF</button><button class="pill" data-f="boom">Boomerang</button><button class="pill" data-f="video">Video</button>
+          </div>
+          <div class="thumbs" id="thumbs"></div>
+        </div>
+        <div style="flex:1 1 300px;max-width:380px;display:flex;flex-direction:column;gap:14px">
+          <div class="card" style="display:flex;flex-direction:column;gap:12px;border-color:rgba(255,90,38,.45)">
+            <div class="row" style="justify-content:space-between"><b>Event album QR</b><span class="chip hot"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Admin only</span></div>
+            <div class="row" style="align-items:center;gap:14px"><div class="qrbox" id="albumQr"></div><p class="lbl" style="margin:0;line-height:1.5">Opens every photo from this event. Only you see this code. Give it to the people you choose, like the couple.</p></div>
+            <input class="in mono" id="albumLink" readonly aria-label="Album link" style="font-size:12px">
+            <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm" id="copyAlbum">Copy link</button><button class="btn sm" id="dlAlbumQr">Download QR</button><button class="btn sm" id="newAlbumLink">New link</button></div>
+            <label class="tog">Album link is on<input type="checkbox" id="albumOn"></label>
+            <label class="field" for="albumPin">PIN to open (leave empty for no PIN)<input class="in mono" id="albumPin" inputmode="numeric" maxlength="8" placeholder="No PIN"></label>
+            <label class="field" for="albumExp">Link expires<select class="in" id="albumExp"><option value="never">Never</option><option value="7">7 days from now</option><option value="30">30 days from now</option><option value="90">90 days from now</option><option value="keep" hidden>Keep current date</option></select></label>
+            <div class="lbl" id="albumExpInfo"></div>
+            <button class="btn sm pri" id="albumSave" style="align-self:flex-start">Save album settings</button>
+          </div>
+          <div class="card" style="display:flex;flex-direction:column;gap:8px">
+            <b>What a guest's QR opens</b>
+            <p class="lbl" style="margin:0;line-height:1.5">Only that guest's own photo, GIF, boomerang or video, with a Save button. There is no link to the rest of the album.</p>
+            <button class="btn sm" data-go="guest" style="align-self:flex-start">See the guest page</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRINTER -->
+    <section class="sec" id="s-printer">
+      <div><h2 class="title">Printer</h2><div class="lbl">The DNP DS-RX1HS is connected to this laptop with USB. Prints from the tablet come out here.</div></div>
+      <div class="wrap">
+        <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:12px">
+          <label class="tog" style="padding:12px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line)"><span><b>This laptop prints</b><br><span class="lbl" id="prnState">Off</span></span><input type="checkbox" id="prnOn"></label>
+          <div class="row" style="flex-wrap:wrap"><button class="btn" id="test46">Test print 4x6</button><button class="btn" id="testStrip">Test print strip</button></div>
+          <div class="lbl" style="line-height:1.55">For printing without the print window, start Chrome on this laptop with this command (once, from a desktop shortcut). Set the DNP as the default printer and paper size 4x6 (PC) in its driver.</div>
+          <div class="kbdcode" id="kioskCmd"></div>
+        </div>
+        <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:10px">
+          <div class="row" style="justify-content:space-between"><div class="lbl">Paper left</div><span class="chip" id="paperChip">Counting automatically</span></div>
+          <div class="mono num"><span id="paperLeft">–</span> / <span id="paperCap">–</span> sheets</div>
+          <div class="paperbar"><i id="paperBar" style="width:0%"></i></div>
+          <div class="lbl">Every print from the tablet or the gallery takes sheets off this count. Fix it by hand any time.</div>
+          <div class="row" style="flex-wrap:wrap;align-items:flex-end;gap:10px">
+            <label class="field" for="paperEdit" style="width:120px">Sheets left now<input class="in mono" id="paperEdit" type="number" min="0"></label>
+            <label class="field" for="capEdit" style="width:120px">Roll size<input class="in mono" id="capEdit" type="number" min="1"></label>
+            <button class="btn sm" id="paperSave" style="height:42px">Save</button>
+            <button class="btn sm" id="paperNew" style="height:42px">New roll (full)</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Time</th><th>Job</th><th>Copies</th><th>Status</th><th></th></tr></thead><tbody id="queue"></tbody></table></div></div>
+    </section>
+
+    <!-- STUDIO SETTINGS -->
+    <section class="sec" id="s-studio">
+      <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">Studio settings</h2><div class="lbl">Your photobooth name, logo and the tablet's start screen.</div></div><button class="btn pri" id="studioSave">Save</button></div>
+      <div class="wrap">
+        <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:12px">
+          <b>Photobooth name</b>
+          <label class="field" for="brandIn">Name shown on the login page, Admin board, tablet and guest page<input class="in" id="brandIn" maxlength="40"></label>
+          <div class="cap" style="margin-top:6px">Logo</div>
+          <div class="row" style="flex-wrap:wrap;gap:12px">
+            <div class="logoprev" id="logoPrev"></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="row" style="gap:8px"><label class="btn sm" for="logoFile" style="cursor:pointer">Upload logo</label><input type="file" id="logoFile" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden><button class="btn sm" id="logoReset">Use default</button></div>
+              <span class="lbl" style="font-size:12px">PNG with transparent background or SVG works best. Square, at least 256 × 256.</span>
+            </div>
+          </div>
+          <label class="field" for="guestFoot">Text at the bottom of the guest page<input class="in" id="guestFoot" maxlength="60"></label>
+          <div class="lbl">Leave empty to use “Photos by” + your photobooth name.</div>
+          <div class="row" style="padding:12px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line)"><span class="logo" data-logo data-size="22"></span><b data-brand style="font-size:16px">Photobooth Studio</b></div>
+        </div>
+        <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><b>Small QR on the print</b><span class="chip mute" id="pqChip">Off</span></div>
+          <label class="tog">Print a small QR on every print<input type="checkbox" id="pqOn"></label>
+          <label class="field" for="pqPos">Position<select class="in" id="pqPos"><option value="br">Bottom right corner</option><option value="bl">Bottom left corner</option></select></label>
+          <div style="display:flex;gap:14px;align-items:center">
+            <img id="pqPrev" alt="Strip preview with the small QR" style="height:170px;border-radius:3px;box-shadow:0 10px 30px rgba(0,0,0,.5);flex:none">
+            <p class="lbl" style="margin:0;line-height:1.55">Guests scan the QR on their print to download the soft copy. <b style="color:#fff">The link works for 24 hours</b> after the photo is taken. After that it shows “This link has expired”.</p>
+          </div>
+        </div>
+        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <b>Tablet start screen background</b>
+          <div class="row" style="flex-wrap:wrap;gap:8px" id="bgKinds" role="group" aria-label="Background type">
+            <button class="pill on" data-k="color">Colour glow</button><button class="pill" data-k="image">Photo</button><button class="pill" data-k="gif">GIF</button><button class="pill" data-k="video">Video</button>
+          </div>
+          <div class="bgprev" id="bgPrev"><div class="bglayer" id="bgPrevLayer"></div><div class="bgshade" id="bgPrevShade"></div><div class="bgtext"><div class="bt" style="font-size:34px" id="bgPrevTitle"></div><span class="bigbtn" style="height:40px;padding:0 20px;font-size:13px;display:inline-flex;align-items:center">Touch to start</span></div></div>
+          <div class="row" style="flex-wrap:wrap;gap:10px" id="bgUploadRow" hidden>
+            <label class="btn sm" for="bgFile" style="cursor:pointer" id="bgUploadLbl">Upload photo</label><input type="file" id="bgFile" hidden>
+            <span class="lbl" id="bgFileName">No file yet</span>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:8px" id="bgColors">
+            <button class="sw on" data-c="#ff5a26" aria-label="Orange glow" style="background:#ff5a26"></button><button class="sw" data-c="#c9a227" aria-label="Gold glow" style="background:#c9a227"></button><button class="sw" data-c="#d36b8c" aria-label="Rose glow" style="background:#d36b8c"></button><button class="sw" data-c="#4f8cff" aria-label="Blue glow" style="background:#4f8cff"></button><button class="sw" data-c="#3ddc84" aria-label="Green glow" style="background:#3ddc84"></button>
+          </div>
+          <label class="field" for="bgDim">Darken background so text stays readable <span class="mono" id="bgDimV">45%</span><input type="range" id="bgDim" min="0" max="80" value="45" style="accent-color:var(--accent)"></label>
+          <label class="field" for="bgSub">Line under the event name<input class="in" id="bgSub" maxlength="60" placeholder="Tap to make memories"></label>
+          <div class="lbl">Photo: JPG or PNG. GIF: animated GIF. Video: MP4 or WebM (up to 50 MB), plays silently on loop. Best size: 1920 × 1080 or larger.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACCOUNTS -->
+    <section class="sec" id="s-accounts">
+      <div><h2 class="title">Accounts &amp; PIN</h2><div class="lbl">Logins use a username and password only.</div></div>
+      <div class="wrap">
+        <div class="card" style="flex:1 1 340px;display:flex;flex-direction:column;gap:12px">
+          <b>Your login</b>
+          <label class="field" for="aUser">Username<input class="in" id="aUser" autocapitalize="none" spellcheck="false" maxlength="32"></label>
+          <button class="btn" style="align-self:flex-start" id="saveUser">Save username</button>
+          <label class="field" for="aPass">New password<input class="in" id="aPass" type="password" autocomplete="new-password" placeholder="At least 8 characters"></label>
+          <button class="btn pri" style="align-self:flex-start" id="savePass">Change password</button>
+        </div>
+        <div class="card" style="flex:1 1 340px;display:flex;flex-direction:column;gap:12px">
+          <b>Staff PIN for the tablet</b>
+          <p class="lbl" style="margin:0">Needed to leave the booth, change the camera or log out on the tablet.</p>
+          <label class="field" for="aPin">PIN (4 digits)<input class="in mono" id="aPin" inputmode="numeric" maxlength="4"></label>
+          <button class="btn pri" style="align-self:flex-start" id="savePin">Save PIN</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- GUEST PREVIEW -->
+    <section class="sec" id="s-guest">
+      <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">Guest view</h2><div class="lbl">What a guest sees after scanning a QR: only their own photo. This shows your latest photo.</div></div><a class="btn" id="gvOpen" target="_blank" rel="noopener">Open in a new tab</a></div>
+      <div style="display:flex;justify-content:center"><iframe class="gframe" id="gvFrame" title="Guest page preview"></iframe></div>
+    </section>
+  </main>
+</section>
+
+<!-- ================= TABLET BOOTH ================= -->
+<section id="v-booth" aria-label="Tablet booth">
+  <div class="cam" aria-hidden="true"><video id="live" muted playsinline autoplay></video><canvas id="dslrView" hidden></canvas></div>
+  <div class="bs on" id="b-attract">
+    <div class="boothbg" aria-hidden="true"><div class="bglayer" id="boothBgLayer"></div><div class="bgshade" id="boothShade"></div></div>
+    <div class="boothbrand"><span class="logo" data-logo data-size="18"></span><span data-brand>Photobooth Studio</span></div>
+    <button class="staff" id="staffBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Staff</button>
+    <h1 class="bt" id="bTitle"></h1>
+    <div style="font-size:18px;color:#d4d4d8" id="bSub">Tap to make memories</div>
+    <div class="bmodes" id="bModes"></div>
+    <span class="bstatus" id="bStatus"><span class="dot warn"></span>Connecting…</span>
+  </div>
+  <div class="bs" id="b-pick">
+    <div style="position:absolute;inset:0;background:rgba(0,0,0,.75)"></div>
+    <div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:20px;margin:auto;padding:24px;max-width:100%">
+      <h2 style="margin:0;font-size:30px">Choose your layout</h2>
+      <div class="row" id="pickList" style="flex-wrap:wrap;justify-content:center;gap:16px"></div>
+      <button class="btn rbtn" id="pickBack" style="padding:0 30px">← Back</button>
+    </div>
+  </div>
+  <div class="bs" id="b-shoot"><div class="shotinfo" id="shotInfo"></div><div id="b-count"></div><div class="flash" id="flash"></div><button class="btn ghost" id="cancelShoot" style="position:absolute;top:16px;left:16px">✕ Cancel</button></div>
+  <div class="bs" id="b-review">
+    <div id="reviewMedia"></div>
+    <div class="rp">
+      <h2 style="margin:0;font-size:30px">Looking good!</h2>
+      <div id="filterWrap"><div class="lbl" style="font-size:14px;margin-bottom:8px">Choose a filter</div><div class="filters" id="bFilters"></div></div>
+      <div class="copies" id="copiesWrap"><span>Copies</span><button id="cMinus" aria-label="Fewer copies">−</button><b class="mono" id="cNum">1</b><button id="cPlus" aria-label="More copies">+</button></div>
+      <button class="btn pri rbtn" id="printBtn">Print</button>
+      <div class="row"><button class="btn rbtn" style="flex:1" id="retakeBtn">↺ Retake</button><button class="btn rbtn" style="flex:1" id="doneBtn">Done</button></div>
+      <div class="lbl" id="reviewTimer"></div>
+    </div>
+  </div>
+  <div class="bs" id="b-done">
+    <div style="display:flex;flex-direction:column;gap:12px;max-width:320px">
+      <div class="bt" style="font-size:52px">Thank you!</div>
+      <div style="font-size:17px" id="printMsg"></div>
+      <div style="height:6px;border-radius:3px;background:#2a2a2e" id="printBarWrap"><div id="printBar" style="width:10%;height:6px;border-radius:3px;background:var(--accent);transition:width 1.2s"></div></div>
+      <button class="btn rbtn" id="backStart" style="margin-top:10px">Back to start</button>
+      <div class="lbl" id="doneTimer"></div>
+    </div>
+    <div class="gqr" id="gqrBox"><div class="q" id="guestQr"></div><b>Scan for your photo</b><span style="font-size:12px;color:#555">Only your photo</span></div>
+  </div>
+  <div class="bs" id="b-pin">
+    <div style="display:flex;flex-direction:column;gap:12px;align-items:flex-start" id="pinPad">
+      <div style="font-size:20px;font-weight:600">Enter staff PIN</div>
+      <div class="pins" id="pins"><i></i><i></i><i></i><i></i></div>
+      <div class="lbl" id="pinMsg"></div>
+      <div class="keys" id="keys"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;width:min(340px,100%)" id="staffMenu" hidden>
+      <div class="lbl">Staff menu</div>
+      <button class="opt" id="mBack"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Back to booth</button>
+      <div id="camMenu" style="display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:14px;border:1px solid var(--line2);background:#141416">
+        <label class="field" for="bCamSel">Camera<select class="in" id="bCamSel"></select></label>
+        <label class="tog">Mirror preview<input type="checkbox" id="bMirror"></label>
+        <button class="btn sm" id="bDslr">Connect Canon DSLR (USB)</button>
+        <span class="lbl" id="bCamInfo" style="font-size:12px"></span>
+      </div>
+      <button class="opt" id="mAdmin"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg>Switch to Admin board</button>
+      <button class="opt out" id="mOut"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M15 4h4a1 1 0 011 1v14a1 1 0 01-1 1h-4M10 16l-4-4 4-4M6 12h10"/></svg>Log out → login page</button>
+    </div>
+    <button class="btn ghost" id="pinCancel" style="position:absolute;top:16px;left:16px">✕ Cancel</button>
+  </div>
+  <div class="busy" id="busy" hidden><div class="spin"></div><div id="busyMsg">Saving…</div></div>
+  <div class="berr" id="bErr" hidden><div class="box"><b style="font-size:20px" id="errTitle"></b><div class="lbl" id="errMsg" style="font-size:15px"></div><div class="row"><button class="btn pri rbtn" style="flex:1" id="errRetry">Try again</button><button class="btn rbtn" style="flex:1" id="errCancel">Cancel</button></div></div></div>
+</section>
+
+<div class="toast" id="toast" hidden role="status"></div>
+<div id="printArea" aria-hidden="true"></div>
+
+<script src="../vendor/supabase.js"></script>
+<script src="../vendor/qrcode.min.js"></script>
+<script src="../vendor/jszip.min.js"></script>
+<script src="app.js" type="module"></script>
+</body>
+</html>
