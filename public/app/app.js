@@ -363,7 +363,7 @@ async function dslrConnect(pick) {
   if (dslr && dslr.running) { if (!dslr.noLive) showDslrView(); return dslr.cam; }   // already connected: never open a second connection
   if (dslrBusy) return dslrBusy;                       // a connect is already in progress
   dslrBusy = (async () => {
-    CAMLOG.length = 0; await camLog(pick ? 'tapped Connect' : 'automatic reconnect');
+    CAMLOG.push('—'); await camLog(pick ? 'tapped Connect' : 'automatic reconnect');
     try { if (!dslrLib) dslrLib = await import('../vendor/gphoto2/camera.js'); await camLog('camera library loaded'); }
     catch (e) { await camLog('camera library failed to load: ' + e.message); throw new Error('The camera part of the website did not load. Check the internet and reload the page. (' + e.message + ')'); }
     if (pick) {
@@ -386,18 +386,23 @@ async function dslrConnect(pick) {
       await freeUsb();
       cam = new dslrLib.Camera();
       try {
-        await cam.connect(); await camLog(`try ${attempt}: connected`); lastErr = null;
+        // Every step has a time limit: a Canon that never answers must not freeze the booth.
+        await withTimeout(cam.connect(), 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
         // Live view takes a moment to start on Canons: ask for it a few times before giving up on it.
-        try { await cam.setConfigValue('viewfinder', true); await camLog('live view switched on'); } catch (e) { if (e && e.constructor && e.constructor.name === 'RuntimeError') throw e; await camLog('live view switch: ' + e.message); }
+        try { await withTimeout(cam.setConfigValue('viewfinder', true), 8000, HUNG); await camLog('live view switched on'); } catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog('live view switch: ' + e.message); }
         for (let i = 1; i <= 8 && !liveOk; i++) {
-          try { await cam.capturePreviewAsBlob(); liveOk = true; await camLog(`live view OK (check ${i})`); }
-          catch (e) { if (e && e.constructor && e.constructor.name === 'RuntimeError') throw e; await camLog(`live view check ${i}: ${e.message}`); await sleep(700); }
+          try { await withTimeout(cam.capturePreviewAsBlob(), 6000, HUNG); liveOk = true; await camLog(`live view OK (check ${i})`); }
+          catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog(`live view check ${i}: ${e.message}`); await sleep(700); }
         }
         break;   // connected: with or without live view
       }
       catch (e) {
         await camLog(`try ${attempt}: ${(e && e.constructor && e.constructor.name) || 'Error'}: ${e && e.message}`);
-        lastErr = e; try { await cam.disconnect(); } catch (_) {} cam = null;
+        if (e.message === HUNG) {   // the library is now stuck waiting for the Canon: only a fresh page clears it
+          dslrCrashed = true; B.recoverDslr = true; lastErr = e; cam = null;
+          throw new Error('The Canon did not answer. The booth uses the tablet camera for now and reconnects the Canon by itself in a moment. If this keeps happening: switch the Canon off and on, and close the “Choose an app for the USB device” pop-up with Back.');
+        }
+        lastErr = e; try { await withTimeout(cam.disconnect(), 3000, 'x'); } catch (_) {} cam = null;
         if (e && e.constructor && e.constructor.name === 'RuntimeError') break;   // the library crashed: only a page reload helps
         await sleep(1500 * attempt);                                          // give the camera time to settle
       }
@@ -418,6 +423,7 @@ async function dslrConnect(pick) {
   })();
   try { return await dslrBusy; } finally { dslrBusy = null; }
 }
+const HUNG = 'The Canon did not answer in time';
 function setDslrMsg(t) { const a = $('#dslrInfo'), b = $('#bCamInfo'); if (a) a.textContent = t; if (b) b.textContent = t; }
 // Close any USB handle Chrome still has open to the camera; optionally reset the link (same as replugging).
 async function freeUsb() {
@@ -499,6 +505,7 @@ async function dslrRecover(force) {
   }
   if (UPLOADS.size || (!force && (B.session || !$('#b-attract').classList.contains('on')))) return;   // only when the booth is idle
   tries.push(Date.now()); try { sessionStorage.setItem('pb.dslrReloads', JSON.stringify(tries)); sessionStorage.setItem('pb.dslrRecovering', '1'); } catch (e) {}
+  await camLog('reloading the page to reconnect the Canon');
   busy('Reconnecting the Canon…'); setTimeout(() => location.reload(), 400);
 }
 /* Keep the Canon connected without anyone touching it:
