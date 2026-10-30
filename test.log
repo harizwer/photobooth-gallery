@@ -3,9 +3,9 @@
   PASS photos go to the tablet (capture destination = 4)
   PASS camera told there is free space
   PASS live view on: {"ok":true}
-  PASS 20 live view frames (20) in 46 ms
+  PASS 20 live view frames (20) in 1456 ms
   PASS live view sent to the tablet
-  PASS photo downloaded intact: {"ok":true,"id":1,"size":2300000,"ms":409}
+  PASS photo downloaded intact: {"ok":true,"id":1,"size":2300000,"ms":412}
   PASS transfer complete sent
   PASS live view resumes after the photo (5/5)
   PASS recovers from a USB stall and live view continues (10/10, resets 1)
@@ -22,9 +22,9 @@
   PASS photos go to the tablet (capture destination = 4)
   PASS camera told there is free space
   PASS live view on: {"ok":true}
-  PASS 20 live view frames (20) in 48 ms
+  PASS 20 live view frames (20) in 1455 ms
   PASS live view sent to the tablet
-  PASS photo downloaded intact: {"ok":true,"id":1,"size":4194304,"ms":405}
+  PASS photo downloaded intact: {"ok":true,"id":1,"size":4194304,"ms":416}
   PASS transfer complete sent
   PASS live view resumes after the photo (5/5)
   PASS recovers from a USB stall and live view continues (10/10, resets 1)
@@ -41,9 +41,9 @@
   PASS photos go to the tablet (capture destination = 4)
   PASS camera told there is free space
   PASS live view on: {"ok":true}
-  PASS 20 live view frames (20) in 45 ms
+  PASS 20 live view frames (20) in 1455 ms
   PASS live view sent to the tablet
-  PASS photo downloaded intact: {"ok":true,"id":1,"size":1536512,"ms":406}
+  PASS photo downloaded intact: {"ok":true,"id":1,"size":1536512,"ms":404}
   PASS transfer complete sent
   PASS live view resumes after the photo (5/5)
   PASS recovers from a USB stall and live view continues (10/10, resets 1)

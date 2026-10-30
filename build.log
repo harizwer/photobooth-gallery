@@ -23,8 +23,8 @@ Daemon will be stopped at the end of the build
 > Task :app:desugarReleaseFileDependencies
 > Task :app:mergeReleaseStartupProfile
 > Task :app:processReleaseManifestForPackage
-> Task :app:mergeExtDexRelease
 > Task :app:mergeReleaseArtProfile
+> Task :app:mergeExtDexRelease
 > Task :app:mergeReleaseShaders
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
@@ -52,7 +52,7 @@ Note: Recompile with -Xlint:deprecation for details.
 > Task :app:packageRelease
 > Task :app:createReleaseApkListingFileRedirect
 > Task :app:assembleRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1793370924531.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1793371846990.json
 
-BUILD SUCCESSFUL in 11s
+BUILD SUCCESSFUL in 15s
 38 actionable tasks: 38 executed
