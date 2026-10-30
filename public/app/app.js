@@ -331,30 +331,61 @@ async function startCamera() {
   const v = $('#live'); v.hidden = false; $('#dslrView').hidden = true; v.srcObject = B.stream; await v.play().catch(() => {});
 }
 function dslrSupported() { return !!navigator.usb && window.crossOriginIsolated; }
+// The camera library can only hold ONE connection per page. After it crashes, only a page reload clears it.
+let dslrLib = null, dslrBusy = null, dslrCrashed = false;
+const isWindows = /Windows/i.test(navigator.userAgent), isAndroid = /Android/i.test(navigator.userAgent);
+function dslrHelp(e) {
+  const m = String(e && e.message || e);
+  const crash = (e && e.constructor && e.constructor.name === 'RuntimeError') || /memory access|out of bounds|unreachable|table index/i.test(m);
+  if (crash) dslrCrashed = true;
+  if (/No device selected|NotFoundError/i.test(m)) return 'No camera was chosen. Tap Connect again and pick the Canon in the list.';
+  const steps = isWindows
+    ? 'On a Windows laptop the camera needs the WinUSB driver first: install Zadig (zadig.akeo.ie), choose the Canon EOS 750D, pick WinUSB, click Replace Driver. Then reload this page.'
+    : 'Close any other app that grabbed the camera (Gallery, Photos, a "USB: File transfer" pop-up — choose "Cancel" or "No data transfer"). On the camera: turn Wi-Fi off, set the dial to P or M (not video), and make sure a lens is on.';
+  return (crash ? 'The camera connection crashed. ' : 'Could not connect to the camera (' + m + '). ') + 'Unplug the USB cable, switch the camera off and on, plug it back in, reload this page, then tap Connect once. ' + steps;
+}
 async function dslrConnect(pick) {
   if (!navigator.usb) throw new Error('This browser cannot use USB devices. Use Chrome on an Android tablet (iPad is not supported).');
   if (!window.crossOriginIsolated) throw new Error('Open the booth from the Cloudflare address of this website to use the DSLR.');
-  const { Camera } = await import('../vendor/gphoto2/camera.js');
-  if (pick) await Camera.showPicker();
-  const cam = new Camera(); await cam.connect();
-  if (dslr) dslr.running = false;
-  dslr = { cam, canvas: $('#dslrView'), running: true };
-  stopCamera(); $('#live').hidden = true; dslr.canvas.hidden = false;
-  dslrLoop(dslr);
-  return cam;
+  if (dslrCrashed) throw new Error('Reload this page first (the camera connection crashed earlier), then tap Connect once.');
+  if (dslr && dslr.running) return dslr.cam;          // already connected: never open a second connection
+  if (dslrBusy) return dslrBusy;                       // a connect is already in progress
+  dslrBusy = (async () => {
+    if (!dslrLib) dslrLib = await import('../vendor/gphoto2/camera.js');
+    if (pick) { try { await dslrLib.Camera.showPicker(); } catch (e) { throw new Error(dslrHelp(e)); } }
+    const cam = new dslrLib.Camera();
+    try { await cam.connect(); await cam.capturePreviewAsBlob(); }
+    catch (e) { try { await cam.disconnect(); } catch (_) {} throw new Error(dslrHelp(e)); }
+    dslr = { cam, canvas: $('#dslrView'), running: true };
+    stopCamera(); $('#live').hidden = true; dslr.canvas.hidden = false;
+    dslr.loopDone = dslrLoop(dslr);
+    return cam;
+  })();
+  try { return await dslrBusy; } finally { dslrBusy = null; }
 }
+// Stop the live view and wait for it to finish before closing, so the library never uses a closed connection.
+async function dslrDisconnect() { const d = dslr; dslr = null; if (!d) return; d.running = false; try { await d.loopDone; } catch (e) {} try { await d.cam.disconnect(); } catch (e) {} }
 async function dslrAutoConnect() {
-  try { if (!dslrSupported()) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false; await dslrConnect(false); return true; } catch (e) { return false; }
+  try { if (!dslrSupported() || dslrCrashed) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false; await dslrConnect(false); return true; } catch (e) { return false; }
 }
 async function dslrLoop(d) {
-  const x = d.canvas.getContext('2d');
+  const x = d.canvas.getContext('2d'); let fails = 0;
   while (d.running && dslr === d) {
     if (d.pause) { await sleep(60); continue; }
     try {
-      const bmp = await createImageBitmap(await d.cam.capturePreviewAsBlob());
+      const bmp = await createImageBitmap(await d.cam.capturePreviewAsBlob()); fails = 0;
       if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
       x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
-    } catch (e) { await sleep(300); }
+    } catch (e) {
+      const msg = dslrHelp(e);
+      if (dslrCrashed || ++fails > 15) {   // camera lost: fall back to the tablet camera so the booth keeps working
+        d.running = false; if (dslr === d) dslr = null; d.cam.disconnect().catch(() => {});
+        toast('Canon DSLR disconnected. Using the tablet camera. ' + msg, 9000);
+        if (ROLE === 'booth') { S.capture.camera = S.capture.camera === 'dslr' ? 'user' : S.capture.camera; startCamera(); }
+        return;
+      }
+      await sleep(300);
+    }
   }
 }
 // One frame from the live preview, at most `max` px on the long edge.
@@ -621,11 +652,11 @@ async function fillCamMenu() {
   $('#bMirror').checked = !!S.capture.mirror;
   const v = $('#live'); $('#bCamInfo').textContent = dslr ? 'Canon DSLR connected (USB)' : v.videoWidth ? `Camera: ${v.videoWidth} × ${v.videoHeight}` : '';
 }
-$('#bCamSel').onchange = () => { store.set('camDevice', $('#bCamSel').value); if (dslr) { dslr.running = false; dslr = null; } S.capture.camera = /^(user|environment)$/.test($('#bCamSel').value) ? $('#bCamSel').value : S.capture.camera === 'dslr' ? 'user' : S.capture.camera; startCamera().then(fillCamMenu); };
+$('#bCamSel').onchange = async () => { store.set('camDevice', $('#bCamSel').value); await dslrDisconnect(); S.capture.camera = /^(user|environment)$/.test($('#bCamSel').value) ? $('#bCamSel').value : S.capture.camera === 'dslr' ? 'user' : S.capture.camera; startCamera().then(fillCamMenu); };
 $('#bMirror').onchange = () => { S.capture.mirror = $('#bMirror').checked; $('#live').classList.toggle('mirror', S.capture.mirror); saveStudio().catch(() => {}); };
-$('#bDslr').onclick = async () => { try { await dslrConnect(true); toast('Canon DSLR connected'); fillCamMenu(); } catch (e) { toast(e.message, 6000); } };
+$('#bDslr').onclick = async () => { const b = $('#bDslr'); b.disabled = true; $('#bCamInfo').textContent = 'Connecting…'; try { await dslrConnect(true); toast('Canon DSLR connected'); fillCamMenu(); } catch (e) { $('#bCamInfo').textContent = e.message; } b.disabled = false; };
 $('#pinCancel').onclick = goHome; $('#mBack').onclick = goHome;
-$('#mAdmin').onclick = () => { if (dslr) { dslr.running = false; dslr = null; } stopCamera(); store.set('role', 'admin'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); startAdmin(); };
+$('#mAdmin').onclick = () => { dslrDisconnect(); stopCamera(); store.set('role', 'admin'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); startAdmin(); };
 $('#mOut').onclick = signOut;
 // Hold the top-right corner for 3 seconds also opens the PIN screen
 { const hot = document.createElement('div'); hot.className = 'hot'; $('#b-attract').appendChild(hot); let t; hot.addEventListener('pointerdown', () => { t = setTimeout(openPin, 3000); }); ['pointerup', 'pointerleave', 'pointercancel'].forEach(n => hot.addEventListener(n, () => clearTimeout(t))); }
@@ -942,8 +973,10 @@ $('#testShot').onclick = async () => {
   $('#testInfo').textContent = `Last test: ${c.width} × ${c.height} · ${(b.size / 1048576).toFixed(1)} MB`;
 };
 $('#dslrConnect').onclick = async () => {
+  const b = $('#dslrConnect'); b.disabled = true; $('#dslrInfo').textContent = 'Connecting…';
   try { await dslrConnect(true); $('#dslrInfo').textContent = 'Live view on. Photos use the camera\'s full resolution.'; renderMedia(); toast('Canon DSLR connected'); }
-  catch (e) { $('#dslrInfo').textContent = e.message; toast(e.message, 6000); }
+  catch (e) { $('#dslrInfo').textContent = e.message; }
+  b.disabled = false;
 };
 $('#dslrTest').onclick = async () => {
   if (!dslr) return;
