@@ -350,6 +350,7 @@ function dslrHelp(e) {
   const crash = (e && e.constructor && e.constructor.name === 'RuntimeError') || /memory access|out of bounds|unreachable|table index/i.test(m);
   if (crash) dslrCrashed = true;
   if (/No device selected|NotFoundError/i.test(m)) return 'No camera was chosen. Tap Connect again and pick the Canon in the list.';
+  if (/I\/O|claim|busy|access denied|SecurityError|NetworkError/i.test(m)) return 'The tablet could not take control of the Canon\'s USB connection (' + m + '). The website already tried 4 times and reset the USB link. Please: close all other tabs and apps (Chrome tabs of this site, Gallery, Photos, Samsung Smart Switch), unplug the cable from the TABLET side, wait 5 seconds, plug it back in, and if Android asks “Open Chrome to handle the camera?” tap OK. Then reload this page and tap Connect once.';
   const steps = isWindows
     ? 'On a Windows laptop the camera needs the WinUSB driver first: install Zadig (zadig.akeo.ie), choose the Canon EOS 750D, pick WinUSB, click Replace Driver. Then reload this page.'
     : 'Close any other app that grabbed the camera (Gallery, Photos, a "USB: File transfer" pop-up — choose "Cancel" or "No data transfer"). On the camera: turn Wi-Fi off, set the dial to P or M (not video), and make sure a lens is on.';
@@ -364,9 +365,23 @@ async function dslrConnect(pick) {
   dslrBusy = (async () => {
     if (!dslrLib) dslrLib = await import('../vendor/gphoto2/camera.js');
     if (pick) { try { await dslrLib.Camera.showPicker(); } catch (e) { throw new Error(dslrHelp(e)); } }
-    const cam = new dslrLib.Camera();
-    try { await cam.connect(); await cam.capturePreviewAsBlob(); }
-    catch (e) { try { await cam.disconnect(); } catch (_) {} throw new Error(dslrHelp(e)); }
+    handedOff = false;
+    // Up to 4 tries. Before each one, free the camera from anything still holding it:
+    // another tab of this site, or a USB handle left open by an earlier connection. From try 2 on, also reset the USB link (like replugging the cable).
+    let cam = null, lastErr = null;
+    await releaseOtherTabs();
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      if (attempt > 1) setDslrMsg(`Connecting to the Canon… (try ${attempt} of 4)`);
+      await freeUsb(attempt > 1);
+      cam = new dslrLib.Camera();
+      try { await cam.connect(); await cam.capturePreviewAsBlob(); lastErr = null; break; }
+      catch (e) {
+        lastErr = e; try { await cam.disconnect(); } catch (_) {} cam = null;
+        if (e && e.constructor && e.constructor.name === 'RuntimeError') break;   // the library crashed: only a page reload helps
+        await sleep(1500 * attempt);                                          // give the camera time to settle
+      }
+    }
+    if (lastErr) throw new Error(dslrHelp(lastErr));
     dslr = { cam, canvas: $('#dslrView'), running: true, lastFrame: Date.now() };
     showDslrView();
     dslr.loopDone = dslrLoop(dslr);
@@ -377,10 +392,28 @@ async function dslrConnect(pick) {
   })();
   try { return await dslrBusy; } finally { dslrBusy = null; }
 }
+function setDslrMsg(t) { const a = $('#dslrInfo'), b = $('#bCamInfo'); if (a) a.textContent = t; if (b) b.textContent = t; }
+// Close any USB handle Chrome still has open to the camera; optionally reset the link (same as replugging).
+async function freeUsb(reset) {
+  let list = []; try { list = await navigator.usb.getDevices(); } catch (e) { return; }
+  for (const d of list) {
+    try { if (d.opened) await d.close(); } catch (e) {}
+    if (reset) { try { await d.open(); await d.reset(); } catch (e) {} try { if (d.opened) await d.close(); } catch (e) {} }
+  }
+  if (reset) await sleep(1200);
+}
+// Only one tab can use the camera. Ask other open tabs of this site (on this tablet) to let go of it first.
+const camChan = 'BroadcastChannel' in window ? new BroadcastChannel('pb-camera') : null;
+let otherTabHadCamera = false, handedOff = false;   // handedOff: another tab took the camera, so this tab stops reconnecting
+if (camChan) camChan.onmessage = async e => {
+  if (e.data === 'release') { handedOff = true; if (dslr) { await dslrDisconnect(); camChan.postMessage('released'); if (ROLE === 'booth') { dslrCrashed = false; startCamera(); } toast('The Canon is being used in another tab of this website.', 6000); } }
+  if (e.data === 'released') otherTabHadCamera = true;
+};
+async function releaseOtherTabs() { if (!camChan) return; otherTabHadCamera = false; camChan.postMessage('release'); await sleep(700); if (otherTabHadCamera) await sleep(1500); }
 // Stop the live view and wait for it to finish before closing, so the library never uses a closed connection.
 async function dslrDisconnect() { const d = dslr; dslr = null; if (!d) return; d.running = false; try { await d.loopDone; } catch (e) {} try { await d.cam.disconnect(); } catch (e) {} }
 async function dslrAutoConnect() {
-  try { if (!dslrSupported() || dslrCrashed) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false; await dslrConnect(false); return true; } catch (e) { return false; }
+  try { if (!dslrSupported() || dslrCrashed || handedOff) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false; await dslrConnect(false); return true; } catch (e) { return false; }
 }
 async function dslrLoop(d) {
   const x = d.canvas.getContext('2d'); let fails = 0;
@@ -429,7 +462,7 @@ async function dslrRecover(force) {
    - when it is switched off / unplugged, carry on with the tablet camera meanwhile */
 let ensuring = false;
 async function dslrEnsure() {
-  if (ensuring || ROLE !== 'booth' || S.capture.camera !== 'dslr' || B.session || dslrBusy || !dslrSupported()) return;
+  if (ensuring || handedOff || ROLE !== 'booth' || S.capture.camera !== 'dslr' || B.session || dslrBusy || !dslrSupported()) return;
   if (dslr && dslr.running) { if (!dslr.pause && !dslrHealthy()) dslrFallback(); return; }
   ensuring = true;
   try {
