@@ -316,7 +316,7 @@ async function boothLoad() {
   boothStatus();
 }
 function boothStatus() {
-  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR · photos only (live view unstable)' : 'Canon DSLR · live view') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
+  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR ready · preview: tablet camera' : 'Canon DSLR · live view') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
 }
 $('#bModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) startFlow(b.dataset.mode); });
 
@@ -335,7 +335,7 @@ async function startCamera() {
   const [w, h] = MAXRES;
   const base = pref === 'user' || pref === 'environment' ? { facingMode: pref } : { deviceId: { exact: pref } };
   try {
-    B.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...base, width: { ideal: w }, height: { ideal: h } } });
+    B.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...base, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
   } catch (e) {
     try { B.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true }); }
     catch (e2) { return showErr('Cannot open the camera', 'Allow camera access for this website in the browser settings, then tap Try again.', () => startCamera(), () => {}); }
@@ -392,8 +392,10 @@ async function dslrConnect(pick) {
       try {
         // Every step has a time limit: a Canon that never answers must not freeze the booth.
         await withTimeout(cam.connect(), 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
-        const wantLive = !liveIsBroken();
-        if (!wantLive) await camLog('live view was unstable earlier: photos only until the Canon is switched off and on');
+        // Canon live view over this kind of USB link is unreliable (it freezes the Canon), while Canon photos are reliable.
+        // So the preview always comes from the tablet camera and the Canon only takes the photos.
+        const wantLive = S.capture.canonLive === true && !liveIsBroken();
+        if (!wantLive) await camLog('Canon takes the photos; preview from the tablet camera');
         if (wantLive) {
           // Start live view FIRST, before changing any camera setting (a Canon busy with a setting answers "I/O problem").
           // It takes a moment to start (the mirror flips up), so wait, then give the first picture plenty of time.
@@ -424,7 +426,7 @@ async function dslrConnect(pick) {
     else {
       // No live view from this Canon: guests see the tablet camera for framing, photos are still taken with the Canon.
       dslr.loopDone = dslrKeepAlive(dslr);
-      setDslrMsg('Canon connected. Its live view did not start, so the preview uses the tablet camera and the photos are taken with the Canon. Switch the Canon off and on to try live view again.');
+      setDslrMsg('Canon connected. Every photo is taken with the Canon; the preview uses the tablet camera (smooth and stable).');
       $('#dslrView').hidden = true; B.stream || (ROLE === 'booth' && startCamera());
     }
     // Remember the choice so the booth reconnects to the Canon next time
@@ -673,7 +675,7 @@ async function startSession(design) {
     } else if (me.mode === 'gif') {
       if (!(await countdown(me, 'GIF · get ready to move!'))) return;
       $('#b-count').textContent = ''; $('#shotInfo').innerHTML = '<span class="recdot"></span>Recording GIF';
-      for (let i = 0; i < 10; i++) { if (B.session !== me) return; me.shots.push(grabFrame(1080)); beep(1500, .03); await sleep(200); }
+      for (let i = 0; i < 10; i++) { if (B.session !== me) return; me.shots.push(grabFrame(800)); /* GIFs get very slow to build above ~800 px */ beep(1500, .03); await sleep(200); }
     } else if (me.mode === 'boom') {
       if (!(await countdown(me, 'Boomerang · keep moving!'))) return;
       $('#b-count').textContent = ''; $('#shotInfo').innerHTML = '<span class="recdot"></span>Recording boomerang';
@@ -743,7 +745,7 @@ async function stripBoomerang(design, bursts, filter, name, date) {
   const d = { ...design, output_long: 1600 }, frames = [];
   for (let i = 0; i < k; i++) { frames.push(await compose(d, bursts.map(b => b[i]), filter, { name, date })); await sleep(0); }
   if (window.MediaRecorder && recMime()) return makeBoomerang(frames);
-  return makeGif(frames.map(f => scaled(f, 1080)), 90, true);
+  return makeGif(frames.map(f => scaled(f, 800)), 90, true);
 }
 async function renderSession() {
   const s = B.session, box = $('#reviewMedia');
@@ -1276,7 +1278,7 @@ $('#tplQrOn').onchange = async () => { S.printQr.on = $('#tplQrOn').checked; $('
 /* ---- Capture & media ---- */
 const MODES = [
   { key: 'photo', name: 'Photo', spec: 'High resolution', note: 'JPG · printed and shared' },
-  { key: 'gif', name: 'GIF', spec: 'High resolution', note: '10 frames · loops back and forth' },
+  { key: 'gif', name: 'GIF', spec: '800 px', note: '10 frames · loops back and forth (GIFs above this size get very slow to make)' },
   { key: 'boom', name: 'Boomerang', spec: 'High resolution', note: 'Video · plays forward and back' },
   { key: 'video', name: 'Video', spec: 'High resolution', note: 'Video with the length you choose' },
 ];
@@ -1309,7 +1311,7 @@ async function dslrCheckOn() {
   if (dslr && dslr.noLive) {
     testRaf = 1;
     try { testStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } } }); const v = $('#testVideo'); v.hidden = false; $('#testDslr').hidden = true; v.srcObject = testStream; await v.play().catch(() => {}); } catch (e) {}
-    $('#resBadge').textContent = 'DSLR'; $('#resLabel').textContent = 'Canon connected · its live view did not start, so this preview is the tablet camera. Photos come from the Canon.'; $('#camChip').textContent = 'Canon DSLR'; $('#camChip').className = 'chip'; $('#testShot').disabled = false; $('#camOn').textContent = 'Turn off camera'; return; }
+    $('#resBadge').textContent = 'DSLR'; $('#resLabel').textContent = 'Canon connected · this preview is the tablet camera; every photo is taken with the Canon.'; $('#camChip').textContent = 'Canon DSLR'; $('#camChip').className = 'chip'; $('#testShot').disabled = false; $('#camOn').textContent = 'Turn off camera'; return; }
   const out = $('#testDslr'), x = out.getContext('2d'); out.hidden = false; $('#testVideo').hidden = true;
   const draw = () => { const src = $('#dslrView'); if (src.width) { if (out.width !== src.width) { out.width = src.width; out.height = src.height; } x.drawImage(src, 0, 0); $('#resLabel').textContent = `Canon live view ${src.width} × ${src.height} · photos at full resolution`; } testRaf = requestAnimationFrame(draw); };
   draw();
