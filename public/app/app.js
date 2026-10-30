@@ -43,7 +43,7 @@ const STUDIO_DEFAULT = {
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   modes: { photo: true, gif: true, boom: true, video: false },
-  capture: { res: '4k', camera: 'user', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true },
+  capture: { res: '4k', camera: 'user', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true, canonMode: 'photos' },
   types: [],
 };
 let S = structuredClone(STUDIO_DEFAULT);
@@ -313,7 +313,7 @@ async function boothLoad() {
   boothStatus();
 }
 function boothStatus() {
-  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR (preview: tablet)' : 'Canon DSLR') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
+  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR · photos only' : 'Canon DSLR') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
 }
 $('#bModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) startFlow(b.dataset.mode); });
 
@@ -388,6 +388,7 @@ async function dslrConnect(pick) {
       try {
         // Every step has a time limit: a Canon that never answers must not freeze the booth.
         await withTimeout(cam.connect(), 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
+        if (S.capture.canonMode !== 'live') { await camLog('photos-only mode: live view not used'); break; }
         // Live view takes a moment to start on Canons: ask for it a few times before giving up on it.
         try { await withTimeout(cam.setConfigValue('viewfinder', true), 8000, HUNG); await camLog('live view switched on'); } catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog('live view switch: ' + e.message); }
         for (let i = 1; i <= 8 && !liveOk; i++) {
@@ -413,7 +414,7 @@ async function dslrConnect(pick) {
     else {
       // No live view from this Canon: guests see the tablet camera for framing, photos are still taken with the Canon.
       dslr.loopDone = dslrKeepAlive(dslr);
-      setDslrMsg('Canon connected. Its live view did not start, so the preview uses the tablet camera and the photos are taken with the Canon. For Canon live view: Menu → Live View shoot → Enable, and set the dial to P or M.');
+      setDslrMsg(S.capture.canonMode !== 'live' ? 'Canon connected (photos only): guests see the tablet camera as the preview, and every photo is taken with the Canon.' : 'Canon connected. Its live view did not start, so the preview uses the tablet camera and the photos are taken with the Canon.');
       $('#dslrView').hidden = true; B.stream || (ROLE === 'booth' && startCamera());
     }
     // Remember the choice so the booth reconnects to the Canon next time
@@ -500,7 +501,7 @@ async function dslrRecover(force) {
   if (!(await canonPresent())) return;                 // camera off or unplugged: wait until it comes back
   let tries = []; try { tries = JSON.parse(sessionStorage.getItem('pb.dslrReloads') || '[]').filter(t => Date.now() - t < 5 * 60e3); } catch (e) {}
   if (tries.length >= 3) {                              // don't loop: try again a few minutes later
-    if (Date.now() - gaveUpToast > 120e3) { gaveUpToast = Date.now(); toast('The Canon keeps stopping. Check the cable, battery and focus (MF). The booth keeps trying; using the tablet camera for now.', 12000); }
+    if (Date.now() - gaveUpToast > 120e3) { gaveUpToast = Date.now(); toast('The Canon keeps stopping. Switch the Canon OFF and ON again — it reconnects by itself. Using the tablet camera until then.', 12000); }
     return;
   }
   if (UPLOADS.size || (!force && (B.session || !$('#b-attract').classList.contains('on')))) return;   // only when the booth is idle
@@ -526,7 +527,8 @@ async function dslrEnsure() {
 }
 setInterval(dslrEnsure, 4000);
 if (navigator.usb) {
-  navigator.usb.addEventListener('connect', () => setTimeout(dslrEnsure, 2000));
+  // Canon switched on / plugged in: always a fresh start, even after the reconnect limit was reached
+  navigator.usb.addEventListener('connect', () => { try { sessionStorage.setItem('pb.dslrReloads', '[]'); } catch (e) {} camLog('Canon plugged in / switched on'); setTimeout(dslrEnsure, 2500); });
   navigator.usb.addEventListener('disconnect', () => { if (dslr) dslrFallback('The Canon was switched off or unplugged — it reconnects by itself when it is back.'); });
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(dslrEnsure, 800); });
@@ -534,7 +536,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 async function dslrKeepAlive(d) {
   let fails = 0;
   while (d.running && dslr === d) {
-    await sleep(15000); if (!d.running || dslr !== d || d.pause) continue;
+    await sleep(20000); if (!d.running || dslr !== d || d.pause) continue;
     try { await withTimeout(d.cam.consumeEvents(), 8000, 'no answer'); fails = 0; d.lastFrame = Date.now(); }
     catch (e) { if (++fails >= 2 && dslr === d) { dslrFallback(); return; } }
   }
@@ -1236,7 +1238,7 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capCanonMode').value = c.canonMode || 'photos'; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState();
 }
@@ -1246,7 +1248,7 @@ $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
 $('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
-  Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, photoGif: $('#capPhotoGif').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
+  Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, photoGif: $('#capPhotoGif').checked, canonMode: $('#capCanonMode').value, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
 };
 let testStream = null;
