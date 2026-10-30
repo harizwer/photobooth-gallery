@@ -46,6 +46,11 @@ jobs:
   emulator:
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        api: [29, 34]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -62,7 +67,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 29
+          api-level: ${{ matrix.api }}
           arch: x86_64
           target: default
           disable-animations: true
@@ -73,7 +78,7 @@ jobs:
         run: |
           git fetch -q origin apk-build
           git checkout -q -B results origin/apk-build
-          rm -rf emulator && mkdir emulator && cp -r out-emu/* emulator/ 2>/dev/null || true
-          git add -f emulator
-          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Emulator test ${{ github.run_number }} (${{ job.status }})" || true
+          rm -rf emulator-${{ matrix.api }} && mkdir emulator-${{ matrix.api }} && cp -r out-emu/* emulator-${{ matrix.api }}/ 2>/dev/null || true
+          git add -f emulator-${{ matrix.api }}
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Emulator Android API ${{ matrix.api }}, build ${{ github.run_number }} (${{ job.status }})" || true
           git push -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" HEAD:apk-build

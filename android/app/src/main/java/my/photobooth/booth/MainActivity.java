@@ -82,7 +82,10 @@ public class MainActivity extends Activity {
         setContentView(root);
         createWebView();
         if (saved != null) web.restoreState(saved);
-        if (web.getUrl() == null) web.loadUrl(HOME);
+        if (web.getUrl() == null) {
+            if (webViewMajor() > 0 && webViewMajor() < MIN_WEBVIEW) showUpdateWebView();
+            else web.loadUrl(HOME);
+        }
 
         IntentFilter f = new IntentFilter();
         f.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
@@ -112,6 +115,34 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
         web.setDownloadListener((url, ua, cd, mime, len) -> openOutside(url));
+    }
+
+    /** The booth website needs a recent "Android System WebView" (the browser engine apps use). */
+    static final int MIN_WEBVIEW = 98;
+
+    static int webViewMajor() {
+        try {
+            android.content.pm.PackageInfo p = WebView.getCurrentWebViewPackage();
+            if (p == null || p.versionName == null) return 0;
+            return Integer.parseInt(p.versionName.split("\\.")[0]);
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
+    private void showUpdateWebView() {
+        android.content.pm.PackageInfo p = WebView.getCurrentWebViewPackage();
+        String pkg = p != null ? p.packageName : "com.google.android.webview";
+        String html = "<html><head><meta name=viewport content='width=device-width,initial-scale=1'></head>"
+                + "<body style='background:#111;color:#eee;font:18px sans-serif;padding:32px;line-height:1.5'>"
+                + "<h2>One update needed</h2>"
+                + "<p>This tablet's <b>Android System WebView</b> is too old (version " + webViewMajor() + "). "
+                + "The booth needs version " + MIN_WEBVIEW + " or newer. Updating it is free.</p>"
+                + "<p><a style='display:inline-block;background:#ff5c8a;color:#fff;padding:14px 22px;border-radius:10px;text-decoration:none' "
+                + "href='market://details?id=" + pkg + "'>Update in Play Store</a></p>"
+                + "<p>After updating, close this app and open it again. Also update <b>Google Chrome</b> if Play Store offers it.</p>"
+                + "<p style='margin-top:40px'><a style='color:#aaa' href='" + HOME + "'>Continue anyway</a></p></body></html>";
+        web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
     }
 
     /** Tells the page that the Canon was plugged in or out. */

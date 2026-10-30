@@ -23,7 +23,8 @@ const check = `(async () => {
   try { const s = await navigator.mediaDevices.getUserMedia({ video: true }); out.tabletCamera = s.getVideoTracks()[0].label || 'ok'; s.getTracks().forEach(t => t.stop()); }
   catch (e) { out.tabletCamera = 'ERROR ' + e.name + ': ' + e.message; }
   out.loginScreen = !!document.querySelector('#v-login.on');
-  out.nativeInPage = typeof NATIVE;
+  out.boothCodeLoaded = typeof window.__pbNativeDone === 'function';
+  out.bodyText = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').slice(0, 300);
   out.log = PBNative.log();
   return JSON.stringify(out, null, 1);
 })()`;
