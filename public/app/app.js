@@ -388,6 +388,12 @@ async function dslrConnect(pick) {
       try {
         // Every step has a time limit: a Canon that never answers must not freeze the booth.
         await withTimeout(cam.connect(), 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
+        // Smaller transfers over USB: Medium JPEG (about 4K, all the print needs) instead of the full 24 MP file,
+        // and photos handed straight to the tablet from the camera's memory.
+        for (const [k, v] of [['imageformat', 'Medium Fine JPEG'], ['capturetarget', 'Internal RAM']]) {
+          try { await withTimeout(cam.setConfigValue(k, v), 8000, HUNG); await camLog(`${k} → ${v}`); }
+          catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog(`${k}: ${e.message}`); }
+        }
         if (S.capture.canonMode !== 'live') { await camLog('photos-only mode: live view not used'); break; }
         // Live view takes a moment to start on Canons: ask for it a few times before giving up on it.
         try { await withTimeout(cam.setConfigValue('viewfinder', true), 8000, HUNG); await camLog('live view switched on'); } catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog('live view switch: ' + e.message); }
@@ -553,10 +559,10 @@ function grabFrame(max = 4000) {
 }
 function withTimeout(promise, ms, msg) { let t; return Promise.race([promise, new Promise((_, rej) => { t = setTimeout(() => rej(new Error(msg)), ms); })]).finally(() => clearTimeout(t)); }
 const DSLR_SHOT_HELP = 'The Canon did not take the photo in time. Usually it could not focus: add more light, or focus once and switch the lens to MF. Also set the camera to JPEG (not RAW) and make sure an SD card is in.';
-// Full-quality Canon photo, shrunk to 4K. Never waits more than 12 s: if the Canon hangs, the live view frame is used instead.
+// Canon photo, shrunk to 4K. Never waits more than 20 s: if the Canon hangs, the live view frame is used instead.
 async function dslrFullPhoto(d) {
   const t0 = performance.now(); let f;
-  try { f = await withTimeout(d.cam.captureImageAsFile(), 10000, DSLR_SHOT_HELP); }
+  try { f = await withTimeout(d.cam.captureImageAsFile(), 20000, DSLR_SHOT_HELP); }
   catch (e) { LV.captures.push(`photo FAILED after ${((performance.now() - t0) / 1000).toFixed(1)} s: ${e.message.slice(0, 60)}`); camLog('Canon photo failed: ' + e.message.slice(0, 80)); throw e; }
   LV.captures.push(`photo ${(f.size / 1048576).toFixed(1)} MB in ${((performance.now() - t0) / 1000).toFixed(1)} s`); if (LV.captures.length > 10) LV.captures.shift();
   let bmp;
@@ -568,7 +574,7 @@ async function capturePhoto() {
   if (dslr && !dslrHealthy()) { await dslrFallback(); await sleep(700); }
   const d = dslr;
   if (d) {
-    d.pause = true; $('#shotInfo').textContent = 'Hold still…';
+    d.pause = true; $('#shotInfo').textContent = 'Hold still…'; const slowMsg = setTimeout(() => { if (B.session) $('#shotInfo').textContent = 'Getting the photo from the Canon…'; }, 2500);
     try { return await dslrFullPhoto(d); }
     catch (e) {
       const live = grabFrame();                       // last Canon live view frame, taken at the right moment
@@ -576,7 +582,7 @@ async function capturePhoto() {
       else toast(e.message, 9000);
       return live;
     }
-    finally { d.pause = false; }
+    finally { d.pause = false; clearTimeout(slowMsg); }
   }
   return grabFrame();
 }
@@ -1265,7 +1271,7 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capCanonMode').value = c.canonMode || 'photos'; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#laptopCard').hidden = c.camera !== 'laptop'; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capCanonMode').value = c.canonMode || 'photos'; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState(); renderHelperState();
 }
@@ -1276,7 +1282,7 @@ function renderHelperState() {
 function renderDslrState() { $('#dslrState').textContent = dslr ? 'Connected' : 'Not connected'; $('#dslrState').className = 'chip' + (dslr ? '' : ' mute'); $('#dslrTest').disabled = !dslr; if (dslr) $('#capCam').value = 'dslr'; }
 $('#modes').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; S.modes[b.dataset.m] = !S.modes[b.dataset.m]; if (!enabledModes().length) S.modes.photo = true; renderModes(); });
 $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
-$('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+$('#capCam').onchange = () => { camTestOff(); $('#laptopCard').hidden = $('#capCam').value !== 'laptop'; if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
   Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, photoGif: $('#capPhotoGif').checked, canonMode: $('#capCanonMode').value, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
