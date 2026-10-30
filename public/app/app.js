@@ -363,14 +363,24 @@ async function dslrConnect(pick) {
   if (dslr && dslr.running) { showDslrView(); return dslr.cam; }   // already connected: never open a second connection
   if (dslrBusy) return dslrBusy;                       // a connect is already in progress
   dslrBusy = (async () => {
-    if (!dslrLib) dslrLib = await import('../vendor/gphoto2/camera.js');
-    if (pick) { try { await dslrLib.Camera.showPicker(); } catch (e) { throw new Error(dslrHelp(e)); } }
+    CAMLOG.length = 0; await camLog(pick ? 'tapped Connect' : 'automatic reconnect');
+    try { if (!dslrLib) dslrLib = await import('../vendor/gphoto2/camera.js'); await camLog('camera library loaded'); }
+    catch (e) { await camLog('camera library failed to load: ' + e.message); throw new Error('The camera part of the website did not load. Check the internet and reload the page. (' + e.message + ')'); }
+    if (pick) {
+      await camLog('opening Chrome camera list');
+      try { await dslrLib.Camera.showPicker(); await camLog('camera chosen in the list'); }
+      catch (e) {
+        await camLog('camera list: ' + e.name + ': ' + e.message);
+        if (/No device selected|NotFoundError/i.test(e.name + e.message)) throw new Error('No camera was chosen. If the Chrome list was EMPTY, the tablet cannot see the Canon at all: check the OTG adapter and cable (try another one), turn on "OTG" in the tablet settings if it has that option, and make sure the Canon is switched on. If the Canon was in the list, tap it, then tap Connect.');
+        throw new Error(dslrHelp(e));
+      }
+    }
     handedOff = false;
     // Up to 4 tries. Before each one, free the camera from anything still holding it:
     // another tab of this site, or a USB handle left open by an earlier connection. From try 2 on, also reset the USB link (like replugging the cable).
     let cam = null, lastErr = null;
     await releaseOtherTabs();
-    CAMLOG.length = 0; await camLog('start');
+    await camLog('connecting');
     for (let attempt = 1; attempt <= 3; attempt++) {
       if (attempt > 1) setDslrMsg(`Connecting to the Canon… (try ${attempt} of 3)`);
       await freeUsb();
@@ -401,14 +411,15 @@ async function freeUsb() {
   for (const d of list) { try { if (d.opened) await d.close(); } catch (e) {} }
 }
 /* ---------- Camera report: what happened on the last connect (to send to support) ---------- */
-const CAMLOG = [];
+const CAMLOG = (() => { try { return JSON.parse(sessionStorage.getItem('pb.camlog') || '[]'); } catch (e) { return []; } })();
 async function camLog(step) {
   let devs = '';
   try { devs = (await navigator.usb.getDevices()).map(d => `${d.manufacturerName || '?'} ${d.productName || '?'} [${(d.vendorId || 0).toString(16)}:${(d.productId || 0).toString(16)}] ${d.opened ? 'open' : 'closed'}`).join('; ') || 'none'; } catch (e) { devs = 'n/a'; }
   CAMLOG.push(`${new Date().toLocaleTimeString('en-GB')} ${step} | USB devices: ${devs}`);
+  try { sessionStorage.setItem('pb.camlog', JSON.stringify(CAMLOG.slice(-40))); } catch (e) {}
 }
 function camReport() {
-  return ['Photobooth camera report', `Browser: ${navigator.userAgent}`, `Isolated: ${window.crossOriginIsolated} · WebUSB: ${!!navigator.usb} · Other tab had camera: ${otherTabHadCamera}`, ...CAMLOG].join('\n');
+  return ['Photobooth camera report', `Page: ${ROLE || '-'} · Camera setting: ${S.capture.camera} · Connected now: ${!!(dslr && dslr.running)}`, `Browser: ${navigator.userAgent}`, `Isolated: ${window.crossOriginIsolated} · WebUSB: ${!!navigator.usb} · Other tab had camera: ${otherTabHadCamera}`, ...(CAMLOG.length ? CAMLOG : ['(nothing recorded yet: tap Connect camera first, then copy the report)'])].join('\n');
 }
 // Only one tab can use the camera. Ask other open tabs of this site (on this tablet) to let go of it first.
 const camChan = 'BroadcastChannel' in window ? new BroadcastChannel('pb-camera') : null;
@@ -1238,6 +1249,7 @@ $('#dslrConnect').onclick = async () => {
   catch (e) { $('#dslrInfo').textContent = e.message + ' If it still fails, tap “Copy camera report” and send it to support.'; }
   b.disabled = false;
 };
+$('#bReport').onclick = () => $('#dslrReport').click();
 $('#dslrReport').onclick = async () => {
   const r = camReport();
   try { await navigator.clipboard.writeText(r); toast('Camera report copied. Paste it in your message to support.'); }
