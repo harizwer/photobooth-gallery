@@ -175,44 +175,29 @@
 
     <!-- CAPTURE & MEDIA -->
     <section class="sec" id="s-media">
-      <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">What guests can create</h2><div class="lbl">Turn each type on or off, and choose the quality.</div></div><button class="btn pri" id="mediaSave">Save</button></div>
-      <div class="grid-auto" id="modes"></div>
+      <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">Camera &amp; photos</h2><div class="lbl">The camera the booth uses on this device, and photo settings. Guests get photos only.</div></div><button class="btn pri" id="mediaSave">Save</button></div>
+      <div class="grid-auto" id="modes" hidden></div>
       <div class="wrap">
         <div class="card" style="flex:3 1 440px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><div class="lbl">Camera check · this device</div><span class="chip mute" id="camChip">Off</span></div>
-          <div class="preview"><video id="testVideo" muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video><canvas id="testDslr" hidden style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></canvas>
+          <div class="preview"><video id="testVideo" muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>
             <div style="position:absolute;top:12px;left:12px;display:flex;gap:6px;z-index:1"><span class="mono" style="font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;background:var(--accent);color:var(--on-accent)" id="resBadge">–</span><span class="mono" style="font-size:11px;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.6)" id="resLabel">Camera off</span></div>
           </div>
           <div class="row" style="flex-wrap:wrap"><button class="btn" id="camOn">Turn on camera</button><button class="btn pri" id="testShot" disabled>Take a test photo</button><span class="lbl" id="testInfo" style="margin-left:auto"></span></div>
-          <p class="lbl" style="margin:0">Open this page on the tablet to check the tablet's own camera.</p>
+          <p class="lbl" style="margin:0;line-height:1.55">Open this page <b style="color:#fff">on the tablet</b> to check its camera. With the Canon: HDMI cable from the Canon → capture card → tablet, Canon switched on and in Live View. It shows up as <b style="color:#fff">“capture card”</b>.</p>
         </div>
         <div class="card" style="flex:2 1 300px;display:flex;flex-direction:column;gap:12px">
           <div class="cap">Quality</div>
-          <label class="field" for="capCam">Camera on the tablet<select class="in" id="capCam"><option value="user">Front camera</option><option value="environment">Back camera</option><option value="dslr">Canon DSLR plugged into the tablet (USB)</option></select></label>
+          <label class="field" for="capCam">Camera (on this device)<select class="in" id="capCam"><option value="auto">Auto — capture card if plugged in, else front camera</option></select></label>
           <label class="tog">Mirror the live preview (like a mirror)<input type="checkbox" id="capMirror"></label>
-          <label class="tog">Also make a boomerang of the strip — all photos move together (guests get it by QR, it is not printed)<input type="checkbox" id="capPhotoGif"></label>
           <label class="field" for="capQ">Photo quality <span class="mono" id="capQv">95%</span><input type="range" id="capQ" min="70" max="100" value="95" style="accent-color:var(--accent)"></label>
           <label class="field" for="capCount">Countdown (seconds)<input class="in mono" type="number" id="capCount" min="1" max="10" value="3"></label>
           <label class="field" for="capGap">Time between photos (seconds) — guests see the photo just taken<input class="in mono" type="number" id="capGap" min="0" max="10" step="0.5" value="2"></label>
-          <label class="field" for="capVid">Video length (seconds)<input class="in mono" type="number" id="capVid" min="3" max="30" value="10"></label>
           <label class="field" for="capCopies">Most copies a guest can print<input class="in mono" type="number" id="capCopies" min="1" max="10" value="3"></label>
-          <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">Photos, GIFs, boomerangs and videos always use the highest resolution your camera can do.</div>
+          <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">Photos use the highest resolution the camera or capture card gives (often 1920 × 1080 or 3840 × 2160).</div>
         </div>
       </div>
-      <div class="card" id="dslrCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">
-        <div style="flex:2 1 360px;min-width:0;display:flex;flex-direction:column;gap:8px">
-          <div class="row" style="flex-wrap:wrap"><b style="font-size:15px">Canon DSLR over USB, plugged into the tablet</b><span class="chip mute" id="dslrState">Not connected</span></div>
-          <p class="lbl" style="margin:0;line-height:1.55">Connect the Canon EOS 750D to the tablet with a USB cable (USB-C OTG adapter), turn the camera on, then tap Connect camera <b style="color:#fff">on the tablet</b>. The booth uses the camera's live view for the preview and takes full-quality photos with the DSLR. Set the camera to JPEG (not RAW).</p>
-          <p class="lbl" style="margin:0;line-height:1.55"><b style="color:#fff">Works on:</b> Android tablets in Chrome. <b style="color:#fff">Does not work on iPad</b>, because Apple doesn't let websites use USB devices.</p>
-        </div>
-        <div style="flex:1 1 220px;display:flex;flex-direction:column;gap:10px">
-          <button class="btn pri" id="dslrConnect">Connect camera</button>
-          <button class="btn" id="dslrTest" disabled>Take a DSLR test photo</button>
-          <div class="lbl mono" id="dslrInfo" style="font-size:12px"></div>
-          <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm" id="dslrReport">Copy camera report</button><button class="btn sm" id="dslrForget">Reset camera permission</button></div>
-        </div>
-      </div>
-    </section>
+          </section>
 
     <!-- GALLERY & SHARE -->
     <section class="sec" id="s-gallery">
@@ -365,7 +350,7 @@
 
 <!-- ================= TABLET BOOTH ================= -->
 <section id="v-booth" aria-label="Tablet booth">
-  <div class="cam" aria-hidden="true"><video id="live" muted playsinline autoplay></video><canvas id="dslrView" hidden></canvas></div>
+  <div class="cam" aria-hidden="true"><video id="live" muted playsinline autoplay></video></div>
   <div class="bs on" id="b-attract">
     <div class="boothbg" aria-hidden="true"><div class="bglayer" id="boothBgLayer"></div><div class="bgshade" id="boothShade"></div></div>
     <div class="boothbrand"><span class="logo" data-logo data-size="18"></span><span data-brand>Photobooth Studio</span></div>
@@ -418,8 +403,6 @@
       <div id="camMenu" style="display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:14px;border:1px solid var(--line2);background:#141416">
         <label class="field" for="bCamSel">Camera<select class="in" id="bCamSel"></select></label>
         <label class="tog">Mirror preview<input type="checkbox" id="bMirror"></label>
-        <button class="btn sm" id="bDslr">Connect Canon DSLR (USB)</button>
-        <button class="btn sm" id="bReport">Copy camera report</button>
         <span class="lbl" id="bCamInfo" style="font-size:12px"></span>
       </div>
       <button class="opt" id="mAdmin"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg>Switch to Admin board</button>
