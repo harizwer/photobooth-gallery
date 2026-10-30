@@ -1,0 +1,9 @@
+[ {
+   "description": "{\"attached\":true,\"empty\":false,\"height\":640,\"screenX\":0,\"screenY\":0,\"visible\":true,\"width\":320}",
+   "devtoolsFrontendUrl": "http://chrome-devtools-frontend.appspot.com/serve_rev/@22955682f94ce09336197bfb8dffea991fa32f0d/inspector.html?ws=localhost:9222/devtools/page/6C498054A0248B00688691BB026AA520",
+   "id": "6C498054A0248B00688691BB026AA520",
+   "title": "about:blank",
+   "type": "page",
+   "url": "about:blank",
+   "webSocketDebuggerUrl": "ws://localhost:9222/devtools/page/6C498054A0248B00688691BB026AA520"
+} ]
