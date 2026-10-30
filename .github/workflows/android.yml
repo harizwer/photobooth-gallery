@@ -1,0 +1,43 @@
+# Builds the Android booth app (android/) and puts the APK + logs on the "apk-build" branch.
+name: Android app
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Test the Canon USB code (pretend camera)
+        shell: bash
+        run: sh android/test-jvm/run.sh 2>&1 | grep -v '^canon:' | tee test.log
+      - name: Build the APK
+        shell: bash
+        run: gradle -p android assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+      - name: Publish APK and logs
+        if: always()
+        shell: bash
+        run: |
+          mkdir out
+          cp test.log build.log out/ 2>/dev/null || true
+          cp android/app/build/outputs/apk/release/app-release.apk out/photobooth.apk 2>/dev/null || true
+          echo "${{ github.sha }} run ${{ github.run_number }} ${{ job.status }}" > out/STATUS
+          cd out
+          git init -q
+          git checkout -q -b apk-build
+          git add -A
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Android build ${{ github.run_number }} (${{ job.status }})"
+          git push -fq "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" apk-build

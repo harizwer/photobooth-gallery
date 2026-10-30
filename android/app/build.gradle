@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+def build = Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER") ?: "1")
+
+android {
+    namespace 'my.photobooth.booth'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "my.photobooth.booth"
+        minSdk 26
+        targetSdk 34
+        versionCode build
+        versionName "1.0." + build
+    }
+
+    // One fixed key, so every new version installs over the old one without losing settings.
+    signingConfigs {
+        release {
+            storeFile file('booth.keystore')
+            storePassword 'photobooth'
+            keyAlias 'booth'
+            keyPassword 'photobooth'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
