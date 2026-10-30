@@ -190,7 +190,7 @@
           <div class="cap">Quality</div>
           <label class="field" for="capRes">Capture resolution<select class="in" id="capRes"><option value="4k">4K · 3840 × 2160 (best)</option><option value="1440">1440p · 2560 × 1440</option><option value="1080">1080p · 1920 × 1080 (fastest upload)</option></select></label>
           <label class="field" for="capCanonMode">Canon DSLR mode<select class="in" id="capCanonMode"><option value="photos">Photos only — most stable (preview from the tablet camera)</option><option value="live">Live view + photos (needs a very stable USB link)</option></select></label>
-          <label class="field" for="capCam">Camera on the tablet<select class="in" id="capCam"><option value="user">Front camera</option><option value="environment">Back camera</option><option value="dslr">Canon DSLR plugged into the tablet (USB)</option></select></label>
+          <label class="field" for="capCam">Camera on the tablet<select class="in" id="capCam"><option value="user">Front camera</option><option value="environment">Back camera</option><option value="laptop">Canon DSLR plugged into the laptop (recommended)</option><option value="dslr">Canon DSLR plugged into the tablet (USB, experimental)</option></select></label>
           <label class="tog">Mirror the live preview (like a mirror)<input type="checkbox" id="capMirror"></label>
           <label class="tog">Also make a GIF of the strip — photos appear one by one in the frame (guests get it by QR — it is not printed)<input type="checkbox" id="capPhotoGif"></label>
           <label class="field" for="capQ">Photo quality <span class="mono" id="capQv">95%</span><input type="range" id="capQ" min="70" max="100" value="95" style="accent-color:var(--accent)"></label>
@@ -199,6 +199,22 @@
           <label class="field" for="capVid">Video length (seconds)<input class="in mono" type="number" id="capVid" min="3" max="30" value="10"></label>
           <label class="field" for="capCopies">Most copies a guest can print<input class="in mono" type="number" id="capCopies" min="1" max="10" value="3"></label>
           <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">If a tablet camera can't record 4K, the booth uses its highest resolution.</div>
+        </div>
+      </div>
+      <div class="card" id="laptopCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;border-color:rgba(255,90,38,.45)">
+        <div style="flex:2 1 360px;min-width:0;display:flex;flex-direction:column;gap:8px">
+          <div class="row" style="flex-wrap:wrap"><b style="font-size:15px">Canon DSLR plugged into the laptop</b><span class="chip mute" id="helperState">Helper not running</span><span class="chip">Recommended</span></div>
+          <p class="lbl" style="margin:0;line-height:1.55">The most stable way to use the Canon. Plug the Canon into the <b style="color:#fff">laptop</b> with its USB cable. The tablet shows the preview with its own camera, and every photo is taken by the Canon at full quality.</p>
+          <ol class="lbl" style="margin:0;padding-left:18px;line-height:1.6">
+            <li>Once: install <b style="color:#fff">digiCamControl</b> (free) on the laptop, from digicamcontrol.com.</li>
+            <li>Plug in the Canon, switch it on, set it to JPEG.</li>
+            <li>Double-click the <b style="color:#fff">Canon helper</b> file below, log in once, and keep its window open.</li>
+            <li>Set “Camera on the tablet” above to <b style="color:#fff">Canon DSLR plugged into the laptop</b> and press Save.</li>
+          </ol>
+        </div>
+        <div style="flex:1 1 220px;display:flex;flex-direction:column;gap:10px">
+          <a class="btn pri" href="../setup/canon-helper.bat" download="Photobooth-Canon-helper.bat">Download Canon helper (Windows)</a>
+          <span class="lbl" style="font-size:12px">If Windows says “Windows protected your PC”, tap More info → Run anyway.</span>
         </div>
       </div>
       <div class="card" id="dslrCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">
