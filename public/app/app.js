@@ -3,6 +3,7 @@
    (Admin board + printing). Data lives in Supabase.
    ===================================================================== */
 const SUPABASE_URL = 'https://dqeyaimxfkursttbdmyp.supabase.co';
+const NATIVE = window.PBNative || null;   // set when the page runs inside the Photobooth Android app
 const PUBLIC_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxZXlhaW14Zmt1cnN0dGJkbXlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODc2NTQsImV4cCI6MjEwODg2MzY1NH0.T5tHvHVpNzNHwxYFASy8WO6xr1bvfBko9gxHCoxVQSc';
 const SITE = location.origin + location.pathname.replace(/app\/?(index\.html)?$/, '');
 const APP_URL = SITE + 'app/';
@@ -349,12 +350,40 @@ async function startCamera() {
   if (ROLE === 'booth') boothStatus();
 }
 function showDslrView() { stopCamera(); $('#live').hidden = true; $('#dslrView').hidden = false; if (ROLE === 'booth') boothStatus(); }
-function dslrSupported() { return !!navigator.usb && window.crossOriginIsolated; }
+function dslrSupported() { return !!NATIVE || (!!navigator.usb && window.crossOriginIsolated); }
+/* ---------- Photobooth Android app: the app talks to the Canon over USB itself ----------
+   The app gives this page a small bridge (window.PBNative) plus two addresses it answers itself:
+   /__canon/frame (newest live view picture) and /__canon/photo (a photo it just took).
+   NativeCamera looks exactly like the camera library, so the rest of the booth works unchanged. */
+const nativeWait = new Map(); let nativeId = 0;
+window.__pbNativeDone = (id, r) => { const f = nativeWait.get(id); if (f) { nativeWait.delete(id); f(r || { ok: false, error: 'No answer from the app' }); } };
+function nativeCall(op) { return new Promise(res => { const id = ++nativeId; nativeWait.set(id, res); NATIVE.call(op, id); }); }
+class NativeCamera {
+  constructor() { this.seq = 0; }
+  static async showPicker() {}
+  async connect() { const r = await nativeCall('connect'); if (!r.ok) throw new Error(r.error); this.model = r.model; }
+  async disconnect() { await nativeCall('disconnect'); }
+  async setConfigValue(key, on) { if (key !== 'viewfinder') return; const r = await nativeCall(on ? 'liveOn' : 'liveOff'); if (!r.ok) throw new Error(r.error); }
+  async capturePreviewAsBlob() {
+    const res = await fetch('/__canon/frame?after=' + this.seq, { cache: 'no-store' });
+    if (!res.ok) throw new Error((await res.text().catch(() => '')) || 'No live view picture from the Canon');
+    this.seq = +res.headers.get('X-Seq') || this.seq + 1;
+    return res.blob();
+  }
+  async captureImageAsFile() {
+    const r = await nativeCall('capture'); if (!r.ok) throw new Error(r.error);
+    const res = await fetch('/__canon/photo?id=' + r.id, { cache: 'no-store' });
+    if (!res.ok) throw new Error('The app could not hand over the photo.');
+    return new File([await res.blob()], 'canon.jpg', { type: 'image/jpeg' });
+  }
+  async consumeEvents() { const r = await nativeCall('ping'); if (!r.ok) throw new Error(r.error); }
+}
 // The camera library can only hold ONE connection per page. After it crashes, only a page reload clears it.
 let dslrLib = null, dslrBusy = null, dslrCrashed = false;
 const isWindows = /Windows/i.test(navigator.userAgent), isAndroid = /Android/i.test(navigator.userAgent);
 function dslrHelp(e) {
   const m = String(e && e.message || e);
+  if (NATIVE) return m;   // the app already explains its problems in plain words
   const crash = (e && e.constructor && e.constructor.name === 'RuntimeError') || /memory access|out of bounds|unreachable|table index/i.test(m);
   if (crash) dslrCrashed = true;
   if (/No device selected|NotFoundError/i.test(m)) return 'No camera was chosen. Tap Connect again and pick the Canon in the list.';
@@ -365,15 +394,15 @@ function dslrHelp(e) {
   return (crash ? 'The camera connection crashed. ' : 'Could not connect to the camera (' + m + '). ') + 'Unplug the USB cable, switch the camera off and on, plug it back in, reload this page, then tap Connect once. ' + steps;
 }
 async function dslrConnect(pick) {
-  if (!navigator.usb) throw new Error('This browser cannot use USB devices. Use Chrome on an Android tablet (iPad is not supported).');
-  if (!window.crossOriginIsolated) throw new Error('Open the booth from the Cloudflare address of this website to use the DSLR.');
+  if (!NATIVE && !navigator.usb) throw new Error('This browser cannot use USB devices. Use Chrome on an Android tablet (iPad is not supported).');
+  if (!NATIVE && !window.crossOriginIsolated) throw new Error('Open the booth from the Cloudflare address of this website to use the DSLR.');
   if (dslrCrashed) throw new Error('Reload this page first (the camera connection crashed earlier), then tap Connect once.');
   if (dslr && dslr.running) { if (!dslr.noLive) showDslrView(); return dslr.cam; }   // already connected: never open a second connection
   if (dslrBusy) return dslrBusy;                       // a connect is already in progress
   dslrBusy = (async () => {
     CAMLOG.push('—'); await camLog(pick ? 'tapped Connect' : 'automatic reconnect');
     if (pick) { try { sessionStorage.removeItem('pb.liveBroken'); sessionStorage.setItem('pb.dslrReloads', '[]'); } catch (e) {} }   // a manual Connect always starts fresh
-    try { if (!dslrLib) dslrLib = await import('../vendor/gphoto2/camera.js'); await camLog('camera library loaded'); }
+    try { if (!dslrLib) dslrLib = NATIVE ? { Camera: NativeCamera } : await import('../vendor/gphoto2/camera.js'); await camLog('camera library loaded'); }
     catch (e) { await camLog('camera library failed to load: ' + e.message); throw new Error('The camera part of the website did not load. Check the internet and reload the page. (' + e.message + ')'); }
     if (pick) {
       await camLog('opening Chrome camera list');
@@ -396,7 +425,7 @@ async function dslrConnect(pick) {
       cam = new dslrLib.Camera();
       try {
         // Every step has a time limit: a Canon that never answers must not freeze the booth.
-        await withTimeout(cam.connect(), 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
+        await withTimeout(cam.connect(), NATIVE ? 120000 : 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
         // Canon live view over this kind of USB link is unreliable (it freezes the Canon), while Canon photos are reliable.
         // So the preview always comes from the tablet camera and the Canon only takes the photos.
         const wantLive = S.capture.canonLive !== false && !liveIsBroken();
@@ -455,14 +484,16 @@ async function freeUsb() {
 const CAMLOG = (() => { try { return JSON.parse(sessionStorage.getItem('pb.camlog') || '[]'); } catch (e) { return []; } })();
 async function camLog(step) {
   let devs = '';
-  try { devs = (await navigator.usb.getDevices()).map(d => `${d.manufacturerName || '?'} ${d.productName || '?'} [${(d.vendorId || 0).toString(16)}:${(d.productId || 0).toString(16)}] ${d.opened ? 'open' : 'closed'}`).join('; ') || 'none'; } catch (e) { devs = 'n/a'; }
+  if (NATIVE) devs = NATIVE.present() ? 'Canon on USB (app)' : 'no Canon on USB (app)';
+  else try { devs = (await navigator.usb.getDevices()).map(d => `${d.manufacturerName || '?'} ${d.productName || '?'} [${(d.vendorId || 0).toString(16)}:${(d.productId || 0).toString(16)}] ${d.opened ? 'open' : 'closed'}`).join('; ') || 'none'; } catch (e) { devs = 'n/a'; }
   CAMLOG.push(`${new Date().toLocaleTimeString('en-GB')} ${step} | USB devices: ${devs}`);
   try { sessionStorage.setItem('pb.camlog', JSON.stringify(CAMLOG.slice(-40))); } catch (e) {}
 }
 function camReport() {
   return ['Photobooth camera report', `Page: ${ROLE || '-'} · Camera setting: ${S.capture.camera} · Connected now: ${!!(dslr && dslr.running)}`, `Browser: ${navigator.userAgent}`, `Isolated: ${window.crossOriginIsolated} · WebUSB: ${!!navigator.usb} · Other tab had camera: ${otherTabHadCamera}`, ...(CAMLOG.length ? CAMLOG : ['(nothing recorded yet: tap Connect camera first, then copy the report)']),
     `Live view: ${LV.frames} frames in ${LV.since ? Math.round((Date.now() - LV.since) / 1000) : 0} s · last frame ${dslr && dslr.lastFrame ? ((Date.now() - dslr.lastFrame) / 1000).toFixed(1) + ' s ago' : '-'} · last ${LV.lastMs} ms · slowest ${LV.slowest} ms · errors ${LV.errors}${LV.lastErr ? ' (' + LV.lastErr + ')' : ''} · event reads ${LV.events}`,
-    `Canon photos: ${LV.captures.join(' / ') || 'none yet'}`].join('\n');
+    `Canon photos: ${LV.captures.join(' / ') || 'none yet'}`,
+    ...(NATIVE ? [`App ${NATIVE.version()} · ${NATIVE.status()}`, 'App camera log:', NATIVE.log() || '(empty)'] : [])].join('\n');
 }
 // Only one tab can use the camera. Ask other open tabs of this site (on this tablet) to let go of it first.
 const camChan = 'BroadcastChannel' in window ? new BroadcastChannel('pb-camera') : null;
@@ -476,7 +507,7 @@ async function releaseOtherTabs() { if (!camChan) return; otherTabHadCamera = fa
 async function dslrDisconnect() { const d = dslr; dslr = null; if (!d) return; d.running = false; try { await d.loopDone; } catch (e) {} try { await d.cam.disconnect(); } catch (e) {} }
 async function dslrAutoConnect() {
   try {
-    if (!dslrSupported() || dslrCrashed || handedOff) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false;
+    if (!dslrSupported() || dslrCrashed || handedOff) return false; if (!(await canonPresent())) return false;
     let recovering = false; try { recovering = !!sessionStorage.getItem('pb.dslrRecovering'); } catch (e) {}
     if (recovering) { await camLog('waiting 4 s so the Canon can settle'); await sleep(4000); }
     await dslrConnect(false); return true;
@@ -522,7 +553,7 @@ async function dslrLoop(d) {
       LV.errors++; LV.lastErr = e.message; camLog('live view problem: ' + e.message);
       if (/stopped answering|did not answer/.test(e.message)) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }   // the library is stuck: recover (photos only next time)
       const msg = dslrHelp(e);
-      if (dslrCrashed || ++fails > 12) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
+      if (dslrCrashed || ++fails > (NATIVE ? 40 : 12)) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
       if (/I\/O/i.test(e.message)) await usbClearHalts('live view');
       await sleep(1500);   // the Canon is busy: give it a moment
       try { await liveViewOn(d); } catch (e2) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }  // then switch its live view back on before asking again
@@ -544,7 +575,7 @@ function dslrFallback(reason) {
   return ROLE === 'booth' ? startCamera() : Promise.resolve();
 }
 let gaveUpToast = 0;
-async function canonPresent() { try { return !!(navigator.usb && (await navigator.usb.getDevices()).length); } catch (e) { return false; } }
+async function canonPresent() { if (NATIVE) { try { return !!NATIVE.present(); } catch (e) { return false; } } try { return !!(navigator.usb && (await navigator.usb.getDevices()).length); } catch (e) { return false; } }
 async function dslrRecover(force) {
   if (!(await canonPresent())) return;                 // camera off or unplugged: wait until it comes back
   let tries = []; try { tries = JSON.parse(sessionStorage.getItem('pb.dslrReloads') || '[]').filter(t => Date.now() - t < 5 * 60e3); } catch (e) {}
@@ -576,11 +607,11 @@ async function dslrEnsure() {
   finally { ensuring = false; }
 }
 setInterval(dslrEnsure, 4000);
-if (navigator.usb) {
-  // Canon switched on / plugged in: always a fresh start, even after the reconnect limit was reached
-  navigator.usb.addEventListener('connect', () => { try { sessionStorage.setItem('pb.dslrReloads', '[]'); sessionStorage.removeItem('pb.liveBroken'); } catch (e) {} camLog('Canon plugged in / switched on'); setTimeout(dslrEnsure, 2500); });
-  navigator.usb.addEventListener('disconnect', () => { if (dslr) dslrFallback('The Canon was switched off or unplugged — it reconnects by itself when it is back.'); });
-}
+// Canon switched on / plugged in: always a fresh start, even after the reconnect limit was reached
+function onCanonPlugged() { try { sessionStorage.setItem('pb.dslrReloads', '[]'); sessionStorage.removeItem('pb.liveBroken'); } catch (e) {} camLog('Canon plugged in / switched on'); setTimeout(dslrEnsure, 2500); }
+function onCanonUnplugged() { if (dslr) dslrFallback('The Canon was switched off or unplugged — it reconnects by itself when it is back.'); }
+if (navigator.usb) { navigator.usb.addEventListener('connect', onCanonPlugged); navigator.usb.addEventListener('disconnect', onCanonUnplugged); }
+window.addEventListener('pbcanon', e => (e.detail === 'connect' ? onCanonPlugged : onCanonUnplugged)());
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(dslrEnsure, 800); });
 // Without live view, talk to the Canon every 15 s so it stays awake and we notice if it drops.
 async function dslrKeepAlive(d) {
@@ -606,7 +637,7 @@ const DSLR_SHOT_HELP = 'The Canon did not take the photo in time. Usually it cou
 // Canon photo (high resolution). Never waits more than 20 s: if the Canon hangs, the live view frame is used instead.
 async function dslrFullPhoto(d) {
   const t0 = performance.now(); let f;
-  try { f = await withTimeout(d.cam.captureImageAsFile(), 20000, DSLR_SHOT_HELP); }
+  try { f = await withTimeout(d.cam.captureImageAsFile(), NATIVE ? 45000 : 20000, DSLR_SHOT_HELP); }
   catch (e) { if (/I\/O/i.test(e.message)) await usbClearHalts('photo'); LV.captures.push(`photo FAILED after ${((performance.now() - t0) / 1000).toFixed(1)} s: ${e.message.slice(0, 60)}`); camLog('Canon photo failed: ' + e.message.slice(0, 80)); throw e; }
   LV.captures.push(`photo ${(f.size / 1048576).toFixed(1)} MB in ${((performance.now() - t0) / 1000).toFixed(1)} s`); if (LV.captures.length > 10) LV.captures.shift();
   let bmp;
@@ -937,7 +968,7 @@ async function checkPin() {
 async function fillCamMenu() {
   let opts = '<option value="user">Front camera</option><option value="environment">Back camera</option>';
   try { (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput').forEach((d, i) => opts += `<option value="${esc(d.deviceId)}">${esc(d.label || 'Camera ' + (i + 1))}</option>`); } catch (e) {}
-  if (navigator.usb) opts += '<option value="dslr">Canon DSLR (USB)</option>';
+  if (navigator.usb || NATIVE) opts += '<option value="dslr">Canon DSLR (USB)</option>';
   $('#bCamSel').innerHTML = opts; $('#bCamSel').value = dslr ? 'dslr' : (store.get('camDevice', '') || (S.capture.camera === 'dslr' ? 'user' : S.capture.camera));
   $('#bMirror').checked = !!S.capture.mirror;
   const v = $('#live'); $('#bCamInfo').textContent = dslr ? 'Canon DSLR connected (USB)' : v.videoWidth ? `Camera: ${v.videoWidth} × ${v.videoHeight}` : '';
@@ -1381,11 +1412,13 @@ $('#dslrConnect').onclick = async () => {
 $('#bReport').onclick = () => $('#dslrReport').click();
 $('#dslrReport').onclick = async () => {
   const r = camReport();
+  if (NATIVE) { try { NATIVE.copy(r); return toast('Camera report copied. Paste it in your message to support.'); } catch (e) {} }
   try { await navigator.clipboard.writeText(r); toast('Camera report copied. Paste it in your message to support.'); }
   catch (e) { modal(`<div class="row" style="justify-content:space-between"><b>Camera report</b><button class="ico" data-close aria-label="Close">✕</button></div><textarea class="in ta mono" rows="12" readonly style="font-size:11px">${esc(r)}</textarea><p class="lbl" style="margin:0">Take a screenshot of this and send it to support.</p>`, 640); }
 };
 // Forget the USB permission so Chrome asks again (fixes a stale permission on some tablets)
 $('#dslrForget').onclick = async () => {
+  if (NATIVE) { await dslrDisconnect(); return toast('Canon disconnected. Tap Connect camera to connect it again.'); }
   if (!navigator.usb) return toast('This browser cannot use USB devices.');
   await dslrDisconnect();
   try { for (const d of await navigator.usb.getDevices()) { try { if (d.opened) await d.close(); } catch (e) {} if (d.forget) await d.forget(); } } catch (e) {}
