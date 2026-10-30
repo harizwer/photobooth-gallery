@@ -350,10 +350,10 @@ function dslrHelp(e) {
   const crash = (e && e.constructor && e.constructor.name === 'RuntimeError') || /memory access|out of bounds|unreachable|table index/i.test(m);
   if (crash) dslrCrashed = true;
   if (/No device selected|NotFoundError/i.test(m)) return 'No camera was chosen. Tap Connect again and pick the Canon in the list.';
-  if (/I\/O|claim|busy|access denied|SecurityError|NetworkError/i.test(m)) return 'The tablet could not take control of the Canon\'s USB connection (' + m + '). The website already tried 3 times. Please: close all other tabs and apps (Chrome tabs of this site, Gallery, Photos, Samsung Smart Switch), unplug the cable from the TABLET side, wait 5 seconds, plug it back in, and if Android asks “Open Chrome to handle the camera?” tap OK. Then reload this page and tap Connect once.';
+  if (/I\/O|claim|busy|access denied|SecurityError|NetworkError/i.test(m)) return 'The tablet could not take control of the Canon\'s USB connection (' + m + '). Another app on the tablet is probably holding the Canon. When Android shows “Choose an app for the USB device”, do NOT pick any app: press Back to close it. Force stop (or disable) OurBooth, Photos and MTP Host in Settings → Apps, and clear any “Always” default there. Then unplug the cable, plug it back in, close the pop-up with Back, reload this page and tap Connect once.';
   const steps = isWindows
     ? 'On a Windows laptop the camera needs the WinUSB driver first: install Zadig (zadig.akeo.ie), choose the Canon EOS 750D, pick WinUSB, click Replace Driver. Then reload this page.'
-    : 'Close any other app that grabbed the camera (Gallery, Photos, a "USB: File transfer" pop-up — choose "Cancel" or "No data transfer"). On the camera: turn Wi-Fi off, set the dial to P or M (not video), and make sure a lens is on.';
+    : 'When Android asks “Choose an app for the USB device”, press Back — do not pick Gallery, Photos, MTP Host or OurBooth. Force stop OurBooth and Photos in Settings → Apps. On the camera: Wi-Fi off, dial on P or M, power switch on ON (not video), lens on.';
   return (crash ? 'The camera connection crashed. ' : 'Could not connect to the camera (' + m + '). ') + 'Unplug the USB cable, switch the camera off and on, plug it back in, reload this page, then tap Connect once. ' + steps;
 }
 async function dslrConnect(pick) {
