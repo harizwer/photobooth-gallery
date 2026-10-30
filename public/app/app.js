@@ -50,9 +50,12 @@ let S = structuredClone(STUDIO_DEFAULT);
 function mergeStudio(d) {
   const o = structuredClone(STUDIO_DEFAULT); d = d || {};
   for (const k of Object.keys(d)) o[k] = (o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) ? { ...o[k], ...d[k] } : d[k];
-  return o;
+  return fixOldSettings(o);
 }
-const cachedStudio = store.get('studio', null); if (cachedStudio) S = mergeStudio(cachedStudio);
+const cachedStudio = store.get('studio', null);
+// Older saved setting 'laptop' (removed): use the Canon on the tablet
+function fixOldSettings(o) { if (o && o.capture && o.capture.camera === 'laptop') o.capture.camera = 'dslr'; return o; }
+if (cachedStudio) S = mergeStudio(cachedStudio);
 const DEFAULT_LOGO = sz => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="#ff5a26" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3 7M21 12l-7 3M12 21l-3-7M3 12l7-3"/></svg>`;
 function applyBrand() {
   const name = S.brand || 'Photobooth Studio';
@@ -313,7 +316,7 @@ async function boothLoad() {
   boothStatus();
 }
 function boothStatus() {
-  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${S.capture.camera === 'laptop' ? (helperOnline() ? 'Canon on laptop' : 'Tablet camera (laptop Canon offline)') : dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR · photos only' : 'Canon DSLR') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
+  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR · photos only' : 'Canon DSLR') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
 }
 $('#bModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) startFlow(b.dataset.mode); });
 
@@ -328,7 +331,7 @@ async function startCamera() {
     if (await dslrAutoConnect()) return;
     if (!dslrCrashed) toast('Canon DSLR not connected. Using the tablet camera. Open Staff → Camera to connect it.', 5000);
   }
-  const pref = (S.capture.camera === 'dslr' || S.capture.camera === 'laptop') ? 'user' : (store.get('camDevice', '') || S.capture.camera || 'user');
+  const pref = S.capture.camera === 'dslr' ? 'user' : (store.get('camDevice', '') || S.capture.camera || 'user');
   const [w, h] = RES[S.capture.res] || RES['4k'];
   const base = pref === 'user' || pref === 'environment' ? { facingMode: pref } : { deviceId: { exact: pref } };
   try {
@@ -588,26 +591,6 @@ async function capturePhoto() {
 }
 function liveStream() { return dslr && !dslr.noLive ? dslr.canvas.captureStream(24) : B.stream; }
 
-/* ---------- Canon on the laptop (digiCamControl + helper) ---------- */
-const helperOnline = () => !!(STATION && STATION.helper_seen && Date.now() - Date.parse(STATION.helper_seen) < 20000);
-function freshImage(url) { return new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('Could not download the Canon photo')); i.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); }); }
-async function laptopCapture() {
-  const req = check(await sb.from('capture_requests').insert({}).select().single());
-  const t0 = Date.now();
-  while (Date.now() - t0 < 25000) {
-    await sleep(350);
-    const r = (await sb.from('capture_requests').select('status,path,error').eq('id', req.id).maybeSingle()).data;
-    if (r && r.status === 'done' && r.path) {
-      const c = scaled(await freshImage(fileUrl(r.path)), 4000);
-      sb.storage.from('photos').remove([r.path]).catch(() => {}); sb.from('capture_requests').delete().eq('id', req.id).then(() => {}, () => {});
-      return c;
-    }
-    if (r && r.status === 'failed') throw new Error('Canon (laptop): ' + (r.error || 'photo failed'));
-  }
-  sb.from('capture_requests').update({ status: 'failed', error: 'timeout' }).eq('id', req.id).then(() => {}, () => {});
-  throw new Error('The Canon on the laptop did not send the photo in time, so the tablet camera was used. Check the helper window on the laptop.');
-}
-setInterval(async () => { if (USER && (ROLE === 'booth' || ROLE === 'admin') && S.capture.camera === 'laptop') { try { await loadStation(); if (ROLE === 'booth') boothStatus(); if (ROLE === 'admin' && secOn('media')) renderHelperState(); } catch (e) {} } }, 8000);
 /* ---------- Session flow ---------- */
 function goHome() {
   B.session = null; clearInterval(B.reviewT); clearInterval(B.doneT);
@@ -633,9 +616,9 @@ function startFlow(mode) {
   });
   bscreen('b-pick');
 }
-async function countdown(me, label, onLastSecond) {
+async function countdown(me, label) {
   const el = $('#b-count'); $('#shotInfo').textContent = label;
-  for (let n = Math.max(1, S.capture.countdown || 3); n > 0; n--) { if (B.session !== me) return false; el.textContent = n; beep(n === 1 ? 1320 : 880); if (n === 1 && onLastSecond) onLastSecond(); await sleep(1000); }
+  for (let n = Math.max(1, S.capture.countdown || 3); n > 0; n--) { if (B.session !== me) return false; el.textContent = n; beep(n === 1 ? 1320 : 880); await sleep(1000); }
   if (B.session !== me) return false;
   el.textContent = 'Smile!'; await sleep(250); return true;
 }
@@ -648,14 +631,9 @@ async function startSession(design) {
   try {
     if (me.mode === 'photo') {
       const n = design.areas.length;
-      const laptop = S.capture.camera === 'laptop' && helperOnline();
       for (let i = 0; i < n; i++) {
-        // Canon on the laptop: ask for the photo 1 s early, so the shutter fires about when "Smile!" shows
-        let pending = null;
-        if (!(await countdown(me, `Photo ${i + 1} of ${n}`, laptop ? () => { pending = laptopCapture(); pending.catch(() => {}); } : null))) return;
-        flash(); let c;
-        if (laptop && pending) { c = grabFrame(); const fb = c; me.shots.push(pending.catch(e => { toast(e.message, 7000); return fb; })); }
-        else { c = await capturePhoto(); me.shots.push(c); }
+        if (!(await countdown(me, `Photo ${i + 1} of ${n}`))) return;
+        flash(); const c = await capturePhoto(); me.shots.push(c);
         if (B.session !== me) return;
         $('#b-count').textContent = '';
         if (i < n - 1) {   // pause between photos, showing the one just taken
@@ -664,7 +642,6 @@ async function startSession(design) {
           if (B.session !== me) return;
         }
       }
-      if (laptop) { busy('Getting your photos from the Canon…'); try { me.shots = await Promise.all(me.shots); } finally { busy(false); } if (B.session !== me) return; }
     } else if (me.mode === 'gif') {
       if (!(await countdown(me, 'GIF · get ready to move!'))) return;
       $('#b-count').textContent = ''; $('#shotInfo').innerHTML = '<span class="recdot"></span>Recording GIF';
@@ -945,7 +922,7 @@ function go(name) {
   $('#crumb').textContent = CRUMB[name];
   try { history.replaceState(null, '', '#' + name); } catch (e) {}
   if (name !== 'media') camTestOff();
-  ({ home: renderHome, events: renderEvents, templates: renderTemplates, media: () => { renderMedia(); loadStation().then(renderHelperState).catch(() => {}); }, gallery: () => renderGallery(), printer: () => { renderQueue(); renderPaper(); renderPrintCfg(); }, studio: renderStudio, accounts: renderAccounts, guest: renderGuestPreview })[name]();
+  ({ home: renderHome, events: renderEvents, templates: renderTemplates, media: renderMedia, gallery: () => renderGallery(), printer: () => { renderQueue(); renderPaper(); renderPrintCfg(); }, studio: renderStudio, accounts: renderAccounts, guest: renderGuestPreview })[name]();
   window.scrollTo(0, 0);
 }
 document.addEventListener('click', e => {
@@ -1271,18 +1248,14 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#laptopCard').hidden = c.camera !== 'laptop'; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capCanonMode').value = c.canonMode || 'photos'; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capCanonMode').value = c.canonMode || 'photos'; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
-  renderDslrState(); renderHelperState();
-}
-function renderHelperState() {
-  const el = $('#helperState'); if (!el) return;
-  const on = helperOnline(); el.className = 'chip' + (on ? '' : ' mute'); el.textContent = on ? 'Laptop Canon ready' : 'Helper not running';
+  renderDslrState();
 }
 function renderDslrState() { $('#dslrState').textContent = dslr ? 'Connected' : 'Not connected'; $('#dslrState').className = 'chip' + (dslr ? '' : ' mute'); $('#dslrTest').disabled = !dslr; if (dslr) $('#capCam').value = 'dslr'; }
 $('#modes').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; S.modes[b.dataset.m] = !S.modes[b.dataset.m]; if (!enabledModes().length) S.modes.photo = true; renderModes(); });
 $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
-$('#capCam').onchange = () => { camTestOff(); $('#laptopCard').hidden = $('#capCam').value !== 'laptop'; if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+$('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
   Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, photoGif: $('#capPhotoGif').checked, canonMode: $('#capCanonMode').value, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
