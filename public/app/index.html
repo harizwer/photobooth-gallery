@@ -163,7 +163,7 @@
         <div class="card" style="flex:1 1 250px;max-width:300px;display:flex;flex-direction:column;gap:14px">
           <div class="cap">Output</div>
           <label class="field" for="tPaper">Paper<select class="in" id="tPaper"><option value="strip">2x6 strip (2 per 4x6 sheet)</option><option value="portrait">4x6 portrait</option><option value="landscape">4x6 landscape</option></select></label>
-          <label class="field" for="tRes">Resolution<select class="in" id="tRes"><option value="3840">4K · up to 3840 px long edge</option><option value="2700">2K · 2700 px long edge</option><option value="1800">Print · 1800 px long edge</option></select></label>
+          <label class="field" for="tRes">Resolution<select class="in" id="tRes"><option value="3840">High resolution (recommended)</option><option value="1800">Smaller file (print size)</option></select></label>
           <div class="cap">Photo areas</div>
           <div id="areaList" style="display:flex;flex-direction:column;gap:8px"></div>
           <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Small QR on the print<br><span class="lbl" style="font-size:12px">Link lasts 24 hours · applies to all prints</span></span><input type="checkbox" id="tplQrOn"></label>
@@ -188,17 +188,15 @@
         </div>
         <div class="card" style="flex:2 1 300px;display:flex;flex-direction:column;gap:12px">
           <div class="cap">Quality</div>
-          <label class="field" for="capRes">Capture resolution<select class="in" id="capRes"><option value="4k">4K · 3840 × 2160 (best)</option><option value="1440">1440p · 2560 × 1440</option><option value="1080">1080p · 1920 × 1080 (fastest upload)</option></select></label>
-          <label class="field" for="capCanonMode">Canon DSLR mode<select class="in" id="capCanonMode"><option value="photos">Photos only — most stable (preview from the tablet camera)</option><option value="live">Live view + photos (needs a very stable USB link)</option></select></label>
           <label class="field" for="capCam">Camera on the tablet<select class="in" id="capCam"><option value="user">Front camera</option><option value="environment">Back camera</option><option value="dslr">Canon DSLR plugged into the tablet (USB)</option></select></label>
           <label class="tog">Mirror the live preview (like a mirror)<input type="checkbox" id="capMirror"></label>
-          <label class="tog">Also make a GIF of the strip — photos appear one by one in the frame (guests get it by QR — it is not printed)<input type="checkbox" id="capPhotoGif"></label>
+          <label class="tog">Also make a boomerang of the strip — all photos move together (guests get it by QR, it is not printed)<input type="checkbox" id="capPhotoGif"></label>
           <label class="field" for="capQ">Photo quality <span class="mono" id="capQv">95%</span><input type="range" id="capQ" min="70" max="100" value="95" style="accent-color:var(--accent)"></label>
           <label class="field" for="capCount">Countdown (seconds)<input class="in mono" type="number" id="capCount" min="1" max="10" value="3"></label>
           <label class="field" for="capGap">Time between photos (seconds) — guests see the photo just taken<input class="in mono" type="number" id="capGap" min="0" max="10" step="0.5" value="2"></label>
           <label class="field" for="capVid">Video length (seconds)<input class="in mono" type="number" id="capVid" min="3" max="30" value="10"></label>
           <label class="field" for="capCopies">Most copies a guest can print<input class="in mono" type="number" id="capCopies" min="1" max="10" value="3"></label>
-          <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">If a tablet camera can't record 4K, the booth uses its highest resolution.</div>
+          <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">Photos, GIFs, boomerangs and videos always use the highest resolution your camera can do.</div>
         </div>
       </div>
       <div class="card" id="dslrCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">

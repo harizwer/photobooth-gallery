@@ -119,13 +119,13 @@ async function showOne(tok) {
   $('#eyebrow').textContent = { photo: 'Your photo from', gif: 'Your GIF from', boom: 'Your boomerang from', video: 'Your video from' }[d.kind] || 'Your photo from';
   const label = { photo: 'Save photo', gif: 'Save GIF', boom: 'Save boomerang', video: 'Save video' }[d.kind] || 'Save';
   const dl = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></svg>';
-  const withGif = d.kind === 'photo' && !!d.media_path;
-  $('#main').innerHTML = (withGif ? `<div class="seg" role="tablist" aria-label="Show"><button role="tab" class="on" data-v="photo" aria-selected="true">Photo</button><button role="tab" data-v="gif" aria-selected="false">GIF</button></div>` : '')
-    + `<div id="pv">${mediaHtml(item)}</div><div class="actions"><button class="btn pri" id="save">${dl}${label}</button>${withGif ? `<button class="btn" id="saveGif">${dl}Save GIF</button>` : ''}${navigator.share ? '<button class="btn" id="share">Share</button>' : ''}</div>`;
+  const withGif = d.kind === 'photo' && !!d.media_path, extraVid = withGif && /\.(mp4|webm)$/i.test(d.media_path), extraName = extraVid ? 'Boomerang' : 'GIF';
+  $('#main').innerHTML = (withGif ? `<div class="seg" role="tablist" aria-label="Show"><button role="tab" class="on" data-v="photo" aria-selected="true">Photo</button><button role="tab" data-v="gif" aria-selected="false">${extraName}</button></div>` : '')
+    + `<div id="pv">${mediaHtml(item)}</div><div class="actions"><button class="btn pri" id="save">${dl}${label}</button>${withGif ? `<button class="btn" id="saveGif">${dl}Save ${extraName.toLowerCase()}</button>` : ''}${navigator.share ? '<button class="btn" id="share">Share</button>' : ''}</div>`;
   $('#save').onclick = () => save(item, d.kind === 'photo' ? 'photo' : undefined);
   if (withGif) {
     $('#saveGif').onclick = () => save(item, 'gif');
-    $('#main .seg').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; $$('#main .seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); $('#pv').innerHTML = b.dataset.v === 'gif' ? `<img class="media" src="${esc(fileUrl(d.media_path))}" alt="Your photobooth GIF">` : mediaHtml(item); };
+    $('#main .seg').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; $$('#main .seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); $('#pv').innerHTML = b.dataset.v === 'gif' ? (extraVid ? `<video class="media" src="${esc(fileUrl(d.media_path))}" autoplay loop muted playsinline></video>` : `<img class="media" src="${esc(fileUrl(d.media_path))}" alt="Your photobooth GIF">`) : mediaHtml(item); };
   }
   if ($('#share')) $('#share').onclick = () => navigator.share({ title: d.event || 'Photo', url: location.href }).catch(() => {});
 }
@@ -147,7 +147,7 @@ async function showAlbum(tok, pin = '') {
   const tag = { gif: 'GIF', boom: 'BOOMERANG', video: 'VIDEO' };
   $('#main').innerHTML = `<div class="grid">${list.map((p, i) => `<button data-i="${i}" aria-label="Open photo ${i + 1}"><img src="${esc(fileUrl(p.thumb))}" alt="" loading="lazy">${tag[p.kind] ? `<span class="tag">${tag[p.kind]}</span>` : ''}</button>`).join('')}</div>`;
   let cur = null;
-  $('#main').onclick = e => { const b = e.target.closest('[data-i]'); if (!b) return; cur = list[+b.dataset.i]; $('#vMedia').innerHTML = mediaHtml(cur); $('#vGif').hidden = !(cur.kind === 'photo' && cur.media); $('#viewer').hidden = false; $('#vClose').focus(); };
+  $('#main').onclick = e => { const b = e.target.closest('[data-i]'); if (!b) return; cur = list[+b.dataset.i]; $('#vMedia').innerHTML = mediaHtml(cur); $('#vGif').hidden = !(cur.kind === 'photo' && cur.media); $('#vGif').textContent = cur.media && /\.(mp4|webm)$/i.test(cur.media) ? 'Save boomerang' : 'Save GIF'; $('#viewer').hidden = false; $('#vClose').focus(); };
   $('#vSave').onclick = () => cur && save(cur);
   $('#vGif').onclick = () => cur && save(cur, 'gif');
   $('#vClose').onclick = () => { $('#viewer').hidden = true; $('#vMedia').innerHTML = ''; };
