@@ -62,6 +62,8 @@ public class FakeCanonTest {
 
         public synchronized int read(byte[] buf, int len, int timeoutMs) {
             if (stalled) return -1;
+            if (glitches > 0 && !outgoing.isEmpty() && !lastGlitch) { glitches--; lastGlitch = true; return -1; }
+            lastGlitch = false;
             if (len > maxTransfer) throw new AssertionError("read larger than maxTransfer: " + len);
             if (len % 512 != 0) throw new AssertionError("read not a multiple of the packet size: " + len);
             if (partial == null) {
@@ -82,8 +84,11 @@ public class FakeCanonTest {
             return n;
         }
 
-        public synchronized void recover() {
-            recovers++; stalled = false; outgoing.clear(); partial = null; session = false; pendingDataOp = -1;
+        boolean lastGlitch = false;
+        int glitches = 0;   // reads that fail once but lose nothing (flaky USB chip)
+        public synchronized void recover(boolean hard) {
+            recovers++; stalled = false; outgoing.clear(); partial = null; pendingDataOp = -1;
+            if (hard) session = false;
         }
 
         void respond(int code, int tid, int... params) {
@@ -192,7 +197,7 @@ public class FakeCanonTest {
         FakeOpener(FakeCanon c) { cam = c; }
         public UsbLink open() throws IOException {
             if (!plugged) throw new CanonService.NoRetry("No Canon found");
-            opens++; cam.recover(); return cam;
+            opens++; cam.recover(true); return cam;
         }
         public void close() { }
         public boolean present() { return plugged; }
@@ -251,6 +256,13 @@ public class FakeCanonTest {
         got = 0; int recBefore = cam.recovers;
         for (int i = 0; i < 10; i++) { byte[] f = s.waitFrame(after, 6000, seq); if (f != null) { got++; after = seq[0]; } }
         check(cam.recovers > recBefore && got == 10, "recovers from a USB stall and live view continues (" + got + "/10, resets " + (cam.recovers - recBefore) + ")");
+
+        // Flaky USB chip: single failed reads are retried without losing the live view
+        int recBefore2 = cam.recovers;
+        cam.glitches = 6;
+        got = 0;
+        for (int i = 0; i < 10; i++) { byte[] f = s.waitFrame(after, 6000, seq); if (f != null) { got++; after = seq[0]; } }
+        check(got == 10 && cam.recovers == recBefore2 && s.status().contains("\"usbRetries\":6"), "flaky reads retried, no reconnect needed (" + got + "/10, " + s.status() + ")");
 
         // Focus failure: clear message, camera still usable
         cam.failFullPress = true;

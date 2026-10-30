@@ -81,7 +81,9 @@ final class UsbOpener implements CanonService.Opener {
             if (e.getDirection() == UsbConstants.USB_DIR_IN) in = e; else out = e;
         }
         if (in == null || out == null) { close(); throw new CanonService.NoRetry("This USB device is not a camera."); }
-        return new AndroidLink(conn, itf, in, out);
+        AndroidLink link = new AndroidLink(conn, itf, in, out);
+        link.drain();
+        return link;
     }
 
     private void askPermission(UsbDevice d) throws IOException {
@@ -147,8 +149,8 @@ final class UsbOpener implements CanonService.Opener {
 
         @Override public int maxPacket() { return Math.max(64, in.getMaxPacketSize()); }
 
-        // Android 9+ allows big single transfers; older versions stop at 16 KB
-        @Override public int maxTransfer() { return Build.VERSION.SDK_INT >= 28 ? 256 * 1024 : 16384; }
+        // 16 KB pieces: some tablets' USB chips (e.g. Samsung Tab A8) break on bigger single transfers
+        @Override public int maxTransfer() { return 16384; }
 
         @Override public int write(byte[] data, int len, int timeoutMs) {
             return conn.bulkTransfer(out, data, len, timeoutMs);
@@ -158,22 +160,28 @@ final class UsbOpener implements CanonService.Opener {
             return conn.bulkTransfer(in, buf, len, timeoutMs);
         }
 
-        @Override public void recover() {
+        @Override public void recover(boolean hard) {
             int id = itf.getId();
-            // PTP "device reset" (class request 0x66), then wait until the camera says it is ready
-            conn.controlTransfer(0x21, 0x66, 0, id, null, 0, 1000);
-            byte[] st = new byte[32];
-            for (int i = 0; i < 10; i++) {
-                CanonEos.sleep(100);
-                int n = conn.controlTransfer(0xA1, 0x67, 0, id, st, st.length, 500);
-                if (n >= 4 && Ptp.get16(st, 2) == Ptp.RC_OK) break;
+            if (hard) {
+                // PTP "device reset" (class request 0x66), then wait until the camera says it is ready
+                conn.controlTransfer(0x21, 0x66, 0, id, null, 0, 1000);
+                byte[] st = new byte[32];
+                for (int i = 0; i < 10; i++) {
+                    CanonEos.sleep(100);
+                    int n = conn.controlTransfer(0xA1, 0x67, 0, id, st, st.length, 500);
+                    if (n >= 4 && Ptp.get16(st, 2) == Ptp.RC_OK) break;
+                }
             }
             // Clear stalled endpoints (USB CLEAR_FEATURE ENDPOINT_HALT)
             conn.controlTransfer(0x02, 0x01, 0, in.getAddress(), null, 0, 1000);
             conn.controlTransfer(0x02, 0x01, 0, out.getAddress(), null, 0, 1000);
-            // Throw away anything left over from the failed command
+            drain();
+        }
+
+        /** Throws away anything left over from an earlier, unfinished command. */
+        void drain() {
             byte[] junk = new byte[maxTransfer()];
-            for (int i = 0; i < 20; i++) if (conn.bulkTransfer(in, junk, junk.length, 100) <= 0) break;
+            for (int i = 0; i < 40; i++) if (conn.bulkTransfer(in, junk, junk.length, 60) <= 0) break;
         }
     }
 }

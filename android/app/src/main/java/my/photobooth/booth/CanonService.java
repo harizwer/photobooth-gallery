@@ -37,7 +37,7 @@ final class CanonService {
     private final Thread thread;
 
     // Only touched on the camera thread
-    private CanonEos cam;
+    private volatile CanonEos cam;
     private int photoId = 0;
     private long notReadySince = 0, lastEvents = 0, lastIdleCheck = 0;
     private boolean triedInitiate = false;
@@ -121,7 +121,7 @@ final class CanonService {
     String status() {
         long now = System.currentTimeMillis();
         return "{\"connected\":" + connected + ",\"model\":" + q(model) + ",\"live\":" + liveWanted
-                + ",\"frames\":" + frames + ",\"errors\":" + errors
+                + ",\"frames\":" + frames + ",\"errors\":" + errors + ",\"usbRetries\":" + (cam != null ? cam.readRetries() : 0)
                 + ",\"lastFrameMs\":" + (lastFrameAt == 0 ? -1 : now - lastFrameAt)
                 + ",\"liveError\":" + q(liveError) + ",\"present\":" + present() + "}";
     }
@@ -214,7 +214,7 @@ final class CanonService {
             try {
                 if (attempt < 3 && link != null) {
                     log("recovering USB link (try " + attempt + ")");
-                    link.recover();
+                    link.recover(attempt == 2);
                     CanonEos.sleep(300);
                     openCamera(link);
                 } else {
@@ -263,7 +263,7 @@ final class CanonService {
                 try { openCamera(l); }
                 catch (Ptp.LinkError e) {
                     log("first contact failed: " + e.getMessage() + " — resetting the USB link");
-                    l.recover();
+                    l.recover(false);
                     CanonEos.sleep(500);
                     openCamera(l);
                 }

@@ -58,6 +58,8 @@ final class CanonEos {
 
     boolean supports(int op) { return ops.contains(op); }
 
+    int readRetries() { return ptp.retries; }
+
     /** Opens the session and puts the camera in remote mode. Photos go straight to the tablet, not the SD card. */
     void open() throws IOException {
         Ptp.Result r = ptp.run(OC_GetDeviceInfo, new int[0], null, 5000);

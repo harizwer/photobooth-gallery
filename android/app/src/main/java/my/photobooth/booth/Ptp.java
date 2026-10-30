@@ -75,7 +75,7 @@ final class Ptp {
                     int want = roundUp(len - got);
                     if (want > buf.length) want = buf.length;
                     long t0 = System.currentTimeMillis();
-                    int k = link.read(buf, want, timeoutMs);
+                    int k = readRetry(want, timeoutMs);
                     if (k < 0) throw new LinkError("USB read failed during data (" + got + "/" + len + ", " + why(t0, timeoutMs) + ", command " + hex(op) + ")");
                     if (k == 0) continue;
                     out.write(buf, 0, Math.min(k, len - got));
@@ -121,12 +121,28 @@ final class Ptp {
     private int readNonEmpty(int timeoutMs) throws IOException {
         for (int i = 0; i < 4; i++) {
             long t0 = System.currentTimeMillis();
-            int n = link.read(buf, buf.length, timeoutMs);
+            int n = readRetry(buf.length, timeoutMs);
             if (n < 0) throw new LinkError("USB read failed (" + why(t0, timeoutMs) + ", command " + hex(curOp) + ")");
             if (n > 0) return n;
         }
         return 0;
     }
+
+    /** Some tablets' USB chips fail a read now and then: try it again before giving up. */
+    private int readRetry(int len, int timeoutMs) {
+        int n = -1;
+        for (int i = 0; i < 3; i++) {
+            long t0 = System.currentTimeMillis();
+            n = link.read(buf, len, timeoutMs);
+            if (n >= 0) { if (i > 0) retries++; return n; }
+            if (System.currentTimeMillis() - t0 >= timeoutMs - 100) return n;   // the camera is silent: retrying won't help
+            CanonEos.sleep(5);
+        }
+        return n;
+    }
+
+    /** How many reads only worked on a second try (shown in the camera report). */
+    volatile int retries = 0;
 
     /** A read that fails at once is a broken transfer (cable/hub); one that waits the full time means the camera went silent. */
     private static String why(long t0, int timeoutMs) {

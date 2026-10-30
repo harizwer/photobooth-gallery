@@ -14,6 +14,6 @@ interface UsbLink {
     /** Reads one USB transfer from the camera. Returns the number read, or a negative number on failure. */
     int read(byte[] buf, int len, int timeoutMs);
 
-    /** Unblocks a stuck link (PTP device reset, clear stalled endpoints, drop leftover data). */
-    void recover();
+    /** Unblocks a stuck link: clear stalled endpoints and drop leftover data; `hard` also resets the camera's PTP state. */
+    void recover(boolean hard);
 }
