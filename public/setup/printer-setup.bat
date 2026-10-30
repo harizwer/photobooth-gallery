@@ -62,3 +62,7 @@ Write-Host 'All done. Next:' -ForegroundColor Cyan
 Write-Host '  1. Close ALL Chrome windows.'
 Write-Host '  2. Open "Photobooth Printer" on the desktop, log in, choose Admin board > Printer.'
 Write-Host '  3. Tick "This laptop prints", then press "Test print strip".'
+Write-Host ''
+Write-Host 'ONE MORE THING (once): in normal Chrome press Ctrl+P on any page, choose the DNP printer,' -ForegroundColor Yellow
+Write-Host '  More settings > Paper size: the 6x4 size with 2 inch cut, Margins: None, Scale: Default, then print.' -ForegroundColor Yellow
+Write-Host '  Chrome remembers this for every photobooth print, so the strips are cut in half.' -ForegroundColor Yellow

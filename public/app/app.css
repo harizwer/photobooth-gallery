@@ -248,12 +248,12 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .frame-wrap.drawing{cursor:crosshair}
 #printArea{display:none}
 @media print{
-  body *{visibility:hidden!important}
-  #printArea,#printArea *{visibility:visible!important}
-  #printArea{display:block!important;position:absolute;left:0;top:0;width:4in}
-  #printArea img{display:block;width:4in;height:6in;object-fit:contain;page-break-after:always;break-after:page}
-  #printArea img:last-child{page-break-after:auto;break-after:auto}
-  html,body{background:#fff!important}
+  /* Print ONLY the photo: everything else is removed from the page (not just hidden), so no blank extra sheets */
+  body>*:not(#printArea){display:none!important}
+  html,body{margin:0!important;padding:0!important;background:#fff!important;height:auto!important;min-height:0!important;overflow:visible!important}
+  #printArea{display:block!important;position:static!important;width:var(--pw,4in);margin:0;padding:0}
+  #printArea img{display:block;width:var(--pw,4in);height:var(--ph,6in);margin:0;object-fit:fill;transform:translate(var(--dx,0mm),var(--dy,0mm)) scale(var(--sc,1));transform-origin:center;break-after:page;page-break-after:always}
+  #printArea img:last-child{break-after:auto;page-break-after:auto}
 }
 .kbdcode{font-family:var(--mono);font-size:12px;background:#111;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;word-break:break-all;user-select:all}
 .devrow{display:flex;align-items:center;gap:10px;font-size:13px;padding:4px 0}

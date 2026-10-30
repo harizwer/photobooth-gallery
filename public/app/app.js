@@ -903,7 +903,7 @@ function go(name) {
   $('#crumb').textContent = CRUMB[name];
   try { history.replaceState(null, '', '#' + name); } catch (e) {}
   if (name !== 'media') camTestOff();
-  ({ home: renderHome, events: renderEvents, templates: renderTemplates, media: renderMedia, gallery: () => renderGallery(), printer: () => { renderQueue(); renderPaper(); }, studio: renderStudio, accounts: renderAccounts, guest: renderGuestPreview })[name]();
+  ({ home: renderHome, events: renderEvents, templates: renderTemplates, media: renderMedia, gallery: () => renderGallery(), printer: () => { renderQueue(); renderPaper(); renderPrintCfg(); }, studio: renderStudio, accounts: renderAccounts, guest: renderGuestPreview })[name]();
   window.scrollTo(0, 0);
 }
 document.addEventListener('click', e => {
@@ -1450,17 +1450,46 @@ async function testPrint(strip) {
   try { await printImage(printCanvas(d, c).toDataURL('image/jpeg', .95), 1); } catch (e) { toast(e.message, 4000); }
 }
 $('#test46').onclick = () => testPrint(false); $('#testStrip').onclick = () => testPrint(true);
+// Print settings for this laptop: paper orientation in the DNP driver, fine position and size.
+const printCfg = () => ({ orient: 'portrait', dx: 0, dy: 0, scale: 100, ...store.get('printCfg', {}) });
+function renderPrintCfg() { const c = printCfg(); $('#pcOrient').value = c.orient; $('#pcDx').value = c.dx; $('#pcDy').value = c.dy; $('#pcSc').value = c.scale; }
+$('#pcSave').onclick = () => {
+  const num = (id, lo, hi, d) => { const v = +$(id).value; return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; };
+  store.set('printCfg', { orient: $('#pcOrient').value, dx: num('#pcDx', -15, 15, 0), dy: num('#pcDy', -15, 15, 0), scale: num('#pcSc', 90, 110, 100) });
+  renderPrintCfg(); toast('Print settings saved on this laptop');
+};
+$('#pcTest').onclick = async () => {
+  $('#pcSave').click();
+  // 4x6 portrait test sheet at 300 dpi: border 2 mm in, dashed cut line in the middle, arrows to the top
+  const c = document.createElement('canvas'); c.width = 1200; c.height = 1800; const x = c.getContext('2d'), mm = 300 / 25.4;
+  x.fillStyle = '#fff'; x.fillRect(0, 0, 1200, 1800);
+  x.strokeStyle = '#000'; x.lineWidth = 4; x.strokeRect(2 * mm, 2 * mm, 1200 - 4 * mm, 1800 - 4 * mm);
+  x.setLineDash([24, 16]); x.strokeStyle = '#d00'; x.beginPath(); x.moveTo(600, 0); x.lineTo(600, 1800); x.stroke(); x.setLineDash([]);
+  x.fillStyle = '#000'; x.textAlign = 'center'; x.font = 'bold 54px system-ui'; x.fillText('▲ TOP ▲', 300, 120); x.fillText('▲ TOP ▲', 900, 120);
+  x.font = '34px system-ui'; ['Border 2 mm from', 'every edge', '', 'Strips are cut', 'on the red line'].forEach((t, i) => { x.fillText(t, 300, 820 + i * 48); x.fillText(t, 900, 820 + i * 48); });
+  try { await printImage(c.toDataURL('image/jpeg', .95), 1); } catch (e) { toast(e.message, 4000); }
+};
+function rotated(img, cw) {   // rotate an image 90° (clockwise when cw)
+  const c = document.createElement('canvas'); c.width = img.naturalHeight || img.height; c.height = img.naturalWidth || img.width;
+  const x = c.getContext('2d');
+  if (cw) { x.translate(c.width, 0); x.rotate(Math.PI / 2); } else { x.translate(0, c.height); x.rotate(-Math.PI / 2); }
+  x.drawImage(img, 0, 0); return c.toDataURL('image/jpeg', .95);
+}
+let printRun = 0;
 async function printImage(src, copies) {
+  const run = ++printRun;
   const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('Could not download the photo to print')); i.src = src; });
+  const cfg = printCfg(), landPage = cfg.orient === 'landscape', landImg = img.naturalWidth > img.naturalHeight;
   let url = src;
-  if (img.naturalWidth > img.naturalHeight) { // landscape → rotate onto portrait 4x6 paper
-    const c = document.createElement('canvas'); c.width = img.naturalHeight; c.height = img.naturalWidth;
-    const x = c.getContext('2d'); x.translate(c.width, 0); x.rotate(Math.PI / 2); x.drawImage(img, 0, 0); url = c.toDataURL('image/jpeg', .95);
-  } else if (!src.startsWith('data:')) { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); url = c.toDataURL('image/jpeg', .95); }
+  if (landImg !== landPage) url = rotated(img, !landPage);   // turn the picture to match the paper
+  else if (!src.startsWith('data:')) { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); url = c.toDataURL('image/jpeg', .95); }
+  const [pw, ph] = landPage ? ['6in', '4in'] : ['4in', '6in'];
+  $('#pageStyle').textContent = `@page{size:${pw} ${ph};margin:0}`;
   const area = $('#printArea'); area.innerHTML = '';
+  area.style.cssText = `--pw:${pw};--ph:${ph};--dx:${cfg.dx}mm;--dy:${cfg.dy}mm;--sc:${cfg.scale / 100}`;
   for (let i = 0; i < Math.max(1, copies); i++) { const im = new Image(); im.src = url; im.alt = ''; area.appendChild(im); }
   await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
-  await sleep(120); window.print(); await sleep(300); area.innerHTML = '';
+  await sleep(150); if (run !== printRun) return; window.print(); await sleep(400); if (run === printRun) area.innerHTML = '';
 }
 async function runPrinter() {
   if (!printerOn() || printBusy || !USER) return;
