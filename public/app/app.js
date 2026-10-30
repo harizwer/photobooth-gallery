@@ -468,7 +468,12 @@ async function releaseOtherTabs() { if (!camChan) return; otherTabHadCamera = fa
 // Stop the live view and wait for it to finish before closing, so the library never uses a closed connection.
 async function dslrDisconnect() { const d = dslr; dslr = null; if (!d) return; d.running = false; try { await d.loopDone; } catch (e) {} try { await d.cam.disconnect(); } catch (e) {} }
 async function dslrAutoConnect() {
-  try { if (!dslrSupported() || dslrCrashed || handedOff) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false; await dslrConnect(false); return true; } catch (e) { return false; }
+  try {
+    if (!dslrSupported() || dslrCrashed || handedOff) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false;
+    let recovering = false; try { recovering = !!sessionStorage.getItem('pb.dslrRecovering'); } catch (e) {}
+    if (recovering) { await camLog('waiting 4 s so the Canon can settle'); await sleep(4000); }
+    await dslrConnect(false); return true;
+  } catch (e) { return false; }
 }
 const LV = { frames: 0, since: 0, slowest: 0, lastMs: 0, errors: 0, lastErr: '', events: 0, captures: [] };   // live view stats for the camera report
 async function dslrLoop(d) {
@@ -477,22 +482,20 @@ async function dslrLoop(d) {
   while (d.running && dslr === d) {
     if (d.pause) { await sleep(60); continue; }
     try {
-      // Read the Canon's pending messages every 2 s; Canons can freeze when these pile up.
-      if (Date.now() - lastEvents > 2000) { lastEvents = Date.now(); await withTimeout(d.cam.consumeEvents(), 5000, 'The Canon did not answer (events)'); LV.events++; }
       const t0 = performance.now();
-      const blob = await withTimeout(d.cam.capturePreviewAsBlob(), 6000, 'The Canon live view stopped answering');
+      const blob = await withTimeout(d.cam.capturePreviewAsBlob(), 15000, 'The Canon live view stopped answering');
       const bmp = await createImageBitmap(blob); fails = 0; d.lastFrame = Date.now();
       LV.frames++; LV.lastMs = Math.round(performance.now() - t0); LV.slowest = Math.max(LV.slowest, LV.lastMs);
       if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
       x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
       // Full speed while guests look at the camera; a gentle keep-alive while the start screen covers it
-      await sleep(document.hidden ? 500 : (ROLE === 'booth' && $('#b-attract').classList.contains('on')) ? 300 : 25);
+      await sleep(document.hidden ? 600 : (ROLE === 'booth' && $('#b-attract').classList.contains('on')) ? 500 : 90);   // calm pace: easier on the USB link
     } catch (e) {
       LV.errors++; LV.lastErr = e.message; camLog('live view problem: ' + e.message);
       if (/stopped answering|did not answer/.test(e.message)) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }   // the library is stuck: recover (photos only next time)
       const msg = dslrHelp(e);
       if (dslrCrashed || ++fails > 20) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
-      await sleep(400);   // a busy Canon often answers again a moment later
+      await sleep(1000);   // a USB hiccup usually clears within a few seconds: retry calmly (about 20 s in total)
     }
   }
 }
@@ -500,9 +503,11 @@ async function dslrLoop(d) {
    The camera library can get stuck if the Canon stops answering (most often it cannot focus).
    Then: finish the session with the tablet camera, and once the guest is done, reload the page,
    which reconnects the Canon automatically (at most 3 times in 5 minutes). */
-const dslrHealthy = () => !!(dslr && dslr.running && (dslr.noLive || Date.now() - (dslr.lastFrame || 0) < 4000));
+const dslrHealthy = () => !!(dslr && dslr.running && (dslr.noLive || Date.now() - (dslr.lastFrame || 0) < 25000));
+let dslrOld = null;   // the last Canon connection, closed properly before a reload
 function dslrFallback(reason) {
   const d = dslr; if (!d) return Promise.resolve();
+  dslrOld = d.cam;
   camLog('switched to the tablet camera' + (reason ? ': ' + String(reason).slice(0, 80) : ''));
   dslr = null; d.running = false; dslrCrashed = true; B.recoverDslr = true;
   toast('The Canon stopped responding. This session uses the tablet camera; the Canon reconnects by itself after it.' + (reason ? ' ' + reason : ''), 9000);
@@ -520,7 +525,9 @@ async function dslrRecover(force) {
   if (UPLOADS.size || (!force && (B.session || !$('#b-attract').classList.contains('on')))) return;   // only when the booth is idle
   tries.push(Date.now()); try { sessionStorage.setItem('pb.dslrReloads', JSON.stringify(tries)); sessionStorage.setItem('pb.dslrRecovering', '1'); } catch (e) {}
   await camLog('reloading the page to reconnect the Canon');
-  busy('Reconnecting the Canon…'); setTimeout(() => location.reload(), 400);
+  busy('Reconnecting the Canon…');
+  if (dslrOld) { try { await withTimeout(dslrOld.disconnect(), 3000, 'x'); } catch (e) {} dslrOld = null; }
+  await freeUsb(); setTimeout(() => location.reload(), 600);
 }
 /* Keep the Canon connected without anyone touching it:
    - every few seconds while the booth is idle, reconnect it if it dropped
