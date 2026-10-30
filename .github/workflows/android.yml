@@ -31,6 +31,7 @@ jobs:
         if: always()
         shell: bash
         run: |
+          set -x
           mkdir out
           cp test.log build.log out/ 2>/dev/null || true
           cp android/app/build/outputs/apk/release/app-release.apk out/photobooth.apk 2>/dev/null || true
@@ -40,7 +41,7 @@ jobs:
           git checkout -q -b apk-build
           git add -A
           git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Android build ${{ github.run_number }} (${{ job.status }})"
-          git push -fq "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" apk-build
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" apk-build > ../push.log 2>&1 || { sed 's/^/::error::push: /' ../push.log; exit 1; }
 
   # Opens the app in an Android 10 emulator (same Android as the booth tablet) and checks it works
   emulator:
@@ -82,4 +83,4 @@ jobs:
           cd pub
           git add -A
           git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Emulator Android API ${{ matrix.api }}, build ${{ github.run_number }} (${{ job.status }})" || true
-          for i in 1 2 3; do git push -q origin HEAD:apk-build && break; git pull -q --rebase origin apk-build; done
+          ok=0; for i in 1 2 3; do if git push origin HEAD:apk-build > ../push.log 2>&1; then ok=1; break; fi; sed 's/^/::warning::push: /' ../push.log; git pull -q --rebase origin apk-build; done; [ $ok = 1 ]
