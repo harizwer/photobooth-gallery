@@ -367,6 +367,7 @@ async function dslrConnect(pick) {
   if (dslrBusy) return dslrBusy;                       // a connect is already in progress
   dslrBusy = (async () => {
     CAMLOG.push('—'); await camLog(pick ? 'tapped Connect' : 'automatic reconnect');
+    if (pick) { try { sessionStorage.removeItem('pb.liveBroken'); sessionStorage.setItem('pb.dslrReloads', '[]'); } catch (e) {} }   // a manual Connect always starts fresh
     try { if (!dslrLib) dslrLib = await import('../vendor/gphoto2/camera.js'); await camLog('camera library loaded'); }
     catch (e) { await camLog('camera library failed to load: ' + e.message); throw new Error('The camera part of the website did not load. Check the internet and reload the page. (' + e.message + ')'); }
     if (pick) {
@@ -404,9 +405,7 @@ async function dslrConnect(pick) {
             catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) { markLiveBroken(); throw e; } await camLog(`live view check ${i}: ${e.message}`); await sleep(1500); }
           }
         }
-        // Then a smaller photo size for faster transfers over USB: Medium JPEG (about 4K, all the print needs).
-        try { await withTimeout(cam.setConfigValue('imageformat', 'Medium Fine JPEG'), 8000, HUNG); await camLog('imageformat → Medium Fine JPEG'); }
-        catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog('imageformat: ' + e.message); }
+        // No camera settings are changed here: the Canon is used exactly as it is set on the camera.
         break;   // connected: with or without live view
       }
       catch (e) {
