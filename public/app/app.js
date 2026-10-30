@@ -313,7 +313,7 @@ async function boothLoad() {
   boothStatus();
 }
 function boothStatus() {
-  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? 'Canon DSLR' : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
+  $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR (preview: tablet)' : 'Canon DSLR') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
 }
 $('#bModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) startFlow(b.dataset.mode); });
 
@@ -322,9 +322,9 @@ const RES = { '4k': [3840, 2160], '1440': [2560, 1440], '1080': [1920, 1080] };
 let dslr = null; // { cam, canvas, running }
 function stopCamera() { if (B.stream) B.stream.getTracks().forEach(t => t.stop()); B.stream = null; }
 async function startCamera() {
-  if (dslr && dslr.running) { showDslrView(); return; }   // a connected Canon always wins
+  if (dslr && dslr.running && !dslr.noLive) { showDslrView(); return; }   // a connected Canon always wins
   stopCamera();
-  if (S.capture.camera === 'dslr') {
+  if (S.capture.camera === 'dslr' && !(dslr && dslr.running)) {
     if (await dslrAutoConnect()) return;
     if (!dslrCrashed) toast('Canon DSLR not connected. Using the tablet camera. Open Staff → Camera to connect it.', 5000);
   }
@@ -360,7 +360,7 @@ async function dslrConnect(pick) {
   if (!navigator.usb) throw new Error('This browser cannot use USB devices. Use Chrome on an Android tablet (iPad is not supported).');
   if (!window.crossOriginIsolated) throw new Error('Open the booth from the Cloudflare address of this website to use the DSLR.');
   if (dslrCrashed) throw new Error('Reload this page first (the camera connection crashed earlier), then tap Connect once.');
-  if (dslr && dslr.running) { showDslrView(); return dslr.cam; }   // already connected: never open a second connection
+  if (dslr && dslr.running) { if (!dslr.noLive) showDslrView(); return dslr.cam; }   // already connected: never open a second connection
   if (dslrBusy) return dslrBusy;                       // a connect is already in progress
   dslrBusy = (async () => {
     CAMLOG.length = 0; await camLog(pick ? 'tapped Connect' : 'automatic reconnect');
@@ -376,16 +376,25 @@ async function dslrConnect(pick) {
       }
     }
     handedOff = false;
-    // Up to 4 tries. Before each one, free the camera from anything still holding it:
-    // another tab of this site, or a USB handle left open by an earlier connection. From try 2 on, also reset the USB link (like replugging the cable).
-    let cam = null, lastErr = null;
+    // Up to 3 tries. Before each one, free the camera from anything still holding it
+    // (another tab of this site, or a USB handle left open by an earlier connection).
+    let cam = null, lastErr = null, liveOk = false;
     await releaseOtherTabs();
     await camLog('connecting');
     for (let attempt = 1; attempt <= 3; attempt++) {
       if (attempt > 1) setDslrMsg(`Connecting to the Canon… (try ${attempt} of 3)`);
       await freeUsb();
       cam = new dslrLib.Camera();
-      try { await cam.connect(); await camLog(`try ${attempt}: connected`); await cam.capturePreviewAsBlob(); await camLog(`try ${attempt}: live view OK`); lastErr = null; break; }
+      try {
+        await cam.connect(); await camLog(`try ${attempt}: connected`); lastErr = null;
+        // Live view takes a moment to start on Canons: ask for it a few times before giving up on it.
+        try { await cam.setConfigValue('viewfinder', true); await camLog('live view switched on'); } catch (e) { if (e && e.constructor && e.constructor.name === 'RuntimeError') throw e; await camLog('live view switch: ' + e.message); }
+        for (let i = 1; i <= 8 && !liveOk; i++) {
+          try { await cam.capturePreviewAsBlob(); liveOk = true; await camLog(`live view OK (check ${i})`); }
+          catch (e) { if (e && e.constructor && e.constructor.name === 'RuntimeError') throw e; await camLog(`live view check ${i}: ${e.message}`); await sleep(700); }
+        }
+        break;   // connected: with or without live view
+      }
       catch (e) {
         await camLog(`try ${attempt}: ${(e && e.constructor && e.constructor.name) || 'Error'}: ${e && e.message}`);
         lastErr = e; try { await cam.disconnect(); } catch (_) {} cam = null;
@@ -394,9 +403,14 @@ async function dslrConnect(pick) {
       }
     }
     if (lastErr) throw new Error(dslrHelp(lastErr));
-    dslr = { cam, canvas: $('#dslrView'), running: true, lastFrame: Date.now() };
-    showDslrView();
-    dslr.loopDone = dslrLoop(dslr);
+    dslr = { cam, canvas: $('#dslrView'), running: true, lastFrame: Date.now(), noLive: !liveOk };
+    if (liveOk) { showDslrView(); dslr.loopDone = dslrLoop(dslr); }
+    else {
+      // No live view from this Canon: guests see the tablet camera for framing, photos are still taken with the Canon.
+      dslr.loopDone = dslrKeepAlive(dslr);
+      setDslrMsg('Canon connected. Its live view did not start, so the preview uses the tablet camera and the photos are taken with the Canon. For Canon live view: Menu → Live View shoot → Enable, and set the dial to P or M.');
+      $('#dslrView').hidden = true; B.stream || (ROLE === 'booth' && startCamera());
+    }
     // Remember the choice so the booth reconnects to the Canon next time
     if (S.capture.camera !== 'dslr') { S.capture.camera = 'dslr'; saveStudio().catch(() => {}); }
     try { if (sessionStorage.getItem('pb.dslrRecovering')) { sessionStorage.removeItem('pb.dslrRecovering'); setTimeout(() => toast('Canon reconnected'), 500); } } catch (e) {}
@@ -455,7 +469,7 @@ async function dslrLoop(d) {
    The camera library can get stuck if the Canon stops answering (most often it cannot focus).
    Then: finish the session with the tablet camera, and once the guest is done, reload the page,
    which reconnects the Canon automatically (at most 3 times in 5 minutes). */
-const dslrHealthy = () => !!(dslr && dslr.running && Date.now() - (dslr.lastFrame || 0) < 4000);
+const dslrHealthy = () => !!(dslr && dslr.running && (dslr.noLive || Date.now() - (dslr.lastFrame || 0) < 4000));
 function dslrFallback(reason) {
   const d = dslr; if (!d) return Promise.resolve();
   dslr = null; d.running = false; dslrCrashed = true; B.recoverDslr = true;
@@ -497,14 +511,23 @@ if (navigator.usb) {
   navigator.usb.addEventListener('disconnect', () => { if (dslr) dslrFallback('The Canon was switched off or unplugged — it reconnects by itself when it is back.'); });
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(dslrEnsure, 800); });
+// Without live view, talk to the Canon every 15 s so it stays awake and we notice if it drops.
+async function dslrKeepAlive(d) {
+  let fails = 0;
+  while (d.running && dslr === d) {
+    await sleep(15000); if (!d.running || dslr !== d || d.pause) continue;
+    try { await withTimeout(d.cam.consumeEvents(), 8000, 'no answer'); fails = 0; d.lastFrame = Date.now(); }
+    catch (e) { if (++fails >= 2 && dslr === d) { dslrFallback(); return; } }
+  }
+}
 // One frame from the live preview, at most `max` px on the long edge.
 function grabFrame(max = 4000) {
-  const src = dslr ? dslr.canvas : $('#live');
+  const canonView = dslr && !dslr.noLive, src = canonView ? dslr.canvas : $('#live');
   const w = src.videoWidth || src.width, h = src.videoHeight || src.height;
   if (!w || !h) throw new Error('The camera is not ready yet.');
   const s = Math.min(1, max / Math.max(w, h)), c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(h * s);
   const x = c.getContext('2d');
-  if (!dslr && S.capture.mirror) { x.translate(c.width, 0); x.scale(-1, 1); }
+  if (!canonView && S.capture.mirror) { x.translate(c.width, 0); x.scale(-1, 1); }
   x.drawImage(src, 0, 0, c.width, c.height); return c;
 }
 function withTimeout(promise, ms, msg) { let t; return Promise.race([promise, new Promise((_, rej) => { t = setTimeout(() => rej(new Error(msg)), ms); })]).finally(() => clearTimeout(t)); }
@@ -533,7 +556,7 @@ async function capturePhoto() {
   }
   return grabFrame();
 }
-function liveStream() { return dslr ? dslr.canvas.captureStream(24) : B.stream; }
+function liveStream() { return dslr && !dslr.noLive ? dslr.canvas.captureStream(24) : B.stream; }
 
 /* ---------- Session flow ---------- */
 function goHome() {
@@ -1211,6 +1234,7 @@ async function dslrCheckOn() {
   $('#camOn').disabled = true; $('#resLabel').textContent = 'Connecting to the Canon…';
   try { await dslrConnect(true); } catch (e) { $('#camOn').disabled = false; $('#resLabel').textContent = 'Canon not connected'; $('#testInfo').textContent = e.message; return; }
   $('#camOn').disabled = false; renderDslrState();
+  if (dslr && dslr.noLive) { testRaf = 1; $('#resBadge').textContent = 'DSLR'; $('#resLabel').textContent = 'Canon connected · no live view (the booth preview uses the tablet camera)'; $('#camChip').textContent = 'Canon DSLR'; $('#camChip').className = 'chip'; $('#testShot').disabled = false; $('#camOn').textContent = 'Turn off camera'; return; }
   const out = $('#testDslr'), x = out.getContext('2d'); out.hidden = false; $('#testVideo').hidden = true;
   const draw = () => { const src = $('#dslrView'); if (src.width) { if (out.width !== src.width) { out.width = src.width; out.height = src.height; } x.drawImage(src, 0, 0); $('#resLabel').textContent = `Canon live view ${src.width} × ${src.height} · photos at full resolution`; } testRaf = requestAnimationFrame(draw); };
   draw();
