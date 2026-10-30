@@ -16,12 +16,14 @@ const check = `(async () => { const out = {}; try {
   out.version = PBNative.version(); out.present = PBNative.present(); out.status = JSON.parse(PBNative.status());
   const call = op => new Promise(res => { const id = 900000 + Math.floor(Math.random() * 1000); const prev = window.__pbNativeDone;
     window.__pbNativeDone = (i, r) => { if (i === id) { window.__pbNativeDone = prev; res(r); } else if (prev) prev(i, r); };
-    PBNative.call(op, id); setTimeout(() => res('TIMEOUT'), 30000); });
+    PBNative.call(op, id); setTimeout(() => res('TIMEOUT'), 20000); });
   out.connect = await call('connect');
   out.capture = await call('capture');
+  out.boothCodeLoadedEarly = typeof window.__pbNativeDone === 'function'; out.loginScreenEarly = !!document.querySelector('#v-login.on');
   const f = await fetch('/__canon/frame?after=0'); out.frame = [f.status, await f.text()];
   const p = await fetch('/__canon/photo?id=1'); out.photo = p.status;
-  try { const s = await navigator.mediaDevices.getUserMedia({ video: true }); out.tabletCamera = s.getVideoTracks()[0].label || 'ok'; s.getTracks().forEach(t => t.stop()); }
+  const lim = (pr, ms) => Promise.race([pr, new Promise((_, r) => setTimeout(() => r(new Error('timed out')), ms))]);
+  try { const s = await lim(navigator.mediaDevices.getUserMedia({ video: true }), 20000); out.tabletCamera = s.getVideoTracks()[0].label || 'ok'; s.getTracks().forEach(t => t.stop()); }
   catch (e) { out.tabletCamera = 'ERROR ' + e.name + ': ' + e.message; }
   out.loginScreen = !!document.querySelector('#v-login.on');
   out.boothCodeLoaded = typeof window.__pbNativeDone === 'function';
@@ -34,4 +36,4 @@ ws.onopen = async () => {
   console.log(r.result && r.result.result ? r.result.result.value : JSON.stringify(r));
   ws.close(); process.exit(0);
 };
-setTimeout(() => { console.log('CDP TIMEOUT'); process.exit(0); }, 90000);
+setTimeout(() => { console.log('CDP TIMEOUT'); process.exit(0); }, 150000);
