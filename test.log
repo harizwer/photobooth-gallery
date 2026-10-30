@@ -3,12 +3,13 @@
   PASS photos go to the tablet (capture destination = 4)
   PASS camera told there is free space
   PASS live view on: {"ok":true}
-  PASS 20 live view frames (20) in 1456 ms
+  PASS 20 live view frames (20) in 1455 ms
   PASS live view sent to the tablet
-  PASS photo downloaded intact: {"ok":true,"id":1,"size":2300000,"ms":412}
+  PASS photo downloaded intact: {"ok":true,"id":1,"size":2300000,"ms":414}
   PASS transfer complete sent
   PASS live view resumes after the photo (5/5)
   PASS recovers from a USB stall and live view continues (10/10, resets 1)
+  PASS flaky reads retried, no reconnect needed (10/10, {"connected":true,"model":"Canon EOS 750D","live":true,"frames":45,"errors":1,"usbRetries":6,"lastFrameMs":9,"liveError":"","present":true})
   PASS focus failure reported: {"ok":false,"error":"The Canon could not focus, so it did not take the photo. Add more light, or focus once and switch the lens to MF. (0xA102)"}
   PASS next photo works after a focus failure
   PASS connect again reuses the open connection
@@ -22,12 +23,13 @@
   PASS photos go to the tablet (capture destination = 4)
   PASS camera told there is free space
   PASS live view on: {"ok":true}
-  PASS 20 live view frames (20) in 1455 ms
+  PASS 20 live view frames (20) in 1454 ms
   PASS live view sent to the tablet
-  PASS photo downloaded intact: {"ok":true,"id":1,"size":4194304,"ms":416}
+  PASS photo downloaded intact: {"ok":true,"id":1,"size":4194304,"ms":418}
   PASS transfer complete sent
   PASS live view resumes after the photo (5/5)
   PASS recovers from a USB stall and live view continues (10/10, resets 1)
+  PASS flaky reads retried, no reconnect needed (10/10, {"connected":true,"model":"Canon EOS 750D","live":true,"frames":45,"errors":1,"usbRetries":6,"lastFrameMs":1,"liveError":"","present":true})
   PASS focus failure reported: {"ok":false,"error":"The Canon could not focus, so it did not take the photo. Add more light, or focus once and switch the lens to MF. (0xA102)"}
   PASS next photo works after a focus failure
   PASS connect again reuses the open connection
@@ -41,12 +43,13 @@
   PASS photos go to the tablet (capture destination = 4)
   PASS camera told there is free space
   PASS live view on: {"ok":true}
-  PASS 20 live view frames (20) in 1455 ms
+  PASS 20 live view frames (20) in 1454 ms
   PASS live view sent to the tablet
   PASS photo downloaded intact: {"ok":true,"id":1,"size":1536512,"ms":404}
   PASS transfer complete sent
   PASS live view resumes after the photo (5/5)
   PASS recovers from a USB stall and live view continues (10/10, resets 1)
+  PASS flaky reads retried, no reconnect needed (10/10, {"connected":true,"model":"Canon EOS 750D","live":true,"frames":45,"errors":1,"usbRetries":6,"lastFrameMs":0,"liveError":"","present":true})
   PASS focus failure reported: {"ok":false,"error":"The Canon could not focus, so it did not take the photo. Add more light, or focus once and switch the lens to MF. (0xA102)"}
   PASS next photo works after a focus failure
   PASS connect again reuses the open connection
