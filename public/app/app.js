@@ -433,7 +433,9 @@ async function camLog(step) {
   try { sessionStorage.setItem('pb.camlog', JSON.stringify(CAMLOG.slice(-40))); } catch (e) {}
 }
 function camReport() {
-  return ['Photobooth camera report', `Page: ${ROLE || '-'} · Camera setting: ${S.capture.camera} · Connected now: ${!!(dslr && dslr.running)}`, `Browser: ${navigator.userAgent}`, `Isolated: ${window.crossOriginIsolated} · WebUSB: ${!!navigator.usb} · Other tab had camera: ${otherTabHadCamera}`, ...(CAMLOG.length ? CAMLOG : ['(nothing recorded yet: tap Connect camera first, then copy the report)'])].join('\n');
+  return ['Photobooth camera report', `Page: ${ROLE || '-'} · Camera setting: ${S.capture.camera} · Connected now: ${!!(dslr && dslr.running)}`, `Browser: ${navigator.userAgent}`, `Isolated: ${window.crossOriginIsolated} · WebUSB: ${!!navigator.usb} · Other tab had camera: ${otherTabHadCamera}`, ...(CAMLOG.length ? CAMLOG : ['(nothing recorded yet: tap Connect camera first, then copy the report)']),
+    `Live view: ${LV.frames} frames in ${LV.since ? Math.round((Date.now() - LV.since) / 1000) : 0} s · last frame ${dslr && dslr.lastFrame ? ((Date.now() - dslr.lastFrame) / 1000).toFixed(1) + ' s ago' : '-'} · last ${LV.lastMs} ms · slowest ${LV.slowest} ms · errors ${LV.errors}${LV.lastErr ? ' (' + LV.lastErr + ')' : ''} · event reads ${LV.events}`,
+    `Canon photos: ${LV.captures.join(' / ') || 'none yet'}`].join('\n');
 }
 // Only one tab can use the camera. Ask other open tabs of this site (on this tablet) to let go of it first.
 const camChan = 'BroadcastChannel' in window ? new BroadcastChannel('pb-camera') : null;
@@ -448,17 +450,26 @@ async function dslrDisconnect() { const d = dslr; dslr = null; if (!d) return; d
 async function dslrAutoConnect() {
   try { if (!dslrSupported() || dslrCrashed || handedOff) return false; const list = await navigator.usb.getDevices(); if (!list.length) return false; await dslrConnect(false); return true; } catch (e) { return false; }
 }
+const LV = { frames: 0, since: 0, slowest: 0, lastMs: 0, errors: 0, lastErr: '', events: 0, captures: [] };   // live view stats for the camera report
 async function dslrLoop(d) {
-  const x = d.canvas.getContext('2d'); let fails = 0;
+  const x = d.canvas.getContext('2d'); let fails = 0, lastEvents = Date.now();
+  Object.assign(LV, { frames: 0, since: Date.now(), slowest: 0, errors: 0, lastErr: '', events: 0 });
   while (d.running && dslr === d) {
     if (d.pause) { await sleep(60); continue; }
     try {
-      const bmp = await createImageBitmap(await d.cam.capturePreviewAsBlob()); fails = 0; d.lastFrame = Date.now();
+      // Read the Canon's pending messages every 2 s; Canons can freeze when these pile up.
+      if (Date.now() - lastEvents > 2000) { lastEvents = Date.now(); await withTimeout(d.cam.consumeEvents(), 5000, 'The Canon did not answer (events)'); LV.events++; }
+      const t0 = performance.now();
+      const blob = await withTimeout(d.cam.capturePreviewAsBlob(), 6000, 'The Canon live view stopped answering');
+      const bmp = await createImageBitmap(blob); fails = 0; d.lastFrame = Date.now();
+      LV.frames++; LV.lastMs = Math.round(performance.now() - t0); LV.slowest = Math.max(LV.slowest, LV.lastMs);
       if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
       x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
       // Full speed while guests look at the camera; a gentle keep-alive while the start screen covers it
       await sleep(document.hidden ? 500 : (ROLE === 'booth' && $('#b-attract').classList.contains('on')) ? 300 : 25);
     } catch (e) {
+      LV.errors++; LV.lastErr = e.message; camLog('live view problem: ' + e.message);
+      if (/stopped answering|did not answer/.test(e.message)) { if (dslr === d) dslrFallback(); return; }   // the library is stuck: recover
       const msg = dslrHelp(e);
       if (dslrCrashed || ++fails > 10) { if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
       await sleep(300);
@@ -472,6 +483,7 @@ async function dslrLoop(d) {
 const dslrHealthy = () => !!(dslr && dslr.running && (dslr.noLive || Date.now() - (dslr.lastFrame || 0) < 4000));
 function dslrFallback(reason) {
   const d = dslr; if (!d) return Promise.resolve();
+  camLog('switched to the tablet camera' + (reason ? ': ' + String(reason).slice(0, 80) : ''));
   dslr = null; d.running = false; dslrCrashed = true; B.recoverDslr = true;
   toast('The Canon stopped responding. This session uses the tablet camera; the Canon reconnects by itself after it.' + (reason ? ' ' + reason : ''), 9000);
   return ROLE === 'booth' ? startCamera() : Promise.resolve();
@@ -534,7 +546,10 @@ function withTimeout(promise, ms, msg) { let t; return Promise.race([promise, ne
 const DSLR_SHOT_HELP = 'The Canon did not take the photo in time. Usually it could not focus: add more light, or focus once and switch the lens to MF. Also set the camera to JPEG (not RAW) and make sure an SD card is in.';
 // Full-quality Canon photo, shrunk to 4K. Never waits more than 12 s: if the Canon hangs, the live view frame is used instead.
 async function dslrFullPhoto(d) {
-  const f = await withTimeout(d.cam.captureImageAsFile(), 10000, DSLR_SHOT_HELP);
+  const t0 = performance.now(); let f;
+  try { f = await withTimeout(d.cam.captureImageAsFile(), 10000, DSLR_SHOT_HELP); }
+  catch (e) { LV.captures.push(`photo FAILED after ${((performance.now() - t0) / 1000).toFixed(1)} s: ${e.message.slice(0, 60)}`); camLog('Canon photo failed: ' + e.message.slice(0, 80)); throw e; }
+  LV.captures.push(`photo ${(f.size / 1048576).toFixed(1)} MB in ${((performance.now() - t0) / 1000).toFixed(1)} s`); if (LV.captures.length > 10) LV.captures.shift();
   let bmp;
   try { bmp = await createImageBitmap(f, { resizeWidth: 4000, resizeQuality: 'high' }); }
   catch (e) { throw new Error('The Canon sent a file the browser cannot read. Set Image quality on the camera to a JPEG setting (not RAW).'); }
