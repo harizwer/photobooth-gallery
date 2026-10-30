@@ -391,20 +391,22 @@ async function dslrConnect(pick) {
       try {
         // Every step has a time limit: a Canon that never answers must not freeze the booth.
         await withTimeout(cam.connect(), 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
-        // Smaller transfers over USB: Medium JPEG (about 4K, all the print needs) instead of the full 24 MP file,
-        // and photos handed straight to the tablet from the camera's memory.
-        for (const [k, v] of [['imageformat', 'Medium Fine JPEG'], ['capturetarget', 'Internal RAM']]) {
-          try { await withTimeout(cam.setConfigValue(k, v), 8000, HUNG); await camLog(`${k} → ${v}`); }
-          catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog(`${k}: ${e.message}`); }
+        const wantLive = S.capture.canonMode === 'live' && !liveIsBroken();
+        if (S.capture.canonMode !== 'live') await camLog('photos-only mode: live view not used');
+        else if (!wantLive) await camLog('live view was unstable earlier: photos only until the Canon is switched off and on');
+        if (wantLive) {
+          // Start live view FIRST, before changing any camera setting (a Canon busy with a setting answers "I/O problem").
+          // It takes a moment to start (the mirror flips up), so wait, then give the first picture plenty of time.
+          try { await withTimeout(cam.setConfigValue('viewfinder', true), 8000, HUNG); await camLog('live view switched on'); } catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog('live view switch: ' + e.message); }
+          await sleep(1500);
+          for (let i = 1; i <= 6 && !liveOk; i++) {
+            try { await withTimeout(cam.capturePreviewAsBlob(), 12000, HUNG); liveOk = true; await camLog(`live view OK (check ${i})`); }
+            catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) { markLiveBroken(); throw e; } await camLog(`live view check ${i}: ${e.message}`); await sleep(1500); }
+          }
         }
-        if (S.capture.canonMode !== 'live') { await camLog('photos-only mode: live view not used'); break; }
-        if (liveIsBroken()) { await camLog('live view was unstable earlier: photos only until the Canon is switched off and on'); break; }
-        // Live view takes a moment to start on Canons: ask for it a few times before giving up on it.
-        try { await withTimeout(cam.setConfigValue('viewfinder', true), 8000, HUNG); await camLog('live view switched on'); } catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog('live view switch: ' + e.message); }
-        for (let i = 1; i <= 8 && !liveOk; i++) {
-          try { await withTimeout(cam.capturePreviewAsBlob(), 6000, HUNG); liveOk = true; await camLog(`live view OK (check ${i})`); }
-          catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) { markLiveBroken(); throw e; } await camLog(`live view check ${i}: ${e.message}`); await sleep(700); }
-        }
+        // Then a smaller photo size for faster transfers over USB: Medium JPEG (about 4K, all the print needs).
+        try { await withTimeout(cam.setConfigValue('imageformat', 'Medium Fine JPEG'), 8000, HUNG); await camLog('imageformat → Medium Fine JPEG'); }
+        catch (e) { if (e.message === HUNG || (e && e.constructor && e.constructor.name === 'RuntimeError')) throw e; await camLog('imageformat: ' + e.message); }
         break;   // connected: with or without live view
       }
       catch (e) {
@@ -491,8 +493,8 @@ async function dslrLoop(d) {
       LV.errors++; LV.lastErr = e.message; camLog('live view problem: ' + e.message);
       if (/stopped answering|did not answer/.test(e.message)) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }   // the library is stuck: recover (photos only next time)
       const msg = dslrHelp(e);
-      if (dslrCrashed || ++fails > 10) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
-      await sleep(300);
+      if (dslrCrashed || ++fails > 20) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
+      await sleep(400);   // a busy Canon often answers again a moment later
     }
   }
 }
