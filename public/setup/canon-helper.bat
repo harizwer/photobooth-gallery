@@ -57,9 +57,9 @@ function Login {
     catch { Say 'Wrong username or password. Try again.' Red }
   }
 }
-function H { if ((Get-Date) -gt $S.exp) { Refresh-Session }; return @{ apikey = $KEY; Authorization = "Bearer $($S.access)" } }
+function Get-AuthHeaders { if ((Get-Date) -gt $S.exp) { Refresh-Session }; return @{ apikey = $KEY; Authorization = "Bearer $($S.access)" } }
 function Api($method, $path, $body) {
-  $args2 = @{ Method = $method; Uri = "$SB/rest/v1/$path"; Headers = (H) + @{ Prefer = 'return=representation' }; ContentType = 'application/json' }
+  $args2 = @{ Method = $method; Uri = "$SB/rest/v1/$path"; Headers = (Get-AuthHeaders) + @{ Prefer = 'return=representation' }; ContentType = 'application/json' }
   if ($body) { $args2.Body = ($body | ConvertTo-Json -Compress) }
   return Invoke-RestMethod @args2
 }
@@ -114,7 +114,7 @@ while ($true) {
       try {
         $bytes = Shrink (Take-Photo)
         $obj = "u-$($S.uid)/cap/$($r.id).jpg"
-        Invoke-RestMethod -Method Post -Uri "$SB/storage/v1/object/photos/$obj" -Headers ((H) + @{ 'x-upsert' = 'true' }) -ContentType 'image/jpeg' -Body $bytes | Out-Null
+        Invoke-RestMethod -Method Post -Uri "$SB/storage/v1/object/photos/$obj" -Headers ((Get-AuthHeaders) + @{ 'x-upsert' = 'true' }) -ContentType 'image/jpeg' -Body $bytes | Out-Null
         Api 'PATCH' "capture_requests?id=eq.$($r.id)" @{ status = 'done'; path = $obj; updated_at = (Get-Date).ToUniversalTime().ToString('o') } | Out-Null
         Say ("Photo sent ({0:N1} MB)" -f ($bytes.Length / 1MB)) Green
       } catch {
