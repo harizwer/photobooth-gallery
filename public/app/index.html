@@ -175,7 +175,7 @@
 
     <!-- CAPTURE & MEDIA -->
     <section class="sec" id="s-media">
-      <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">Camera &amp; photos</h2><div class="lbl">Guests get photos only. The Canon takes every photo; the tablet camera shows the preview.</div></div><button class="btn pri" id="mediaSave">Save</button></div>
+      <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">Camera &amp; photos</h2><div class="lbl">Guests get photos only. The Canon shows the live preview and takes every photo.</div></div><button class="btn pri" id="mediaSave">Save</button></div>
       <div class="grid-auto" id="modes" hidden></div>
       <div class="wrap">
         <div class="card" style="flex:3 1 440px;display:flex;flex-direction:column;gap:12px">
@@ -190,7 +190,7 @@
           <div class="cap">Quality</div>
           <label class="field" for="capCam">Camera on the tablet<select class="in" id="capCam"><option value="user">Front camera</option><option value="environment">Back camera</option><option value="dslr">Canon DSLR plugged into the tablet (USB)</option></select></label>
           <label class="tog">Mirror the live preview (like a mirror)<input type="checkbox" id="capMirror"></label>
-          <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Canon live preview (test)<br><span class="lbl" style="font-size:12px">Preview from the Canon over USB. Plug a charger into the USB hub first. If it freezes, the booth switches to the tablet camera by itself.</span></span><input type="checkbox" id="capCanonLive"></label>
+          <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Canon live preview<br><span class="lbl" style="font-size:12px">Preview from the Canon over USB (keep a charger plugged into the USB hub). If it ever freezes, the booth uses the tablet camera for the preview until the Canon is switched off and on — photos still come from the Canon.</span></span><input type="checkbox" id="capCanonLive"></label>
           <label class="tog" hidden>Also make a boomerang of the strip — all photos move together (guests get it by QR, it is not printed)<input type="checkbox" id="capPhotoGif"></label>
           <label class="field" for="capQ">Photo quality <span class="mono" id="capQv">95%</span><input type="range" id="capQ" min="70" max="100" value="95" style="accent-color:var(--accent)"></label>
           <label class="field" for="capCount">Countdown (seconds)<input class="in mono" type="number" id="capCount" min="1" max="10" value="3"></label>

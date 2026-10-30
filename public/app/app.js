@@ -43,7 +43,7 @@ const STUDIO_DEFAULT = {
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   modes: { photo: true, gif: true, boom: true, video: false },
-  capture: { res: '4k', camera: 'dslr', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true },
+  capture: { res: '4k', camera: 'dslr', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true, canonLive: true },
   types: [],
 };
 let S = structuredClone(STUDIO_DEFAULT);
@@ -304,9 +304,9 @@ function bgMarkup(bg) {
 }
 function paintBg(layer, shade, bg) { const m = bgMarkup(bg); if (layer.dataset.k !== m.html + m.css) { layer.innerHTML = m.html; layer.style.background = m.css; layer.dataset.k = m.html + m.css; } shade.style.opacity = (bg.dim ?? 45) / 100; }
 async function boothLoad() {
-  const liveWas = S.capture.canonLive === true;
+  const liveWas = S.capture.canonLive !== false;
   try { await loadAll(); } catch (e) {}
-  if (dslr && !B.session && liveWas !== (S.capture.canonLive === true)) {
+  if (dslr && !B.session && liveWas !== (S.capture.canonLive !== false)) {
     try { sessionStorage.removeItem('pb.liveBroken'); } catch (e) {}
     dslrDisconnect().then(() => dslrConnect(false)).then(() => startCamera()).catch(() => startCamera());
   }
@@ -399,7 +399,7 @@ async function dslrConnect(pick) {
         await withTimeout(cam.connect(), 15000, HUNG); await camLog(`try ${attempt}: connected`); lastErr = null;
         // Canon live view over this kind of USB link is unreliable (it freezes the Canon), while Canon photos are reliable.
         // So the preview always comes from the tablet camera and the Canon only takes the photos.
-        const wantLive = S.capture.canonLive === true && !liveIsBroken();
+        const wantLive = S.capture.canonLive !== false && !liveIsBroken();
         if (!wantLive) await camLog('Canon takes the photos; preview from the tablet camera');
         if (wantLive) {
           // Start live view FIRST, before changing any camera setting (a Canon busy with a setting answers "I/O problem").
@@ -1293,7 +1293,7 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive === true; $('#capPhotoGif').checked = c.photoGif !== false; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive !== false; $('#capPhotoGif').checked = c.photoGif !== false; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState();
 }
@@ -1303,10 +1303,10 @@ $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
 $('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
-  const liveBefore = S.capture.canonLive === true;
+  const liveBefore = S.capture.canonLive !== false;
   Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, canonLive: $('#capCanonLive').checked, photoGif: $('#capPhotoGif').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
-  if (dslr && liveBefore !== (S.capture.canonLive === true)) {   // apply the Canon live view choice now
+  if (dslr && liveBefore !== (S.capture.canonLive !== false)) {   // apply the Canon live view choice now
     camTestOff(); try { sessionStorage.removeItem('pb.liveBroken'); } catch (e) {}
     await dslrDisconnect(); setDslrMsg('Reconnecting the Canon…');
     try { await dslrConnect(false); setDslrMsg(dslr && !dslr.noLive ? 'Canon live view on.' : 'Canon connected · preview from the tablet camera.'); renderDslrState(); } catch (e) { setDslrMsg(e.message); }
