@@ -26,7 +26,7 @@ const shortDate = d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric',
 function check(res) { if (res.error) throw new Error(res.error.message || String(res.error)); return res.data; }
 function toast(m, ms = 2800) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(t._t); t._t = setTimeout(() => t.hidden = true, ms); }
 function qr(el, text, size) { el.innerHTML = ''; if (window.QRCode) new QRCode(el, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel.M }); else el.textContent = text; }
-function qrCanvas(text, size) { const d = document.createElement('div'); new QRCode(d, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel.M }); return d.querySelector('canvas'); }
+function qrCanvas(text, size, level) { const d = document.createElement('div'); new QRCode(d, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel[level || 'M'] }); return d.querySelector('canvas'); }
 const shareLink = p => `${SITE}?p=${p.share_token}`;
 const albumLink = e => `${SITE}?album=${e.album_token}`;
 const toBlob = (c, type = 'image/jpeg', q = .92) => new Promise(r => c.toBlob(r, type, q));
@@ -127,11 +127,16 @@ async function compose(d, shots, filter = 'none', opts = {}) {
   if (opts.qrText) drawPrintQr(x, W, H, d, opts.qrText);
   return c;
 }
+// Small QR in a corner. Each QR square is a whole number of pixels so the printer prints it crisp and phones read it easily.
 function drawPrintQr(x, W, H, d, text) {
-  const side = Math.round(Math.min(W, H) * (d.paper === 'strip' ? .2 : .11)), m = Math.round(side * .18), pad = Math.round(side * .08);
+  const target = Math.min(W, H) * (d.paper === 'strip' ? .16 : .09);
+  const holder = document.createElement('div'), qrc = new QRCode(holder, { text, width: 64, height: 64, correctLevel: QRCode.CorrectLevel.L });
+  const mat = qrc._oQRCode, n = mat.getModuleCount(), px = Math.max(2, Math.round(target / n)), side = n * px;
+  const pad = 2 * px, m = Math.round(Math.max(side * .2, Math.min(W, H) * .06));   // clear of the edge bleed
   const qx = S.printQr.pos === 'bl' ? m : W - side - m, qy = H - side - m;
   x.fillStyle = '#fff'; x.fillRect(qx - pad, qy - pad, side + pad * 2, side + pad * 2);
-  const q = qrCanvas(text, 256); x.imageSmoothingEnabled = false; x.drawImage(q, qx, qy, side, side); x.imageSmoothingEnabled = true;
+  x.fillStyle = '#000';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (mat.isDark(r, c)) x.fillRect(qx + c * px, qy + r * px, px, px);
 }
 // What goes on the 4x6 sheet: strips are printed twice side by side.
 function printCanvas(d, design) {
@@ -1574,11 +1579,12 @@ async function testPrint(strip) {
 }
 $('#test46').onclick = () => testPrint(false); $('#testStrip').onclick = () => testPrint(true);
 // Print settings for this laptop: paper orientation in the DNP driver, fine position and size.
-const printCfg = () => ({ orient: 'portrait', dx: 0, dy: 0, scale: 100, ...store.get('printCfg', {}) });
-function renderPrintCfg() { const c = printCfg(); $('#pcOrient').value = c.orient; $('#pcDx').value = c.dx; $('#pcDy').value = c.dy; $('#pcSc').value = c.scale; }
+// bleed: the photo is printed slightly bigger than the paper (edges trimmed) so there is never a white line at an edge
+const printCfg = () => ({ orient: 'portrait', dx: 0, dy: 0, scale: 100, bleed: 3, ...store.get('printCfg', {}) });
+function renderPrintCfg() { const c = printCfg(); $('#pcOrient').value = c.orient; $('#pcDx').value = c.dx; $('#pcDy').value = c.dy; $('#pcSc').value = c.scale; $('#pcBleed').value = c.bleed; }
 $('#pcSave').onclick = () => {
   const num = (id, lo, hi, d) => { const v = +$(id).value; return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; };
-  store.set('printCfg', { orient: $('#pcOrient').value, dx: num('#pcDx', -15, 15, 0), dy: num('#pcDy', -15, 15, 0), scale: num('#pcSc', 90, 110, 100) });
+  store.set('printCfg', { orient: $('#pcOrient').value, dx: num('#pcDx', -15, 15, 0), dy: num('#pcDy', -15, 15, 0), scale: num('#pcSc', 90, 110, 100), bleed: num('#pcBleed', 0, 8, 3) });
   renderPrintCfg(); toast('Print settings saved on this laptop');
 };
 $('#pcTest').onclick = async () => {
@@ -1609,7 +1615,7 @@ async function printImage(src, copies) {
   const [pw, ph] = landPage ? ['6in', '4in'] : ['4in', '6in'];
   $('#pageStyle').textContent = `@page{size:${pw} ${ph};margin:0}`;
   const area = $('#printArea'); area.innerHTML = '';
-  area.style.cssText = `--pw:${pw};--ph:${ph};--dx:${cfg.dx}mm;--dy:${cfg.dy}mm;--sc:${cfg.scale / 100}`;
+  area.style.cssText = `--pw:${pw};--ph:${ph};--dx:${cfg.dx}mm;--dy:${cfg.dy}mm;--sc:${(cfg.scale / 100) * (1 + (cfg.bleed || 0) / 100)}`;
   for (let i = 0; i < Math.max(1, copies); i++) { const im = new Image(); im.src = url; im.alt = ''; area.appendChild(im); }
   await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
   await sleep(150); if (run !== printRun) return; window.print(); await sleep(400); if (run === printRun) area.innerHTML = '';
