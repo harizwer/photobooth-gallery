@@ -180,7 +180,7 @@
       <div class="wrap">
         <div class="card" style="flex:3 1 440px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><div class="lbl">Camera check · this device</div><span class="chip mute" id="camChip">Off</span></div>
-          <div class="preview"><video id="testVideo" muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>
+          <div class="preview"><video id="testVideo" muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video><canvas id="testDslr" hidden style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></canvas>
             <div style="position:absolute;top:12px;left:12px;display:flex;gap:6px;z-index:1"><span class="mono" style="font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;background:var(--accent);color:var(--on-accent)" id="resBadge">–</span><span class="mono" style="font-size:11px;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.6)" id="resLabel">Camera off</span></div>
           </div>
           <div class="row" style="flex-wrap:wrap"><button class="btn" id="camOn">Turn on camera</button><button class="btn pri" id="testShot" disabled>Take a test photo</button><span class="lbl" id="testInfo" style="margin-left:auto"></span></div>

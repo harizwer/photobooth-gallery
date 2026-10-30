@@ -176,7 +176,13 @@ let USER = null, PROFILE = null, EVENTS = [], ACTIVE = null, TEMPLATES = [], STA
 const DEFAULT_TYPES = ['Wedding', 'Birthday', 'Corporate', 'Raya'];
 const evType = e => (e && e.settings && e.settings.type) || 'Wedding';
 const allTypes = () => [...new Set([...DEFAULT_TYPES, ...(S.types || []), ...TEMPLATES.map(t => t.event_type), ...EVENTS.map(evType)])];
-function designsFor(ev) { const t = TEMPLATES.filter(x => x.event_type === evType(ev) && x.frame_url); return t.length ? t.map(tplToDesign) : BUILTIN; }
+function allDesigns() { return [...TEMPLATES.filter(t => t.frame_url).map(tplToDesign), ...BUILTIN]; }
+// The layouts guests can choose on the tablet: the ones picked for this event, else all templates of its type, else the standard ones.
+function designsFor(ev) {
+  const pick = ev && ev.settings && ev.settings.templates;
+  if (Array.isArray(pick) && pick.length) { const all = allDesigns(), d = pick.map(id => all.find(x => x.id === id)).filter(Boolean); if (d.length) return d; }
+  const t = TEMPLATES.filter(x => x.event_type === evType(ev) && x.frame_url); return t.length ? t.map(tplToDesign) : BUILTIN;
+}
 
 async function loadEvents() {
   EVENTS = check(await sb.from('events').select('*').eq('owner', USER.id).order('created_at', { ascending: false }));
@@ -359,7 +365,7 @@ async function dslrConnect(pick) {
     const cam = new dslrLib.Camera();
     try { await cam.connect(); await cam.capturePreviewAsBlob(); }
     catch (e) { try { await cam.disconnect(); } catch (_) {} throw new Error(dslrHelp(e)); }
-    dslr = { cam, canvas: $('#dslrView'), running: true };
+    dslr = { cam, canvas: $('#dslrView'), running: true, lastFrame: Date.now() };
     showDslrView();
     dslr.loopDone = dslrLoop(dslr);
     // Remember the choice so the booth reconnects to the Canon next time
@@ -378,7 +384,7 @@ async function dslrLoop(d) {
   while (d.running && dslr === d) {
     if (d.pause) { await sleep(60); continue; }
     try {
-      const bmp = await createImageBitmap(await d.cam.capturePreviewAsBlob()); fails = 0;
+      const bmp = await createImageBitmap(await d.cam.capturePreviewAsBlob()); fails = 0; d.lastFrame = Date.now();
       if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
       x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
     } catch (e) {
@@ -403,12 +409,23 @@ function grabFrame(max = 4000) {
   if (!dslr && S.capture.mirror) { x.translate(c.width, 0); x.scale(-1, 1); }
   x.drawImage(src, 0, 0, c.width, c.height); return c;
 }
+function withTimeout(promise, ms, msg) { let t; return Promise.race([promise, new Promise((_, rej) => { t = setTimeout(() => rej(new Error(msg)), ms); })]).finally(() => clearTimeout(t)); }
+const DSLR_SHOT_HELP = 'The Canon did not take the photo in time. Usually it could not focus: add more light, or focus once and switch the lens to MF. Also set the camera to JPEG (not RAW) and make sure an SD card is in.';
+// Full-quality Canon photo, shrunk to 4K. Never waits more than 12 s: if the Canon hangs, the live view frame is used instead.
+async function dslrFullPhoto(d) {
+  const f = await withTimeout(d.cam.captureImageAsFile(), 10000, DSLR_SHOT_HELP);
+  let bmp;
+  try { bmp = await createImageBitmap(f, { resizeWidth: 4000, resizeQuality: 'high' }); }
+  catch (e) { throw new Error('The Canon sent a file the browser cannot read. Set Image quality on the camera to a JPEG setting (not RAW).'); }
+  const c = scaled(bmp, 4000); bmp.close && bmp.close(); return c;
+}
 async function capturePhoto() {
-  if (dslr) {
-    dslr.pause = true;
-    try { const f = await dslr.cam.captureImageAsFile(); const bmp = await createImageBitmap(f); const c = scaled(bmp, 4000); bmp.close && bmp.close(); return c; }
-    catch (e) { toast('DSLR photo failed, using live view'); return grabFrame(); }
-    finally { dslr.pause = false; }
+  const d = dslr;
+  if (d && !d.slow) {
+    d.pause = true; $('#shotInfo').textContent = 'Hold still…';
+    try { return await dslrFullPhoto(d); }
+    catch (e) { d.slow = true; toast(e.message, 9000); return grabFrame(); }
+    finally { d.pause = false; }
   }
   return grabFrame();
 }
@@ -448,6 +465,14 @@ function flash() { shutter(); const f = $('#flash'); f.classList.remove('go'); v
 async function startSession(design) {
   clearInterval(B.reviewT); clearInterval(B.doneT);
   const me = B.session = { mode: B.mode, design, shots: [], filter: 'none', copies: 1, saved: null, printed: false, jobId: null };
+  if (dslr) {
+    dslr.slow = false;   // try full-quality Canon photos again each session
+    if (Date.now() - (dslr.lastFrame || Date.now()) > 6000) {   // live view frozen: the Canon stopped answering
+      const d = dslr; dslr = null; d.running = false; dslrCrashed = true;   // the old connection may still be stuck: only a reload clears it
+      toast('The Canon stopped responding, so the booth uses the tablet camera for now. To use the Canon again: switch it off and on, reload this page, then choose Canon DSLR in Staff → Camera.', 12000);
+      await startCamera(); await sleep(800);
+    }
+  }
   bscreen('b-shoot');
   try {
     if (me.mode === 'photo') {
@@ -775,7 +800,7 @@ function renderDevices() {
 function renderEvents() {
   fillCmd(); $('#evCount').textContent = EVENTS.length;
   const per = id => STATS.filter(p => p.event_id === id).length;
-  $('#evTable').innerHTML = EVENTS.map(e => `<tr><td><b>${esc(e.name)}</b> ${e.id === ACTIVE.id ? '<span class="chip" style="margin-left:6px">Active on tablet</span>' : ''}</td><td>${esc(evType(e))}</td><td class="mono">${esc(e.event_date || '')}</td><td>${TEMPLATES.filter(t => t.event_type === evType(e)).length || 'Standard'}</td><td class="mono">${per(e.id)}</td>
+  $('#evTable').innerHTML = EVENTS.map(e => `<tr><td><b>${esc(e.name)}</b> ${e.id === ACTIVE.id ? '<span class="chip" style="margin-left:6px">Active on tablet</span>' : ''}</td><td>${esc(evType(e))}</td><td class="mono">${esc(e.event_date || '')}</td><td>${designsFor(e).map(d => esc(d.name)).join(', ')}</td><td class="mono">${per(e.id)}</td>
     <td><div class="row" style="justify-content:flex-end;gap:6px;flex-wrap:wrap">${e.id === ACTIVE.id ? '' : `<button class="btn sm" data-activate="${e.id}">Make active</button>`}<button class="btn sm" data-edit="${e.id}">Edit</button><button class="btn sm" data-tpl="${e.id}">Templates</button><button class="btn sm" data-gal="${e.id}">Gallery</button></div></td></tr>`).join('');
 }
 $('#evTable').addEventListener('click', async e => {
@@ -803,12 +828,27 @@ function openEventModal(ev) {
     <label class="field" for="neName">Event name<input class="in" id="neName" required maxlength="80" value="${esc(ev ? ev.name : '')}" placeholder="e.g. Iman &amp; Danial"></label>
     <label class="field" for="neType">Event type<select class="in" id="neType">${allTypes().map(t => `<option ${ev && evType(ev) === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
     <label class="field" for="neDate">Date (printed on the standard layouts)<input class="in" id="neDate" maxlength="40" value="${esc(ev ? ev.event_date || '' : today())}"></label>
-    <p class="lbl" style="margin:0">The event uses the templates of its type. You can change them in the Template editor.</p>
+    <div class="field">Layouts guests can choose on the tablet<div id="neTpls" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto"></div></div>
+    <p class="lbl" style="margin:0">Tick one or more. With more than one, guests pick their strip before the photos. Add new frames in the Template editor.</p>
     <div class="row" style="justify-content:space-between;flex-wrap:wrap">${ev ? '<button type="button" class="btn" id="neDel" style="color:#ff8a80">Delete event</button>' : '<span></span>'}<div class="row"><button type="button" class="btn" data-close>Cancel</button><button class="btn pri">${ev ? 'Save' : 'Create event'}</button></div></div></form>`);
   m.querySelector('#neName').focus();
+  let chosen = ev ? designsFor(ev).map(d => d.id) : null;
+  const drawTpls = () => {
+    const type = m.querySelector('#neType').value, box = m.querySelector('#neTpls');
+    const mine = TEMPLATES.filter(t => t.frame_url).map(tplToDesign).sort((a, b) => (b.event_type === type) - (a.event_type === type));
+    const list = [...mine, ...BUILTIN];
+    if (!chosen) { const t = mine.filter(d => d.event_type === type); chosen = (t.length ? t : BUILTIN).map(d => d.id); }
+    const paper = { strip: '2x6 strip', portrait: '4x6 portrait', landscape: '4x6 landscape' };
+    box.innerHTML = list.map(d => `<label class="tog" style="justify-content:flex-start;gap:10px;padding:6px 10px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line);color:var(--fg)"><input type="checkbox" value="${esc(d.id)}" ${chosen.includes(d.id) ? 'checked' : ''}>${d.frame_url ? `<img src="${esc(d.frame_url)}" alt="" crossorigin="anonymous" style="height:40px;width:28px;object-fit:contain;background:#2a2a2e;border-radius:3px">` : ''}<span><b style="font-size:13px">${esc(d.name)}</b><br><span class="lbl" style="font-size:11.5px">${d.builtin ? 'Standard' : esc(d.event_type)} · ${paper[d.paper]} · ${d.areas.length} photo${d.areas.length === 1 ? '' : 's'}</span></span></label>`).join('');
+  };
+  drawTpls();
+  m.querySelector('#neTpls').addEventListener('change', () => { chosen = [...m.querySelectorAll('#neTpls input:checked')].map(i => i.value); });
+  m.querySelector('#neType').addEventListener('change', () => { if (!ev) chosen = null; drawTpls(); });
   m.querySelector('form').addEventListener('submit', async e => {
     e.preventDefault(); const name = m.querySelector('#neName').value.trim(); if (!name) return;
-    const settings = { ...(ev ? ev.settings || {} : {}), type: m.querySelector('#neType').value }, event_date = m.querySelector('#neDate').value.trim();
+    const picked = [...m.querySelectorAll('#neTpls input:checked')].map(i => i.value);
+    if (!picked.length) return toast('Tick at least one layout');
+    const settings = { ...(ev ? ev.settings || {} : {}), type: m.querySelector('#neType').value, templates: picked }, event_date = m.querySelector('#neDate').value.trim();
     try {
       if (ev) check(await sb.from('events').update({ name, event_date, settings, updated_at: new Date().toISOString() }).eq('id', ev.id));
       else check(await sb.from('events').insert({ id: 'e' + Date.now().toString(36), name, event_date, settings, album_token: token() }));
@@ -919,7 +959,7 @@ $('#tSave').onclick = async () => {
     const row = { event_type: draft.event_type, name: draft.name, frame_url: draft.frame_url, width: draft.width, height: draft.height, areas: draft.areas, paper: draft.paper, output_long: draft.output_long, fit: draft.fit };
     const saved = draft.id ? check(await sb.from('templates').update(row).eq('id', draft.id).select().single()) : check(await sb.from('templates').insert(row).select().single());
     draft = structuredClone(saved); curType = draft.event_type;
-    announce(); await renderTemplates(); toast(`Template saved for ${curType}`);
+    announce(); await renderTemplates(); toast(`Template saved. To offer it on the tablet, tick it in Events → Edit.`, 5000);
   } catch (e) { toast(e.message, 4000); }
   b.disabled = false;
 };
@@ -944,25 +984,40 @@ const MODES = [
   { key: 'boom', name: 'Boomerang', spec: '1280 px', note: 'Video · plays forward and back' },
   { key: 'video', name: 'Video', spec: 'up to 4K', note: 'Video with the length you choose' },
 ];
-function renderMedia() {
+function renderMedia() { renderModes(); renderCaptureForm(); }
+function renderModes() {
   $('#modes').innerHTML = MODES.map(m => { const on = !!S.modes[m.key]; return `<button class="card mode ${on ? 'on' : ''}" data-m="${m.key}" aria-pressed="${on}"><div class="row" style="justify-content:space-between;width:100%"><span class="row" style="font-weight:600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m.key][1]}</svg>${m.name}</span><span class="chip ${on ? '' : 'mute'}">${on ? 'On' : 'Off'}</span></div><div class="mono" style="font-size:22px;font-weight:600">${m.spec}</div><div class="lbl">${m.note}</div></button>`; }).join('');
+}
+function renderCaptureForm() {
   const c = S.capture;
   $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
-  $('#dslrState').textContent = dslr ? 'Connected' : 'Not connected'; $('#dslrState').className = 'chip' + (dslr ? '' : ' mute'); $('#dslrTest').disabled = !dslr;
+  renderDslrState();
 }
-$('#modes').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; S.modes[b.dataset.m] = !S.modes[b.dataset.m]; if (!enabledModes().length) S.modes.photo = true; renderMedia(); });
+function renderDslrState() { $('#dslrState').textContent = dslr ? 'Connected' : 'Not connected'; $('#dslrState').className = 'chip' + (dslr ? '' : ' mute'); $('#dslrTest').disabled = !dslr; if (dslr) $('#capCam').value = 'dslr'; }
+$('#modes').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; S.modes[b.dataset.m] = !S.modes[b.dataset.m]; if (!enabledModes().length) S.modes.photo = true; renderModes(); });
 $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
-$('#capCam').onchange = () => { if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+$('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
   Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
 };
 let testStream = null;
-function camTestOff() { if (testStream) testStream.getTracks().forEach(t => t.stop()); testStream = null; const v = $('#testVideo'); if (v) v.srcObject = null; $('#camChip').textContent = 'Off'; $('#camChip').className = 'chip mute'; $('#testShot').disabled = true; $('#camOn').textContent = 'Turn on camera'; $('#resBadge').textContent = '–'; $('#resLabel').textContent = 'Camera off'; }
+function camTestOff() { cancelAnimationFrame(testRaf); testRaf = 0; const td = $('#testDslr'); if (td) td.hidden = true; const tv = $('#testVideo'); if (tv) tv.hidden = false; if (testStream) testStream.getTracks().forEach(t => t.stop()); testStream = null; const v = $('#testVideo'); if (v) v.srcObject = null; $('#camChip').textContent = 'Off'; $('#camChip').className = 'chip mute'; $('#testShot').disabled = true; $('#camOn').textContent = 'Turn on camera'; $('#resBadge').textContent = '–'; $('#resLabel').textContent = 'Camera off'; }
+let testRaf = 0;
+async function dslrCheckOn() {
+  $('#camOn').disabled = true; $('#resLabel').textContent = 'Connecting to the Canon…';
+  try { await dslrConnect(true); } catch (e) { $('#camOn').disabled = false; $('#resLabel').textContent = 'Canon not connected'; $('#testInfo').textContent = e.message; return; }
+  $('#camOn').disabled = false; renderDslrState();
+  const out = $('#testDslr'), x = out.getContext('2d'); out.hidden = false; $('#testVideo').hidden = true;
+  const draw = () => { const src = $('#dslrView'); if (src.width) { if (out.width !== src.width) { out.width = src.width; out.height = src.height; } x.drawImage(src, 0, 0); $('#resLabel').textContent = `Canon live view ${src.width} × ${src.height} · photos at full resolution`; } testRaf = requestAnimationFrame(draw); };
+  draw();
+  $('#resBadge').textContent = 'DSLR'; $('#camChip').textContent = 'Canon DSLR'; $('#camChip').className = 'chip'; $('#testShot').disabled = false; $('#camOn').textContent = 'Turn off camera';
+}
 $('#camOn').onclick = async () => {
-  if (testStream) return camTestOff();
+  if (testStream || testRaf) return camTestOff();
+  if ($('#capCam').value === 'dslr') return dslrCheckOn();
   const [w, h] = RES[$('#capRes').value] || RES['4k'], cam = $('#capCam').value;
   try {
     testStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: cam === 'environment' ? 'environment' : 'user', width: { ideal: w }, height: { ideal: h } } });
@@ -975,6 +1030,13 @@ $('#camOn').onclick = async () => {
   } catch (e) { toast('Cannot open a camera on this device: ' + e.message, 4000); }
 };
 $('#testShot').onclick = async () => {
+  if (testRaf && dslr) {
+    const b = $('#testShot'); b.disabled = true; $('#testInfo').textContent = 'Taking a Canon photo…'; const t0 = performance.now();
+    try { dslr.pause = true; const c = await dslrFullPhoto(dslr); $('#testInfo').textContent = `Canon photo: ${c.width} × ${c.height} (saved at up to 4K) · took ${((performance.now() - t0) / 1000).toFixed(1)} s`; }
+    catch (e) { $('#testInfo').textContent = e.message; }
+    finally { dslr.pause = false; b.disabled = false; }
+    return;
+  }
   const v = $('#testVideo'); if (!v.videoWidth) return;
   const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
   const b = await toBlob(c, 'image/jpeg', (+$('#capQ').value || 95) / 100);
@@ -982,7 +1044,7 @@ $('#testShot').onclick = async () => {
 };
 $('#dslrConnect').onclick = async () => {
   const b = $('#dslrConnect'); b.disabled = true; $('#dslrInfo').textContent = 'Connecting…';
-  try { await dslrConnect(true); $('#dslrInfo').textContent = 'Live view on. Photos use the camera\'s full resolution.'; renderMedia(); toast('Canon DSLR connected'); }
+  try { await dslrConnect(true); $('#dslrInfo').textContent = 'Live view on. Photos use the camera\'s full resolution.'; renderDslrState(); toast('Canon DSLR connected'); }
   catch (e) { $('#dslrInfo').textContent = e.message; }
   b.disabled = false;
 };
