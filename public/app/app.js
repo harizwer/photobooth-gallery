@@ -304,7 +304,12 @@ function bgMarkup(bg) {
 }
 function paintBg(layer, shade, bg) { const m = bgMarkup(bg); if (layer.dataset.k !== m.html + m.css) { layer.innerHTML = m.html; layer.style.background = m.css; layer.dataset.k = m.html + m.css; } shade.style.opacity = (bg.dim ?? 45) / 100; }
 async function boothLoad() {
+  const liveWas = S.capture.canonLive === true;
   try { await loadAll(); } catch (e) {}
+  if (dslr && !B.session && liveWas !== (S.capture.canonLive === true)) {
+    try { sessionStorage.removeItem('pb.liveBroken'); } catch (e) {}
+    dslrDisconnect().then(() => dslrConnect(false)).then(() => startCamera()).catch(() => startCamera());
+  }
   $('#bTitle').textContent = ACTIVE ? ACTIVE.name : '';
   $('#bSub').textContent = S.bg.sub || 'Tap to make memories';
   paintBg($('#boothBgLayer'), $('#boothShade'), S.bg);
@@ -1288,7 +1293,7 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive === true; $('#capPhotoGif').checked = c.photoGif !== false; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState();
 }
@@ -1298,8 +1303,14 @@ $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
 $('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
-  Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, photoGif: $('#capPhotoGif').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
+  const liveBefore = S.capture.canonLive === true;
+  Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, canonLive: $('#capCanonLive').checked, photoGif: $('#capPhotoGif').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
+  if (dslr && liveBefore !== (S.capture.canonLive === true)) {   // apply the Canon live view choice now
+    camTestOff(); try { sessionStorage.removeItem('pb.liveBroken'); } catch (e) {}
+    await dslrDisconnect(); setDslrMsg('Reconnecting the Canon…');
+    try { await dslrConnect(false); setDslrMsg(dslr && !dslr.noLive ? 'Canon live view on.' : 'Canon connected · preview from the tablet camera.'); renderDslrState(); } catch (e) { setDslrMsg(e.message); }
+  }
 };
 let testStream = null;
 function camTestOff() { cancelAnimationFrame(testRaf); testRaf = 0; const td = $('#testDslr'); if (td) td.hidden = true; const tv = $('#testVideo'); if (tv) tv.hidden = false; if (testStream) testStream.getTracks().forEach(t => t.stop()); testStream = null; const v = $('#testVideo'); if (v) v.srcObject = null; $('#camChip').textContent = 'Off'; $('#camChip').className = 'chip mute'; $('#testShot').disabled = true; $('#camOn').textContent = 'Turn on camera'; $('#resBadge').textContent = '–'; $('#resLabel').textContent = 'Camera off'; }
