@@ -3,7 +3,7 @@
   PASS photos go to the tablet (capture destination = 4)
   PASS camera told there is free space
   PASS live view on: {"ok":true}
-  PASS 20 live view frames (20) in 47 ms
+  PASS 20 live view frames (20) in 46 ms
   PASS live view sent to the tablet
   PASS photo downloaded intact: {"ok":true,"id":1,"size":2300000,"ms":409}
   PASS transfer complete sent
@@ -41,7 +41,7 @@
   PASS photos go to the tablet (capture destination = 4)
   PASS camera told there is free space
   PASS live view on: {"ok":true}
-  PASS 20 live view frames (20) in 46 ms
+  PASS 20 live view frames (20) in 45 ms
   PASS live view sent to the tablet
   PASS photo downloaded intact: {"ok":true,"id":1,"size":1536512,"ms":406}
   PASS transfer complete sent
