@@ -324,7 +324,7 @@ async function startCamera() {
   stopCamera();
   if (S.capture.camera === 'dslr') {
     if (await dslrAutoConnect()) return;
-    toast('Canon DSLR not connected. Using the tablet camera. Open Staff → Camera to connect it.', 5000);
+    if (!dslrCrashed) toast('Canon DSLR not connected. Using the tablet camera. Open Staff → Camera to connect it.', 5000);
   }
   const pref = S.capture.camera === 'dslr' ? 'user' : (store.get('camDevice', '') || S.capture.camera || 'user');
   const [w, h] = RES[S.capture.res] || RES['4k'];
@@ -370,6 +370,7 @@ async function dslrConnect(pick) {
     dslr.loopDone = dslrLoop(dslr);
     // Remember the choice so the booth reconnects to the Canon next time
     if (S.capture.camera !== 'dslr') { S.capture.camera = 'dslr'; saveStudio().catch(() => {}); }
+    try { if (sessionStorage.getItem('pb.dslrRecovering')) { sessionStorage.removeItem('pb.dslrRecovering'); setTimeout(() => toast('Canon reconnected'), 500); } } catch (e) {}
     return cam;
   })();
   try { return await dslrBusy; } finally { dslrBusy = null; }
@@ -387,18 +388,37 @@ async function dslrLoop(d) {
       const bmp = await createImageBitmap(await d.cam.capturePreviewAsBlob()); fails = 0; d.lastFrame = Date.now();
       if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
       x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
+      await sleep(document.hidden ? 500 : 25);
     } catch (e) {
       const msg = dslrHelp(e);
-      if (dslrCrashed || ++fails > 15) {   // camera lost: fall back to the tablet camera so the booth keeps working
-        d.running = false; if (dslr === d) dslr = null; d.cam.disconnect().catch(() => {});
-        toast('Canon DSLR disconnected. Using the tablet camera. ' + msg, 9000);
-        if (ROLE === 'booth') { S.capture.camera = S.capture.camera === 'dslr' ? 'user' : S.capture.camera; startCamera(); }
-        return;
-      }
+      if (dslrCrashed || ++fails > 10) { if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
       await sleep(300);
     }
   }
 }
+/* ---------- Keeping the Canon working during an event ----------
+   The camera library can get stuck if the Canon stops answering (most often it cannot focus).
+   Then: finish the session with the tablet camera, and once the guest is done, reload the page,
+   which reconnects the Canon automatically (at most 3 times in 5 minutes). */
+const dslrHealthy = () => !!(dslr && dslr.running && Date.now() - (dslr.lastFrame || 0) < 4000);
+function dslrFallback(reason) {
+  const d = dslr; if (!d) return Promise.resolve();
+  dslr = null; d.running = false; dslrCrashed = true; B.recoverDslr = true;
+  toast('The Canon stopped responding. This session uses the tablet camera; the Canon reconnects by itself after it.' + (reason ? ' ' + reason : ''), 9000);
+  return ROLE === 'booth' ? startCamera() : Promise.resolve();
+}
+function dslrRecover() {
+  let tries = []; try { tries = JSON.parse(sessionStorage.getItem('pb.dslrReloads') || '[]').filter(t => Date.now() - t < 5 * 60e3); } catch (e) {}
+  if (tries.length >= 3) { toast('The Canon keeps stopping. Switch it off and on, check the cable and focus (MF), then choose Canon DSLR in Staff → Camera. Using the tablet camera for now.', 15000); B.recoverDslr = false; return; }
+  tries.push(Date.now()); try { sessionStorage.setItem('pb.dslrReloads', JSON.stringify(tries)); sessionStorage.setItem('pb.dslrRecovering', '1'); } catch (e) {}
+  busy('Reconnecting the Canon…'); setTimeout(() => location.reload(), 400);
+}
+// Idle watchdog: if the Canon freezes while nobody is using the booth, reconnect it right away.
+setInterval(() => {
+  if (ROLE !== 'booth' || B.session) return;
+  if (dslr && !dslr.pause && !dslrHealthy()) { dslrFallback(); }
+  if (B.recoverDslr && !B.session && $('#b-attract').classList.contains('on')) dslrRecover();
+}, 3000);
 // One frame from the live preview, at most `max` px on the long edge.
 function grabFrame(max = 4000) {
   const src = dslr ? dslr.canvas : $('#live');
@@ -420,11 +440,17 @@ async function dslrFullPhoto(d) {
   const c = scaled(bmp, 4000); bmp.close && bmp.close(); return c;
 }
 async function capturePhoto() {
+  if (dslr && !dslrHealthy()) { await dslrFallback(); await sleep(700); }
   const d = dslr;
-  if (d && !d.slow) {
+  if (d) {
     d.pause = true; $('#shotInfo').textContent = 'Hold still…';
     try { return await dslrFullPhoto(d); }
-    catch (e) { d.slow = true; toast(e.message, 9000); return grabFrame(); }
+    catch (e) {
+      const live = grabFrame();                       // last Canon live view frame, taken at the right moment
+      if (/did not take the photo in time/.test(e.message)) await dslrFallback(e.message);   // the library is stuck now
+      else toast(e.message, 9000);
+      return live;
+    }
     finally { d.pause = false; }
   }
   return grabFrame();
@@ -436,6 +462,7 @@ function goHome() {
   B.session = null; clearInterval(B.reviewT); clearInterval(B.doneT);
   $('#b-count').textContent = ''; $('#busy').hidden = true; $('#bErr').hidden = true;
   bscreen('b-attract');
+  if (B.recoverDslr) return dslrRecover();
   if (B.pendingReload) { B.pendingReload = false; boothLoad(); }
 }
 function startFlow(mode) {
@@ -465,14 +492,7 @@ function flash() { shutter(); const f = $('#flash'); f.classList.remove('go'); v
 async function startSession(design) {
   clearInterval(B.reviewT); clearInterval(B.doneT);
   const me = B.session = { mode: B.mode, design, shots: [], filter: 'none', copies: 1, saved: null, printed: false, jobId: null };
-  if (dslr) {
-    dslr.slow = false;   // try full-quality Canon photos again each session
-    if (Date.now() - (dslr.lastFrame || Date.now()) > 6000) {   // live view frozen: the Canon stopped answering
-      const d = dslr; dslr = null; d.running = false; dslrCrashed = true;   // the old connection may still be stuck: only a reload clears it
-      toast('The Canon stopped responding, so the booth uses the tablet camera for now. To use the Canon again: switch it off and on, reload this page, then choose Canon DSLR in Staff → Camera.', 12000);
-      await startCamera(); await sleep(800);
-    }
-  }
+  if (dslr && !dslrHealthy()) { await dslrFallback(); await sleep(800); }
   bscreen('b-shoot');
   try {
     if (me.mode === 'photo') {
@@ -684,10 +704,11 @@ async function fillCamMenu() {
   const v = $('#live'); $('#bCamInfo').textContent = dslr ? 'Canon DSLR connected (USB)' : v.videoWidth ? `Camera: ${v.videoWidth} × ${v.videoHeight}` : '';
 }
 $('#bCamSel').onchange = async () => {
+  if ($('#bCamSel').value === 'dslr' && dslrCrashed) { try { sessionStorage.removeItem('pb.dslrReloads'); } catch (e) {} S.capture.camera = 'dslr'; await saveStudio().catch(() => {}); return dslrRecover(); }
   if ($('#bCamSel').value === 'dslr') { $('#bCamInfo').textContent = 'Connecting…'; try { await dslrConnect(true); toast('Canon DSLR connected'); } catch (e) { $('#bCamInfo').textContent = e.message; return; } boothStatus(); return fillCamMenu(); }
   store.set('camDevice', $('#bCamSel').value); await dslrDisconnect(); S.capture.camera = /^(user|environment)$/.test($('#bCamSel').value) ? $('#bCamSel').value : 'user'; saveStudio().catch(() => {}); startCamera().then(fillCamMenu); };
 $('#bMirror').onchange = () => { S.capture.mirror = $('#bMirror').checked; $('#live').classList.toggle('mirror', S.capture.mirror); saveStudio().catch(() => {}); };
-$('#bDslr').onclick = async () => { const b = $('#bDslr'); b.disabled = true; $('#bCamInfo').textContent = 'Connecting…'; try { await dslrConnect(true); toast('Canon DSLR connected'); fillCamMenu(); } catch (e) { $('#bCamInfo').textContent = e.message; } b.disabled = false; };
+$('#bDslr').onclick = async () => { if (dslrCrashed) { try { sessionStorage.removeItem('pb.dslrReloads'); } catch (e) {} S.capture.camera = 'dslr'; await saveStudio().catch(() => {}); return dslrRecover(); } const b = $('#bDslr'); b.disabled = true; $('#bCamInfo').textContent = 'Connecting…'; try { await dslrConnect(true); toast('Canon DSLR connected'); fillCamMenu(); } catch (e) { $('#bCamInfo').textContent = e.message; } b.disabled = false; };
 $('#pinCancel').onclick = goHome; $('#mBack').onclick = goHome;
 $('#mAdmin').onclick = () => { dslrDisconnect(); stopCamera(); store.set('role', 'admin'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); startAdmin(); };
 $('#mOut').onclick = signOut;
@@ -897,11 +918,71 @@ function loadDraft() {
   if (!src) { img.removeAttribute('src'); img.hidden = true; drawAreas(); $('#detectMsg').className = 'banner warn'; $('#detectMsg').innerHTML = '<span><b>Upload a PNG frame.</b> Make the photo areas fully transparent in Canva and export as PNG with “Transparent background”.</span>'; return; }
   img.hidden = false; img.onload = () => { drawAreas(); areaMsg(); }; img.src = src;
 }
+function areaSize() { const img = $('#frameImg'); return [img.naturalWidth || draft.width || 1, img.naturalHeight || draft.height || 1]; }
+function placeArea(el, a) { el.style.cssText = `left:${a.x * 100}%;top:${a.y * 100}%;width:${a.w * 100}%;height:${a.h * 100}%`; }
 function drawAreas() {
   $$('#frameWrap .area').forEach(a => a.remove());
-  draft.areas.forEach((a, i) => { const el = document.createElement('div'); el.className = 'area'; el.style.cssText = `left:${a.x * 100}%;top:${a.y * 100}%;width:${a.w * 100}%;height:${a.h * 100}%`; el.innerHTML = `<span>Area ${i + 1}</span><button type="button" data-rm="${i}" aria-label="Remove area ${i + 1}">✕</button>`; $('#frameWrap').appendChild(el); });
-  const img = $('#frameImg'), W = img.naturalWidth || draft.width, H = img.naturalHeight || draft.height;
-  $('#areaList').innerHTML = draft.areas.map((a, i) => `<div class="arow"><span><b>Area ${i + 1}</b> · Photo ${i + 1}</span><span class="mono muted">${Math.round(a.w * W)}×${Math.round(a.h * H)}</span></div>`).join('') || '<p class="lbl" style="margin:0">None yet.</p>';
+  draft.areas.forEach((a, i) => {
+    const el = document.createElement('div'); el.className = 'area'; el.dataset.i = i; el.tabIndex = 0;
+    el.setAttribute('aria-label', `Photo area ${i + 1}. Drag to move, drag a corner to resize, or use the arrow keys (Shift + arrows to resize).`);
+    placeArea(el, a);
+    el.innerHTML = `<span>Area ${i + 1}</span><button type="button" data-rm="${i}" aria-label="Remove area ${i + 1}">✕</button>` + ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].map(h => `<i class="hdl ${h}" data-h="${h}"></i>`).join('');
+    $('#frameWrap').appendChild(el);
+  });
+  const [W, H] = areaSize();
+  $('#areaList').innerHTML = draft.areas.map((a, i) => `<div class="arow" style="flex-direction:column;gap:6px"><div class="row" style="justify-content:space-between"><b>Area ${i + 1} · Photo ${i + 1}</b><button class="btn sm" data-rm-row="${i}" style="height:26px;padding:0 8px">Remove</button></div>
+    <div class="anum">${[['x', 'X', W], ['y', 'Y', H], ['w', 'Width', W], ['h', 'Height', H]].map(([k, l, S]) => `<label>${l}<input class="in mono" type="number" data-ai="${i}" data-k="${k}" value="${Math.round(a[k] * S)}" min="0" max="${S}"></label>`).join('')}</div></div>`).join('') || '<p class="lbl" style="margin:0">None yet.</p>';
+}
+function updateAreaRow(i) {
+  const [W, H] = areaSize(), a = draft.areas[i];
+  $$(`#areaList [data-ai="${i}"]`).forEach(inp => { inp.value = Math.round(a[inp.dataset.k] * (inp.dataset.k === 'x' || inp.dataset.k === 'w' ? W : H)); });
+}
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function fixArea(a) { a.w = clamp(a.w, .02, 1); a.h = clamp(a.h, .02, 1); a.x = clamp(a.x, 0, 1 - a.w); a.y = clamp(a.y, 0, 1 - a.h); return a; }
+// Type exact pixel values
+$('#areaList').addEventListener('input', e => {
+  const inp = e.target.closest('[data-ai]'); if (!inp) return;
+  const i = +inp.dataset.ai, k = inp.dataset.k, [W, H] = areaSize(), v = +inp.value;
+  if (!Number.isFinite(v)) return;
+  draft.areas[i][k] = v / (k === 'x' || k === 'w' ? W : H); fixArea(draft.areas[i]);
+  const el = $(`#frameWrap .area[data-i="${i}"]`); if (el) placeArea(el, draft.areas[i]);
+});
+$('#areaList').addEventListener('change', e => { if (e.target.closest('[data-ai]')) updateAreaRow(+e.target.dataset.ai); });
+$('#areaList').addEventListener('click', e => { const b = e.target.closest('[data-rm-row]'); if (b) { draft.areas.splice(+b.dataset.rmRow, 1); drawAreas(); areaMsg(); } });
+// Drag to move, drag a corner or edge to resize
+{
+  let drag = null; const wrap = $('#frameWrap');
+  wrap.addEventListener('pointerdown', e => {
+    if (drawing) return;
+    const el = e.target.closest('.area'); if (!el || e.target.closest('button')) return;
+    e.preventDefault(); el.focus({ preventScroll: true });
+    const i = +el.dataset.i;
+    drag = { i, el, mode: e.target.dataset.h || 'move', sx: e.clientX, sy: e.clientY, a: { ...draft.areas[i] }, r: $('#frameImg').getBoundingClientRect() };
+    el.classList.add('active'); el.setPointerCapture(e.pointerId);
+  });
+  wrap.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = (e.clientX - drag.sx) / drag.r.width, dy = (e.clientY - drag.sy) / drag.r.height, m = drag.mode;
+    let { x, y, w, h } = drag.a;
+    if (m === 'move') { x = clamp(x + dx, 0, 1 - w); y = clamp(y + dy, 0, 1 - h); }
+    else {
+      if (m.includes('w')) { const nx = clamp(x + dx, 0, x + w - .02); w += x - nx; x = nx; }
+      if (m.includes('e')) w = clamp(w + dx, .02, 1 - x);
+      if (m.includes('n')) { const ny = clamp(y + dy, 0, y + h - .02); h += y - ny; y = ny; }
+      if (m.includes('s')) h = clamp(h + dy, .02, 1 - y);
+    }
+    Object.assign(draft.areas[drag.i], { x, y, w, h }); placeArea(drag.el, draft.areas[drag.i]); updateAreaRow(drag.i);
+  });
+  const end = () => { if (!drag) return; drag.el.classList.remove('active'); drag = null; };
+  wrap.addEventListener('pointerup', end); wrap.addEventListener('pointercancel', end);
+  // Keyboard: arrows move 1 px (10 px with Alt), Shift + arrows resize
+  wrap.addEventListener('keydown', e => {
+    const el = e.target.closest('.area'); if (!el) return;
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key]; if (!d) return;
+    e.preventDefault(); const i = +el.dataset.i, a = draft.areas[i], [W, H] = areaSize(), step = e.altKey ? 10 : 1;
+    if (e.shiftKey) { a.w += d[0] * step / W; a.h += d[1] * step / H; } else { a.x += d[0] * step / W; a.y += d[1] * step / H; }
+    fixArea(a); placeArea(el, a); updateAreaRow(i);
+  });
 }
 function areaMsg() {
   const msg = $('#detectMsg'), n = draft.areas.length;
