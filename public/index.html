@@ -43,6 +43,10 @@ main{flex:1;display:flex;flex-direction:column;align-items:center;justify-conten
 .bar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 .pin{display:flex;gap:10px;width:min(320px,100%)}
 .pin input{flex:1;min-width:0;height:50px;border-radius:14px;border:1px solid var(--line);background:#1a1a1c;color:var(--fg);font:inherit;font-size:20px;text-align:center;letter-spacing:.3em}
+
+.seg{display:flex;gap:4px;padding:4px;border-radius:14px;background:#1a1a1c;border:1px solid var(--line)}
+.seg button{font:inherit;cursor:pointer;height:36px;padding:0 18px;border-radius:10px;border:0;background:transparent;color:var(--muted);font-weight:600}
+.seg button.on{background:#f2f2f3;color:#111}
 footer{text-align:center;color:var(--muted);font-size:12px}
 @media (prefers-reduced-motion:reduce){.spin{animation:none}}
 </style>
@@ -60,13 +64,14 @@ footer{text-align:center;color:var(--muted);font-size:12px}
 </div>
 <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-label="Photo">
   <div id="vMedia"></div>
-  <div class="bar"><button class="btn pri" id="vSave">Save</button><button class="btn" id="vClose">Close</button></div>
+  <div class="bar"><button class="btn pri" id="vSave">Save</button><button class="btn" id="vGif" hidden>Save GIF</button><button class="btn" id="vClose">Close</button></div>
 </div>
 <script>
 'use strict';
 const SUPABASE_URL = 'https://dqeyaimxfkursttbdmyp.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxZXlhaW14Zmt1cnN0dGJkbXlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODc2NTQsImV4cCI6MjEwODg2MzY1NH0.T5tHvHVpNzNHwxYFASy8WO6xr1bvfBko9gxHCoxVQSc';
 const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fileUrl = p => `${SUPABASE_URL}/storage/v1/object/public/photos/${p}`;
 const q = new URLSearchParams(location.search);
@@ -88,8 +93,8 @@ function mediaHtml(item, cls = 'media') {
   if (isVideo(item.kind) && item.media) return `<video class="${cls}" src="${esc(fileUrl(item.media))}" poster="${esc(fileUrl(item.path))}" autoplay loop muted playsinline controls></video>`;
   return `<img class="${cls}" src="${esc(fileUrl(item.kind === 'gif' && item.media ? item.media : item.path))}" alt="Your photobooth ${item.kind === 'gif' ? 'GIF' : 'photo'}">`;
 }
-async function save(item) {
-  const path = item.media || item.path, name = path.split('/').pop();
+async function save(item, which) {
+  const path = which === 'photo' ? item.path : which === 'gif' ? item.media : (item.kind === 'photo' ? item.path : item.media || item.path), name = path.split('/').pop();
   try {
     const blob = await (await fetch(fileUrl(path))).blob();
     const file = new File([blob], name, { type: blob.type });
@@ -113,8 +118,15 @@ async function showOne(tok) {
   const item = { kind: d.kind, path: d.path, media: d.media_path };
   $('#eyebrow').textContent = { photo: 'Your photo from', gif: 'Your GIF from', boom: 'Your boomerang from', video: 'Your video from' }[d.kind] || 'Your photo from';
   const label = { photo: 'Save photo', gif: 'Save GIF', boom: 'Save boomerang', video: 'Save video' }[d.kind] || 'Save';
-  $('#main').innerHTML = mediaHtml(item) + `<div class="actions"><button class="btn pri" id="save"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></svg>${label}</button>${navigator.share ? '<button class="btn" id="share">Share</button>' : ''}</div>`;
-  $('#save').onclick = () => save(item);
+  const dl = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></svg>';
+  const withGif = d.kind === 'photo' && !!d.media_path;
+  $('#main').innerHTML = (withGif ? `<div class="seg" role="tablist" aria-label="Show"><button role="tab" class="on" data-v="photo" aria-selected="true">Photo</button><button role="tab" data-v="gif" aria-selected="false">GIF</button></div>` : '')
+    + `<div id="pv">${mediaHtml(item)}</div><div class="actions"><button class="btn pri" id="save">${dl}${label}</button>${withGif ? `<button class="btn" id="saveGif">${dl}Save GIF</button>` : ''}${navigator.share ? '<button class="btn" id="share">Share</button>' : ''}</div>`;
+  $('#save').onclick = () => save(item, d.kind === 'photo' ? 'photo' : undefined);
+  if (withGif) {
+    $('#saveGif').onclick = () => save(item, 'gif');
+    $('#main .seg').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; $$('#main .seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); $('#pv').innerHTML = b.dataset.v === 'gif' ? `<img class="media" src="${esc(fileUrl(d.media_path))}" alt="Your photobooth GIF">` : mediaHtml(item); };
+  }
   if ($('#share')) $('#share').onclick = () => navigator.share({ title: d.event || 'Photo', url: location.href }).catch(() => {});
 }
 async function showAlbum(tok, pin = '') {
@@ -135,8 +147,9 @@ async function showAlbum(tok, pin = '') {
   const tag = { gif: 'GIF', boom: 'BOOMERANG', video: 'VIDEO' };
   $('#main').innerHTML = `<div class="grid">${list.map((p, i) => `<button data-i="${i}" aria-label="Open photo ${i + 1}"><img src="${esc(fileUrl(p.thumb))}" alt="" loading="lazy">${tag[p.kind] ? `<span class="tag">${tag[p.kind]}</span>` : ''}</button>`).join('')}</div>`;
   let cur = null;
-  $('#main').onclick = e => { const b = e.target.closest('[data-i]'); if (!b) return; cur = list[+b.dataset.i]; $('#vMedia').innerHTML = mediaHtml(cur); $('#viewer').hidden = false; $('#vClose').focus(); };
+  $('#main').onclick = e => { const b = e.target.closest('[data-i]'); if (!b) return; cur = list[+b.dataset.i]; $('#vMedia').innerHTML = mediaHtml(cur); $('#vGif').hidden = !(cur.kind === 'photo' && cur.media); $('#viewer').hidden = false; $('#vClose').focus(); };
   $('#vSave').onclick = () => cur && save(cur);
+  $('#vGif').onclick = () => cur && save(cur, 'gif');
   $('#vClose').onclick = () => { $('#viewer').hidden = true; $('#vMedia').innerHTML = ''; };
   document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#vClose').click(); });
 }

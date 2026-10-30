@@ -43,7 +43,7 @@ const STUDIO_DEFAULT = {
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   modes: { photo: true, gif: true, boom: true, video: false },
-  capture: { res: '4k', camera: 'user', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3 },
+  capture: { res: '4k', camera: 'user', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true },
   types: [],
 };
 let S = structuredClone(STUDIO_DEFAULT);
@@ -579,16 +579,24 @@ async function makeBoomerang(frames) {
   await sleep(120); r.stop(); await done;
   return new Blob(chunks, { type: (r.mimeType || mime || 'video/webm').split(';')[0] });
 }
-async function makeGif(frames) {
+async function makeGif(frames, delay = 120, bounce = true) {
   const { GIFEncoder, quantize, applyPalette } = await import('../vendor/gifenc.esm.js');
   const gif = GIFEncoder(), w = frames[0].width, h = frames[0].height;
-  const seq = [...frames, ...frames.slice(1, -1).reverse()];
+  const seq = bounce ? [...frames, ...frames.slice(1, -1).reverse()] : frames;
   for (const f of seq) {
     const data = f.getContext('2d').getImageData(0, 0, w, h).data;
     const pal = quantize(data, 256), idx = applyPalette(data, pal);
-    gif.writeFrame(idx, w, h, { palette: pal, delay: 120 }); await sleep(0);
+    gif.writeFrame(idx, w, h, { palette: pal, delay }); await sleep(0);
   }
   gif.finish(); return new Blob([gif.bytes()], { type: 'image/gif' });
+}
+// A GIF made from the photos of a photo session: shared by QR/link, never printed.
+async function photoSessionGif(shots, filter) {
+  const first = shots[0], long = 720, sc = long / Math.max(first.width, first.height);
+  const w = Math.round(first.width * sc / 2) * 2, h = Math.round(first.height * sc / 2) * 2;
+  const f = (FILTERS.find(z => z[0] === filter) || FILTERS[0]);
+  const frames = shots.map(shot => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); if (FILTER_OK) x.filter = f[2]; drawInto(x, shot, 0, 0, w, h, 'cover'); if (!FILTER_OK) manualFilter(x, filter, 0, 0, w, h); return c; });
+  return makeGif(frames, 700, false);
 }
 async function renderSession() {
   const s = B.session, box = $('#reviewMedia');
@@ -649,7 +657,7 @@ function startSave(s) {
   const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ev = ACTIVE.id, evName = ACTIVE.name, evDate = ACTIVE.event_date;
   const row = s.row = { id, event_id: ev, kind: s.mode, share_token: token(), print_token: token(), path: `${ev}/${id}.jpg`, thumb_path: `${ev}/${id}-thumb.jpg`, layout: s.design ? s.design.name : s.mode };
   if (s.mode === 'photo') row.print_path = `${ev}/${id}-print.jpg`;
-  const q = (S.capture.quality || 95) / 100, qrOn = !!S.printQr.on;
+  const q = (S.capture.quality || 95) / 100, qrOn = !!S.printQr.on, photoGifOn = S.capture.photoGif !== false;
   const job = (async () => {
     await sleep(30);   // let the "Thank you" screen appear first
     let full; const work = [];
@@ -659,6 +667,10 @@ function startSave(s) {
       if (qrOn) { sheet = document.createElement('canvas'); sheet.width = full.width; sheet.height = full.height; const x = sheet.getContext('2d'); x.drawImage(full, 0, 0); drawPrintQr(x, full.width, full.height, s.design, `${SITE}?q=${row.print_token}`); }
       const printBlob = await jpeg(printCanvas(s.design, sheet), q);
       work.push(retry(() => upload(row.print_path, printBlob, 'image/jpeg')));
+      if (photoGifOn && s.shots.length > 1) {
+        try { const g = await photoSessionGif(s.shots, s.filter); row.media_path = `${ev}/${id}.gif`; work.push(retry(() => upload(row.media_path, g, 'image/gif'))); }
+        catch (e) { /* the photo still saves without the GIF */ }
+      }
     } else {
       full = s.poster;
       const ext = s.media.type === 'image/gif' ? 'gif' : s.media.type === 'video/mp4' ? 'mp4' : 'webm';
@@ -1124,7 +1136,7 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capRes').value = c.res; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capPhotoGif').checked = c.photoGif !== false; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState();
 }
@@ -1134,7 +1146,7 @@ $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
 $('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
-  Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
+  Object.assign(S.capture, { res: $('#capRes').value, camera: $('#capCam').value, mirror: $('#capMirror').checked, photoGif: $('#capPhotoGif').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
 };
 let testStream = null;
@@ -1208,7 +1220,7 @@ async function renderGallery() {
 function drawThumbs() {
   const badge = { photo: 'PHOTO', gif: 'GIF', boom: 'BOOMERANG', video: 'VIDEO' };
   const list = galPhotos.map((p, i) => ({ p, i })).filter(o => gFilter === 'all' || (o.p.kind || 'photo') === gFilter);
-  $('#thumbs').innerHTML = list.length ? list.map(({ p, i }) => `<button class="thumb" data-i="${i}"><div class="im"><img src="${fileUrl(p.thumb_path)}" alt="Session ${galPhotos.length - i}" loading="lazy"><span class="tbadge ${(p.kind || 'photo') === 'photo' ? '' : 'anim'}">${badge[p.kind || 'photo']}</span></div><div class="row lbl" style="justify-content:space-between;font-size:12px"><span>#${galPhotos.length - i}</span><span class="mono">${timeOf(p.created_at)}</span></div></button>`).join('')
+  $('#thumbs').innerHTML = list.length ? list.map(({ p, i }) => `<button class="thumb" data-i="${i}"><div class="im"><img src="${fileUrl(p.thumb_path)}" alt="Session ${galPhotos.length - i}" loading="lazy"><span class="tbadge ${(p.kind || 'photo') === 'photo' ? '' : 'anim'}">${badge[p.kind || 'photo']}${(p.kind || 'photo') === 'photo' && p.media_path ? ' + GIF' : ''}</span></div><div class="row lbl" style="justify-content:space-between;font-size:12px"><span>#${galPhotos.length - i}</span><span class="mono">${timeOf(p.created_at)}</span></div></button>`).join('')
     : `<div class="empty">${galPhotos.length ? 'Nothing of this type yet.' : 'No photos yet. They appear here as soon as guests use the booth.'}</div>`;
 }
 $('#gEvent').onchange = () => { galEvent = $('#gEvent').value; renderGallery(); };
@@ -1227,7 +1239,7 @@ $('#thumbs').addEventListener('click', e => {
         <input class="in mono" id="photoLink" readonly value="${esc(link)}" aria-label="Photo link" style="font-size:12px">
         ${S.printQr.on && kind === 'photo' && exp ? `<div class="lbl">The QR printed on this photo ${exp > new Date() ? 'works until ' + exp.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'has expired'}. This QR here always works.</div>` : ''}
         <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm" id="copyPhoto">Copy link</button><button class="btn sm" id="showTab">Show on tablet</button></div>
-        <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">${kind === 'photo' ? '<label class="field" style="width:80px" for="rpC">Copies<input class="in mono" id="rpC" type="number" min="1" max="10" value="1"></label><button class="btn pri" id="reprint" style="align-self:flex-end">Print again</button>' : ''}<button class="btn" id="dlOrig" style="align-self:flex-end">Download original</button><button class="btn" id="delPhoto" style="align-self:flex-end;color:#ff8a80">Delete</button></div>
+        <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">${kind === 'photo' ? '<label class="field" style="width:80px" for="rpC">Copies<input class="in mono" id="rpC" type="number" min="1" max="10" value="1"></label><button class="btn pri" id="reprint" style="align-self:flex-end">Print again</button>' : ''}<button class="btn" id="dlOrig" style="align-self:flex-end">Download original</button>${kind === 'photo' && p.media_path ? '<button class="btn" id="dlGif" style="align-self:flex-end">Download GIF</button>' : ''}<button class="btn" id="delPhoto" style="align-self:flex-end;color:#ff8a80">Delete</button></div>
       </div>
     </div>`, 780);
   qr(m.querySelector('#photoQr'), link, 112);
@@ -1235,7 +1247,9 @@ $('#thumbs').addEventListener('click', e => {
   m.querySelector('#showTab').onclick = () => { if (!others().some(d => d.role === 'booth')) return toast('The tablet is not connected'); chan.send({ type: 'broadcast', event: 'show-qr', payload: { url: link, label: 'Scan to get your photo' } }); toast('QR shown on the tablet'); };
   const rp = m.querySelector('#reprint');
   if (rp) rp.onclick = async () => { try { const c = Math.max(1, Math.min(10, +m.querySelector('#rpC').value || 1)); check(await sb.from('print_jobs').insert({ event_id: p.event_id, photo_id: p.id, path: p.print_path || p.path, copies: c, label: `${ev ? ev.name : ''} · reprint` })); toast(printerOn() ? 'Sent to the printer' : 'Added to the print queue. Turn on printing in Printer.'); runPrinter(); } catch (err) { toast(err.message, 4000); } };
-  m.querySelector('#dlOrig').onclick = async () => { const path = p.media_path || p.path; try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
+  const dlPath = async path => { try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
+  if (m.querySelector('#dlGif')) m.querySelector('#dlGif').onclick = () => dlPath(p.media_path);
+  m.querySelector('#dlOrig').onclick = async () => { const path = kind === 'photo' ? p.path : (p.media_path || p.path); try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
   m.querySelector('#delPhoto').onclick = async () => {
     if (!confirm('Delete this from the gallery? The guest link stops working.')) return;
     try { await sb.storage.from('photos').remove([p.path, p.thumb_path, p.media_path, p.print_path].filter(Boolean)); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
@@ -1261,7 +1275,8 @@ $('#gZip').onclick = async () => {
     const zip = new JSZip(); let n = 0;
     for (const p of galPhotos.slice().reverse()) {
       n++; b.textContent = `Preparing ${n}/${galPhotos.length}…`;
-      const path = p.media_path || p.path; zip.file(`${String(n).padStart(3, '0')}-${p.kind || 'photo'}.${path.split('.').pop()}`, await (await fetch(fileUrl(path))).blob());
+      const k = p.kind || 'photo', paths = k === 'photo' ? [p.path, p.media_path].filter(Boolean) : [p.media_path || p.path];
+      for (const path of paths) zip.file(`${String(n).padStart(3, '0')}-${k}.${path.split('.').pop()}`, await (await fetch(fileUrl(path))).blob());
     }
     const ev = EVENTS.find(x => x.id === galEvent);
     download(await zip.generateAsync({ type: 'blob' }), `${(ev ? ev.name : 'event').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'event'}.zip`);
