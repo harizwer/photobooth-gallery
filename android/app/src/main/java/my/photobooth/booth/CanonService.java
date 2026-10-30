@@ -159,8 +159,14 @@ final class CanonService {
         }
     }
 
+    private long lastAsk = 0;
+
     private void pumpFrame() throws IOException {
         if (!cam.liveStarted) { cam.startLive(); notReadySince = 0; triedInitiate = false; }
+        // About 15 pictures a second: smooth on screen, and gentle on the camera and the USB cable
+        long gap = System.currentTimeMillis() - lastAsk;
+        if (gap < 66) CanonEos.sleep(66 - gap);
+        lastAsk = System.currentTimeMillis();
         byte[] jpg = cam.liveFrame();
         long now = System.currentTimeMillis();
         if (jpg != null) {
@@ -237,6 +243,7 @@ final class CanonService {
         cam = c;   // so a failure here can still be recovered/closed
         connected = false;
         c.open();
+        log("USB packet size " + l.maxPacket() + (l.maxPacket() >= 512 ? " (high speed)" : " (full speed: slow link)"));
         model = c.model;
         connected = true;
         connectedAt = System.currentTimeMillis();

@@ -28,7 +28,7 @@ final class Ptp {
 
     private final UsbLink link;
     private final byte[] buf;
-    private int tid = 0;
+    private int tid = 0, curOp = 0;
 
     Ptp(UsbLink link) {
         this.link = link;
@@ -44,6 +44,7 @@ final class Ptp {
 
     synchronized Result run(int op, int[] params, byte[] dataOut, int timeoutMs) throws IOException {
         if (params == null) params = new int[0];
+        curOp = op;
         int id = ++tid;
         if (tid < 0) tid = 0;
 
@@ -73,8 +74,9 @@ final class Ptp {
                 while (got < len) {
                     int want = roundUp(len - got);
                     if (want > buf.length) want = buf.length;
+                    long t0 = System.currentTimeMillis();
                     int k = link.read(buf, want, timeoutMs);
-                    if (k < 0) throw new LinkError("USB read failed during data (" + got + "/" + len + ")");
+                    if (k < 0) throw new LinkError("USB read failed during data (" + got + "/" + len + ", " + why(t0, timeoutMs) + ", command " + hex(op) + ")");
                     if (k == 0) continue;
                     out.write(buf, 0, Math.min(k, len - got));
                     got += k;
@@ -106,8 +108,9 @@ final class Ptp {
                 part = new byte[chunk];
                 System.arraycopy(data, off, part, 0, chunk);
             }
+            long t0 = System.currentTimeMillis();
             int n = link.write(part, chunk, timeoutMs);
-            if (n < 0) throw new LinkError("USB write failed");
+            if (n < 0) throw new LinkError("USB write failed (" + why(t0, timeoutMs) + ", command " + hex(curOp) + ")");
             off += n;
             if (n == 0) throw new LinkError("USB write sent nothing");
         }
@@ -117,11 +120,18 @@ final class Ptp {
 
     private int readNonEmpty(int timeoutMs) throws IOException {
         for (int i = 0; i < 4; i++) {
+            long t0 = System.currentTimeMillis();
             int n = link.read(buf, buf.length, timeoutMs);
-            if (n < 0) throw new LinkError("USB read failed (no answer from the camera)");
+            if (n < 0) throw new LinkError("USB read failed (" + why(t0, timeoutMs) + ", command " + hex(curOp) + ")");
             if (n > 0) return n;
         }
         return 0;
+    }
+
+    /** A read that fails at once is a broken transfer (cable/hub); one that waits the full time means the camera went silent. */
+    private static String why(long t0, int timeoutMs) {
+        long ms = System.currentTimeMillis() - t0;
+        return (ms >= timeoutMs - 100 ? "camera silent for " : "transfer broke after ") + ms + " ms";
     }
 
     private int roundUp(int n) {
