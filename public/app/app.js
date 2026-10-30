@@ -108,6 +108,7 @@ async function compose(d, shots, filter = 'none', opts = {}) {
     const ax = Math.round(a.x * W), ay = Math.round(a.y * H), aw = Math.round(a.w * W), ah = Math.round(a.h * H);
     const shot = shots && shots[i];
     if (shot) { x.save(); x.beginPath(); x.rect(ax, ay, aw, ah); x.clip(); if (FILTER_OK) x.filter = f[2]; drawInto(x, shot, ax, ay, aw, ah, d.fit); x.restore(); if (!FILTER_OK) manualFilter(x, filter, ax, ay, aw, ah); }
+    else if (opts.blank) { x.fillStyle = opts.blank; x.fillRect(ax, ay, aw, ah); }
     else { x.fillStyle = '#c9c9d1'; x.fillRect(ax, ay, aw, ah); x.fillStyle = '#8a8a96'; x.font = `bold ${Math.min(aw, ah) * .28}px system-ui`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(i + 1), ax + aw / 2, ay + ah / 2); }
   });
   const frame = await loadImg(d.frame_url); if (frame) x.drawImage(frame, 0, 0, W, H);
@@ -579,24 +580,26 @@ async function makeBoomerang(frames) {
   await sleep(120); r.stop(); await done;
   return new Blob(chunks, { type: (r.mimeType || mime || 'video/webm').split(';')[0] });
 }
-async function makeGif(frames, delay = 120, bounce = true) {
+async function makeGif(frames, delay = 120, bounce = true) {   // delay: one number, or one per frame
   const { GIFEncoder, quantize, applyPalette } = await import('../vendor/gifenc.esm.js');
   const gif = GIFEncoder(), w = frames[0].width, h = frames[0].height;
   const seq = bounce ? [...frames, ...frames.slice(1, -1).reverse()] : frames;
   for (const f of seq) {
     const data = f.getContext('2d').getImageData(0, 0, w, h).data;
     const pal = quantize(data, 256), idx = applyPalette(data, pal);
-    gif.writeFrame(idx, w, h, { palette: pal, delay }); await sleep(0);
+    gif.writeFrame(idx, w, h, { palette: pal, delay: Array.isArray(delay) ? delay[seq.indexOf(f)] : delay }); await sleep(0);
   }
   gif.finish(); return new Blob([gif.bytes()], { type: 'image/gif' });
 }
-// A GIF made from the photos of a photo session: shared by QR/link, never printed.
-async function photoSessionGif(shots, filter) {
-  const first = shots[0], long = 720, sc = long / Math.max(first.width, first.height);
-  const w = Math.round(first.width * sc / 2) * 2, h = Math.round(first.height * sc / 2) * 2;
-  const f = (FILTERS.find(z => z[0] === filter) || FILTERS[0]);
-  const frames = shots.map(shot => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); if (FILTER_OK) x.filter = f[2]; drawInto(x, shot, 0, 0, w, h, 'cover'); if (!FILTER_OK) manualFilter(x, filter, 0, 0, w, h); return c; });
-  return makeGif(frames, 700, false);
+// A GIF of the strip the guest chose: same frame, background and photo spots.
+// The photos appear one by one in their own spot, then the finished strip stays on screen before it loops.
+async function photoSessionGif(design, shots, filter, name, date) {
+  const d = { ...design, output_long: 1080 }, n = d.areas.length, frames = [], delays = [];
+  for (let k = 1; k <= n; k++) {
+    frames.push(await compose(d, shots.slice(0, k), filter, { name, date, blank: '#f4f1ec' }));
+    delays.push(k === n ? 2600 : 650);
+  }
+  return makeGif(frames, delays, false);
 }
 async function renderSession() {
   const s = B.session, box = $('#reviewMedia');
@@ -668,7 +671,7 @@ function startSave(s) {
       const printBlob = await jpeg(printCanvas(s.design, sheet), q);
       work.push(retry(() => upload(row.print_path, printBlob, 'image/jpeg')));
       if (photoGifOn && s.shots.length > 1) {
-        try { const g = await photoSessionGif(s.shots, s.filter); row.media_path = `${ev}/${id}.gif`; work.push(retry(() => upload(row.media_path, g, 'image/gif'))); }
+        try { const g = await photoSessionGif(s.design, s.shots, s.filter, evName, evDate); row.media_path = `${ev}/${id}.gif`; work.push(retry(() => upload(row.media_path, g, 'image/gif'))); }
         catch (e) { /* the photo still saves without the GIF */ }
       }
     } else {
