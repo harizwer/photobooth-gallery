@@ -350,7 +350,7 @@ function dslrHelp(e) {
   const crash = (e && e.constructor && e.constructor.name === 'RuntimeError') || /memory access|out of bounds|unreachable|table index/i.test(m);
   if (crash) dslrCrashed = true;
   if (/No device selected|NotFoundError/i.test(m)) return 'No camera was chosen. Tap Connect again and pick the Canon in the list.';
-  if (/I\/O|claim|busy|access denied|SecurityError|NetworkError/i.test(m)) return 'The tablet could not take control of the Canon\'s USB connection (' + m + '). The website already tried 4 times and reset the USB link. Please: close all other tabs and apps (Chrome tabs of this site, Gallery, Photos, Samsung Smart Switch), unplug the cable from the TABLET side, wait 5 seconds, plug it back in, and if Android asks “Open Chrome to handle the camera?” tap OK. Then reload this page and tap Connect once.';
+  if (/I\/O|claim|busy|access denied|SecurityError|NetworkError/i.test(m)) return 'The tablet could not take control of the Canon\'s USB connection (' + m + '). The website already tried 3 times. Please: close all other tabs and apps (Chrome tabs of this site, Gallery, Photos, Samsung Smart Switch), unplug the cable from the TABLET side, wait 5 seconds, plug it back in, and if Android asks “Open Chrome to handle the camera?” tap OK. Then reload this page and tap Connect once.';
   const steps = isWindows
     ? 'On a Windows laptop the camera needs the WinUSB driver first: install Zadig (zadig.akeo.ie), choose the Canon EOS 750D, pick WinUSB, click Replace Driver. Then reload this page.'
     : 'Close any other app that grabbed the camera (Gallery, Photos, a "USB: File transfer" pop-up — choose "Cancel" or "No data transfer"). On the camera: turn Wi-Fi off, set the dial to P or M (not video), and make sure a lens is on.';
@@ -370,12 +370,14 @@ async function dslrConnect(pick) {
     // another tab of this site, or a USB handle left open by an earlier connection. From try 2 on, also reset the USB link (like replugging the cable).
     let cam = null, lastErr = null;
     await releaseOtherTabs();
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      if (attempt > 1) setDslrMsg(`Connecting to the Canon… (try ${attempt} of 4)`);
-      await freeUsb(attempt > 1);
+    CAMLOG.length = 0; await camLog('start');
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (attempt > 1) setDslrMsg(`Connecting to the Canon… (try ${attempt} of 3)`);
+      await freeUsb();
       cam = new dslrLib.Camera();
-      try { await cam.connect(); await cam.capturePreviewAsBlob(); lastErr = null; break; }
+      try { await cam.connect(); await camLog(`try ${attempt}: connected`); await cam.capturePreviewAsBlob(); await camLog(`try ${attempt}: live view OK`); lastErr = null; break; }
       catch (e) {
+        await camLog(`try ${attempt}: ${(e && e.constructor && e.constructor.name) || 'Error'}: ${e && e.message}`);
         lastErr = e; try { await cam.disconnect(); } catch (_) {} cam = null;
         if (e && e.constructor && e.constructor.name === 'RuntimeError') break;   // the library crashed: only a page reload helps
         await sleep(1500 * attempt);                                          // give the camera time to settle
@@ -394,13 +396,19 @@ async function dslrConnect(pick) {
 }
 function setDslrMsg(t) { const a = $('#dslrInfo'), b = $('#bCamInfo'); if (a) a.textContent = t; if (b) b.textContent = t; }
 // Close any USB handle Chrome still has open to the camera; optionally reset the link (same as replugging).
-async function freeUsb(reset) {
+async function freeUsb() {
   let list = []; try { list = await navigator.usb.getDevices(); } catch (e) { return; }
-  for (const d of list) {
-    try { if (d.opened) await d.close(); } catch (e) {}
-    if (reset) { try { await d.open(); await d.reset(); } catch (e) {} try { if (d.opened) await d.close(); } catch (e) {} }
-  }
-  if (reset) await sleep(1200);
+  for (const d of list) { try { if (d.opened) await d.close(); } catch (e) {} }
+}
+/* ---------- Camera report: what happened on the last connect (to send to support) ---------- */
+const CAMLOG = [];
+async function camLog(step) {
+  let devs = '';
+  try { devs = (await navigator.usb.getDevices()).map(d => `${d.manufacturerName || '?'} ${d.productName || '?'} [${(d.vendorId || 0).toString(16)}:${(d.productId || 0).toString(16)}] ${d.opened ? 'open' : 'closed'}`).join('; ') || 'none'; } catch (e) { devs = 'n/a'; }
+  CAMLOG.push(`${new Date().toLocaleTimeString('en-GB')} ${step} | USB devices: ${devs}`);
+}
+function camReport() {
+  return ['Photobooth camera report', `Browser: ${navigator.userAgent}`, `Isolated: ${window.crossOriginIsolated} · WebUSB: ${!!navigator.usb} · Other tab had camera: ${otherTabHadCamera}`, ...CAMLOG].join('\n');
 }
 // Only one tab can use the camera. Ask other open tabs of this site (on this tablet) to let go of it first.
 const camChan = 'BroadcastChannel' in window ? new BroadcastChannel('pb-camera') : null;
@@ -1227,8 +1235,20 @@ $('#testShot').onclick = async () => {
 $('#dslrConnect').onclick = async () => {
   const b = $('#dslrConnect'); b.disabled = true; $('#dslrInfo').textContent = 'Connecting…';
   try { await dslrConnect(true); $('#dslrInfo').textContent = 'Live view on. Photos use the camera\'s full resolution.'; renderDslrState(); toast('Canon DSLR connected'); }
-  catch (e) { $('#dslrInfo').textContent = e.message; }
+  catch (e) { $('#dslrInfo').textContent = e.message + ' If it still fails, tap “Copy camera report” and send it to support.'; }
   b.disabled = false;
+};
+$('#dslrReport').onclick = async () => {
+  const r = camReport();
+  try { await navigator.clipboard.writeText(r); toast('Camera report copied. Paste it in your message to support.'); }
+  catch (e) { modal(`<div class="row" style="justify-content:space-between"><b>Camera report</b><button class="ico" data-close aria-label="Close">✕</button></div><textarea class="in ta mono" rows="12" readonly style="font-size:11px">${esc(r)}</textarea><p class="lbl" style="margin:0">Take a screenshot of this and send it to support.</p>`, 640); }
+};
+// Forget the USB permission so Chrome asks again (fixes a stale permission on some tablets)
+$('#dslrForget').onclick = async () => {
+  if (!navigator.usb) return toast('This browser cannot use USB devices.');
+  await dslrDisconnect();
+  try { for (const d of await navigator.usb.getDevices()) { try { if (d.opened) await d.close(); } catch (e) {} if (d.forget) await d.forget(); } } catch (e) {}
+  toast('Camera permission reset. Unplug the Canon, plug it back in, reload this page and tap Connect camera.', 9000);
 };
 $('#dslrTest').onclick = async () => {
   if (!dslr) return;
