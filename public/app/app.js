@@ -122,6 +122,14 @@ async function compose(d, shots, filter = 'none', opts = {}) {
   d.areas.forEach((a, i) => {
     const ax = Math.round(a.x * W), ay = Math.round(a.y * H), aw = Math.round(a.w * W), ah = Math.round(a.h * H);
     const shot = shots && shots[i];
+    if (a.r) {   // tilted photo area: draw it turned around its centre
+      x.save(); x.translate(ax + aw / 2, ay + ah / 2); x.rotate(a.r * Math.PI / 180);
+      x.beginPath(); x.rect(-aw / 2, -ah / 2, aw, ah); x.clip();
+      if (shot) { if (FILTER_OK) x.filter = f[2]; drawInto(x, shot, -aw / 2, -ah / 2, aw, ah, d.fit); }
+      else if (opts.blank) { x.fillStyle = opts.blank; x.fillRect(-aw / 2, -ah / 2, aw, ah); }
+      else { x.fillStyle = '#c9c9d1'; x.fillRect(-aw / 2, -ah / 2, aw, ah); x.fillStyle = '#8a8a96'; x.font = `bold ${Math.min(aw, ah) * .28}px system-ui`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(i + 1), 0, 0); }
+      x.restore(); return;
+    }
     if (shot) { x.save(); x.beginPath(); x.rect(ax, ay, aw, ah); x.clip(); if (FILTER_OK) x.filter = f[2]; drawInto(x, shot, ax, ay, aw, ah, d.fit); x.restore(); if (!FILTER_OK) manualFilter(x, filter, ax, ay, aw, ah); }
     else if (opts.blank) { x.fillStyle = opts.blank; x.fillRect(ax, ay, aw, ah); }
     else { x.fillStyle = '#c9c9d1'; x.fillRect(ax, ay, aw, ah); x.fillStyle = '#8a8a96'; x.font = `bold ${Math.min(aw, ah) * .28}px system-ui`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(i + 1), ax + aw / 2, ay + ah / 2); }
@@ -1235,23 +1243,24 @@ function loadDraft() {
   img.hidden = false; img.onload = () => { drawAreas(); areaMsg(); }; img.src = src;
 }
 function areaSize() { const img = $('#frameImg'); return [img.naturalWidth || draft.width || 1, img.naturalHeight || draft.height || 1]; }
-function placeArea(el, a) { el.style.cssText = `left:${a.x * 100}%;top:${a.y * 100}%;width:${a.w * 100}%;height:${a.h * 100}%`; }
+function placeArea(el, a) { el.style.cssText = `left:${a.x * 100}%;top:${a.y * 100}%;width:${a.w * 100}%;height:${a.h * 100}%;transform:rotate(${a.r || 0}deg)`; }
 function drawAreas() {
   $$('#frameWrap .area').forEach(a => a.remove());
   draft.areas.forEach((a, i) => {
     const el = document.createElement('div'); el.className = 'area'; el.dataset.i = i; el.tabIndex = 0;
-    el.setAttribute('aria-label', `Photo area ${i + 1}. Drag to move, drag a corner to resize, or use the arrow keys (Shift + arrows to resize).`);
+    el.setAttribute('aria-label', `Photo area ${i + 1}. Drag to move, drag a corner to resize, drag the round handle to rotate, or use the arrow keys (Shift + arrows to resize, [ and ] to rotate).`);
     placeArea(el, a);
-    el.innerHTML = `<span>Area ${i + 1}</span><button type="button" data-rm="${i}" aria-label="Remove area ${i + 1}">✕</button>` + ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].map(h => `<i class="hdl ${h}" data-h="${h}"></i>`).join('');
+    el.innerHTML = `<span>Area ${i + 1}</span><button type="button" data-rm="${i}" aria-label="Remove area ${i + 1}">✕</button>` + ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].map(h => `<i class="hdl ${h}" data-h="${h}"></i>`).join('') + '<i class="hdl rot" data-h="rot" title="Drag to rotate"></i>';
     $('#frameWrap').appendChild(el);
   });
   const [W, H] = areaSize();
   $('#areaList').innerHTML = draft.areas.map((a, i) => `<div class="arow" style="flex-direction:column;gap:6px"><div class="row" style="justify-content:space-between"><b>Area ${i + 1} · Photo ${i + 1}</b><button class="btn sm" data-rm-row="${i}" style="height:26px;padding:0 8px">Remove</button></div>
-    <div class="anum">${[['x', 'X', W], ['y', 'Y', H], ['w', 'Width', W], ['h', 'Height', H]].map(([k, l, S]) => `<label>${l}<input class="in mono" type="number" data-ai="${i}" data-k="${k}" value="${Math.round(a[k] * S)}" min="0" max="${S}"></label>`).join('')}</div></div>`).join('') || '<p class="lbl" style="margin:0">None yet.</p>';
+    <div class="anum">${[['x', 'X', W], ['y', 'Y', H], ['w', 'Width', W], ['h', 'Height', H]].map(([k, l, S]) => `<label>${l}<input class="in mono" type="number" data-ai="${i}" data-k="${k}" value="${Math.round(a[k] * S)}" min="0" max="${S}"></label>`).join('')}</div>
+    <div class="row" style="gap:6px;align-items:flex-end;flex-wrap:wrap"><label style="flex:1;min-width:90px">Rotate (°)<input class="in mono" type="number" step="0.5" min="-180" max="180" data-ai="${i}" data-k="r" value="${+(a.r || 0).toFixed(1)}"></label><button class="btn sm" data-rot="${i}" data-by="-5" style="height:34px">⟲ 5°</button><button class="btn sm" data-rot="${i}" data-by="5" style="height:34px">⟳ 5°</button><button class="btn sm" data-rot="${i}" data-by="0" style="height:34px">Straight</button></div></div>`).join('') || '<p class="lbl" style="margin:0">None yet.</p>';
 }
 function updateAreaRow(i) {
   const [W, H] = areaSize(), a = draft.areas[i];
-  $$(`#areaList [data-ai="${i}"]`).forEach(inp => { inp.value = Math.round(a[inp.dataset.k] * (inp.dataset.k === 'x' || inp.dataset.k === 'w' ? W : H)); });
+  $$(`#areaList [data-ai="${i}"]`).forEach(inp => { const k = inp.dataset.k; inp.value = k === 'r' ? +(a.r || 0).toFixed(1) : Math.round(a[k] * (k === 'x' || k === 'w' ? W : H)); });
 }
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 function fixArea(a) { a.w = clamp(a.w, .02, 1); a.h = clamp(a.h, .02, 1); a.x = clamp(a.x, 0, 1 - a.w); a.y = clamp(a.y, 0, 1 - a.h); return a; }
@@ -1260,11 +1269,19 @@ $('#areaList').addEventListener('input', e => {
   const inp = e.target.closest('[data-ai]'); if (!inp) return;
   const i = +inp.dataset.ai, k = inp.dataset.k, [W, H] = areaSize(), v = +inp.value;
   if (!Number.isFinite(v)) return;
-  draft.areas[i][k] = v / (k === 'x' || k === 'w' ? W : H); fixArea(draft.areas[i]);
+  if (k === 'r') draft.areas[i].r = normDeg(v); else draft.areas[i][k] = v / (k === 'x' || k === 'w' ? W : H);
+  fixArea(draft.areas[i]);
   const el = $(`#frameWrap .area[data-i="${i}"]`); if (el) placeArea(el, draft.areas[i]);
 });
 $('#areaList').addEventListener('change', e => { if (e.target.closest('[data-ai]')) updateAreaRow(+e.target.dataset.ai); });
-$('#areaList').addEventListener('click', e => { const b = e.target.closest('[data-rm-row]'); if (b) { draft.areas.splice(+b.dataset.rmRow, 1); drawAreas(); areaMsg(); } });
+$('#areaList').addEventListener('click', e => {
+  const b = e.target.closest('[data-rm-row]'); if (b) { draft.areas.splice(+b.dataset.rmRow, 1); drawAreas(); areaMsg(); return; }
+  const r = e.target.closest('[data-rot]'); if (!r) return;
+  const i = +r.dataset.rot, a = draft.areas[i], by = +r.dataset.by;
+  a.r = by ? normDeg((a.r || 0) + by) : 0; placeArea($(`#frameWrap .area[data-i="${i}"]`), a); updateAreaRow(i);
+});
+// Keep angles between -180 and 180, rounded to half a degree; 0 is stored as "no rotation"
+function normDeg(v) { v = ((+v % 360) + 540) % 360 - 180; v = Math.round(v * 2) / 2; return Math.abs(v) < .25 ? 0 : v; }
 // Drag to move, drag a corner or edge to resize
 {
   let drag = null; const wrap = $('#frameWrap');
@@ -1274,11 +1291,17 @@ $('#areaList').addEventListener('click', e => { const b = e.target.closest('[dat
     e.preventDefault(); el.focus({ preventScroll: true });
     const i = +el.dataset.i;
     drag = { i, el, mode: e.target.dataset.h || 'move', sx: e.clientX, sy: e.clientY, a: { ...draft.areas[i] }, r: $('#frameImg').getBoundingClientRect() };
+    if (drag.mode === 'rot') { const b = el.getBoundingClientRect(); drag.cx = b.left + b.width / 2; drag.cy = b.top + b.height / 2; }
     el.classList.add('active'); el.setPointerCapture(e.pointerId);
   });
   wrap.addEventListener('pointermove', e => {
     if (!drag) return;
     const dx = (e.clientX - drag.sx) / drag.r.width, dy = (e.clientY - drag.sy) / drag.r.height, m = drag.mode;
+    if (m === 'rot') {   // the round handle sits above the top edge: pointing straight up = 0°
+      let deg = Math.atan2(e.clientX - drag.cx, drag.cy - e.clientY) * 180 / Math.PI;
+      deg = e.shiftKey ? Math.round(deg / 15) * 15 : Math.round(deg);
+      draft.areas[drag.i].r = normDeg(deg); placeArea(drag.el, draft.areas[drag.i]); updateAreaRow(drag.i); return;
+    }
     let { x, y, w, h } = drag.a;
     if (m === 'move') { x = clamp(x + dx, 0, 1 - w); y = clamp(y + dy, 0, 1 - h); }
     else {
@@ -1294,6 +1317,7 @@ $('#areaList').addEventListener('click', e => { const b = e.target.closest('[dat
   // Keyboard: arrows move 1 px (10 px with Alt), Shift + arrows resize
   wrap.addEventListener('keydown', e => {
     const el = e.target.closest('.area'); if (!el) return;
+    if (e.key === '[' || e.key === ']') { e.preventDefault(); const i = +el.dataset.i, a = draft.areas[i]; a.r = normDeg((a.r || 0) + (e.key === ']' ? 1 : -1) * (e.altKey ? 5 : 1)); placeArea(el, a); updateAreaRow(i); return; }
     const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key]; if (!d) return;
     e.preventDefault(); const i = +el.dataset.i, a = draft.areas[i], [W, H] = areaSize(), step = e.altKey ? 10 : 1;
     if (e.shiftKey) { a.w += d[0] * step / W; a.h += d[1] * step / H; } else { a.x += d[0] * step / W; a.y += d[1] * step / H; }

@@ -269,6 +269,9 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .area .hdl.nw{left:-9px;top:-9px;cursor:nwse-resize}.area .hdl.se{right:-9px;bottom:-9px;cursor:nwse-resize}
 .area .hdl.ne{right:-9px;top:-9px;cursor:nesw-resize}.area .hdl.sw{left:-9px;bottom:-9px;cursor:nesw-resize}
 .area .hdl.n,.area .hdl.s{left:calc(50% - 8px);cursor:ns-resize;width:16px;height:10px}.area .hdl.n{top:-6px}.area .hdl.s{bottom:-6px}
+.area .hdl.rot{left:calc(50% - 9px);top:-34px;width:18px;height:18px;border-radius:50%;cursor:grab;background:var(--accent);border-color:#fff}
+.area .hdl.rot::after{content:'';position:absolute;left:6px;top:16px;width:2px;height:14px;background:var(--accent)}
+.area{transform-origin:center}
 .area .hdl.e,.area .hdl.w{top:calc(50% - 8px);cursor:ew-resize;width:10px;height:16px}.area .hdl.e{right:-6px}.area .hdl.w{left:-6px}
 .area button{z-index:3}
 .anum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
