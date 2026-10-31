@@ -3,12 +3,13 @@ name: Live site check
 on:
   push:
     branches: [main]
-    paths: ['worker/**', 'wrangler.jsonc', '.github/workflows/site-check.yml']
+    paths: ['worker/**', 'wrangler.jsonc', '.github/workflows/site-check.yml', '.github/old-files.txt']
   workflow_dispatch:
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Check the live site
         shell: bash
         run: |
@@ -20,3 +21,13 @@ jobs:
           r "old photo via R2: $(curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg)"
           r "again (now from R2): $(curl -s -o /dev/null -w '%{http_code} %{size_download}' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg) · range: $(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-99' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg)"
           r "guest page: $(curl -s -o /dev/null -w '%{http_code}' $S/) · 404 page: $(curl -s -o /dev/null -w '%{http_code}' $S/nothing-here)"
+      - name: Copy every older Supabase file into R2 (opening a file copies it)
+        shell: bash
+        run: |
+          S=https://photobooth-studio.harizwer03.workers.dev
+          ok=0; bad=""
+          for f in $(cat .github/old-files.txt); do
+            c=$(curl -s -o /dev/null -w '%{http_code}' "$S/files/$f")
+            if [ "$c" = 200 ]; then ok=$((ok+1)); else bad="$bad $f:$c"; fi
+          done
+          echo "::notice::copied/checked $ok of $(wc -w < .github/old-files.txt) files${bad:+ · problems:$bad}"
