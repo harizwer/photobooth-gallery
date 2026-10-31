@@ -709,9 +709,10 @@ function startFlow(mode) {
   });
   bscreen('b-pick');
 }
-async function countdown(me, label, onLastSecond) {
+// onAt runs when `at` seconds are left (used to start recording the boomerang); minSecs makes the countdown at least that long.
+async function countdown(me, label, onAt, at = 1, minSecs = 0) {
   const el = $('#b-count'); $('#shotInfo').textContent = label;
-  for (let n = Math.max(1, S.capture.countdown || 3); n > 0; n--) { if (B.session !== me) return false; el.textContent = n; beep(n === 1 ? 1320 : 880); if (n === 1 && onLastSecond) onLastSecond(); await sleep(1000); }
+  for (let n = Math.max(1, S.capture.countdown || 3, minSecs); n > 0; n--) { if (B.session !== me) return false; el.textContent = n; beep(n === 1 ? 1320 : 880); if (n === at && onAt) onAt(); await sleep(1000); }
   if (B.session !== me) return false;
   el.textContent = 'Smile!'; await sleep(250); return true;
 }
@@ -725,11 +726,12 @@ async function startSession(design) {
     if (me.mode === 'photo') {
       const n = design.areas.length;
       me.bursts = [];
-      const wantBoom = S.capture.photoGif !== false && n > 1;
+      const wantBoom = S.capture.photoGif !== false && n > 1, boomSec = boomSeconds();
       for (let i = 0; i < n; i++) {
-        // For the strip boomerang: record ~1 s of movement from the preview just before each photo
+        // For the strip boomerang: record the last few seconds of the countdown before each photo
         let burst = null;
-        if (!(await countdown(me, `Photo ${i + 1} of ${n}`, wantBoom ? () => { burst = recordBurst(me); } : null))) return;
+        const label = `Photo ${i + 1} of ${n}` + (wantBoom ? ' · keep moving for the boomerang!' : '');
+        if (!(await countdown(me, label, wantBoom ? () => { burst = recordBurst(me, boomSec); } : null, boomSec, wantBoom ? boomSec : 0))) return;
         if (burst) burst.stop();
         flash(); const c = await capturePhoto(); me.shots.push(c);
         me.bursts.push(burst ? burst.frames : []);
@@ -775,16 +777,25 @@ function recordStream(stream, ms, me, tick) {
   });
 }
 // Boomerang: play the frames forward and back twice, recorded to a video file.
-async function makeBoomerang(frames) {
-  const c = document.createElement('canvas'); c.width = frames[0].width; c.height = frames[0].height; const x = c.getContext('2d');
-  x.drawImage(frames[0], 0, 0);
-  const seq = []; for (let k = 0; k < 2; k++) { seq.push(...frames, ...frames.slice(1, -1).reverse()); }
+// Frames can be canvases or JPEG blobs (blobs are decoded one step ahead while playing).
+async function makeBoomerang(frames, fps = 24, loops = 2) {
+  const get = f => f instanceof Blob ? createImageBitmap(f) : Promise.resolve(f);
+  const first = await get(frames[0]);
+  const c = document.createElement('canvas'); c.width = first.width; c.height = first.height; const x = c.getContext('2d');
+  x.drawImage(first, 0, 0);
+  const idx = []; for (let k = 0; k < loops; k++) { for (let i = 0; i < frames.length; i++) idx.push(i); for (let i = frames.length - 2; i > 0; i--) idx.push(i); }
   const stream = c.captureStream(30), mime = recMime(), chunks = [];
-  const r = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 10e6 } : {});
+  const r = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: frames.length > 30 ? 5e6 : 10e6 } : {});
   r.ondataavailable = e => e.data.size && chunks.push(e.data);
   const done = new Promise(res => r.onstop = res);
   r.start(250);
-  for (const f of seq) { x.drawImage(f, 0, 0); await sleep(1000 / 24); }
+  let next = get(frames[idx[0]]);
+  for (let j = 0; j < idx.length; j++) {
+    const t = performance.now(), img = await next;
+    next = j + 1 < idx.length ? get(frames[idx[j + 1]]) : null;
+    x.drawImage(img, 0, 0); if (img.close && frames[idx[j]] instanceof Blob) img.close();
+    await sleep(Math.max(0, 1000 / fps - (performance.now() - t)));
+  }
   await sleep(120); r.stop(); await done;
   return new Blob(chunks, { type: (r.mimeType || mime || 'video/webm').split(';')[0] });
 }
@@ -802,19 +813,35 @@ async function makeGif(frames, delay = 120, bounce = true) {   // delay: one num
 // A GIF of the strip the guest chose: same frame, background and photo spots.
 // The photos appear one by one in their own spot, then the finished strip stays on screen before it loops.
 // Short burst of preview frames (for the strip boomerang). Keeps grabbing until stop() is called.
-function recordBurst(me) {
-  const frames = []; let on = true;
-  (async () => { while (on && B.session === me && frames.length < 18) { try { frames.push(grabFrame(960)); } catch (e) {} await sleep(70); } })();
+const boomSeconds = () => Math.max(1, Math.min(5, +S.capture.boomSec || 5));
+// Frames are kept as small JPEGs (about 10 a second) so a 5-second boomerang for every photo fits in the tablet's memory.
+function recordBurst(me, secs = 1) {
+  const frames = [], max = Math.round(secs * 10) + 4; let on = true;
+  (async () => {
+    while (on && B.session === me && frames.length < max) {
+      const t = performance.now();
+      try { const c = grabFrame(640); frames.push(new Promise(res => c.toBlob(res, 'image/jpeg', .85))); } catch (e) {}
+      await sleep(Math.max(10, 100 - (performance.now() - t)));
+    }
+  })();
   return { frames, stop() { on = false; } };
 }
 // Strip boomerang: the chosen strip (same frame and background) with every photo moving at the same time,
 // forward and back. Shared by QR/link, never printed. Video where the browser can record, otherwise an animated GIF.
 async function stripBoomerang(design, bursts, filter, name, date) {
-  const k = Math.min(...bursts.map(b => b.length)); if (k < 4) return null;
-  const d = { ...design, output_long: 1600 }, frames = [];
-  for (let i = 0; i < k; i++) { frames.push(await compose(d, bursts.map(b => b[i]), filter, { name, date })); await sleep(0); }
-  if (window.MediaRecorder && recMime()) return makeBoomerang(frames);
-  return makeGif(frames.map(f => scaled(f, 800)), 90, true);
+  const lists = await Promise.all(bursts.map(b => Promise.all(b).then(l => l.filter(Boolean))));
+  const k = Math.min(...lists.map(l => l.length)); if (k < 4) return null;
+  const d = { ...design, output_long: 1280 }, frames = [];
+  for (let i = 0; i < k; i++) {   // one strip picture per moment, kept as a JPEG
+    const imgs = await Promise.all(lists.map(l => createImageBitmap(l[i])));
+    const c = await compose(d, imgs, filter, { name, date }); imgs.forEach(b => b.close && b.close());
+    frames.push(await new Promise(res => c.toBlob(res, 'image/jpeg', .88))); await sleep(0);
+  }
+  // Recorded at ~10 frames a second, played a little faster (15) like a real boomerang; long ones loop once
+  if (window.MediaRecorder && recMime()) return makeBoomerang(frames, 15, k > 30 ? 1 : 2);
+  const step = Math.max(1, Math.round(k / 15)), pick = frames.filter((_, i) => i % step === 0);
+  const cv = await Promise.all(pick.map(async b => { const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); bm.close && bm.close(); return scaled(c, 800); }));
+  return makeGif(cv, 90, true);
 }
 async function renderSession() {
   const s = B.session, box = $('#reviewMedia');
@@ -1360,7 +1387,7 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive !== false; $('#capPhotoGif').checked = c.photoGif !== false; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive !== false; $('#capPhotoGif').checked = c.photoGif !== false; $('#capBoomSec').value = c.boomSec || 5; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState();
 }
@@ -1371,7 +1398,7 @@ $('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr')
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
   const liveBefore = S.capture.canonLive !== false;
-  Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, canonLive: $('#capCanonLive').checked, photoGif: $('#capPhotoGif').checked, quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
+  Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, canonLive: $('#capCanonLive').checked, photoGif: $('#capPhotoGif').checked, boomSec: n('#capBoomSec', 1, 5, 5), quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
   if (dslr && liveBefore !== (S.capture.canonLive !== false)) {   // apply the Canon live view choice now
     camTestOff(); try { sessionStorage.removeItem('pb.liveBroken'); } catch (e) {}
