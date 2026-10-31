@@ -1472,7 +1472,7 @@ $('#thumbs').addEventListener('click', e => {
         <div class="cap">Share this ${kind === 'photo' ? 'photo' : 'file'} again</div>
         <div class="row" style="align-items:center;gap:14px"><div class="qrbox" id="photoQr"></div><p class="lbl" style="margin:0;line-height:1.5">Show this to the guest to scan. It opens only this ${kind === 'photo' ? 'photo' : 'file'}.</p></div>
         <input class="in mono" id="photoLink" readonly value="${esc(link)}" aria-label="Photo link" style="font-size:12px">
-        ${S.printQr.on && kind === 'photo' && exp ? `<div class="lbl">The QR printed on this photo ${exp > new Date() ? 'works until ' + exp.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'has expired'}. This QR here always works.</div>` : ''}
+        ${S.printQr.on && kind === 'photo' && exp ? `<div class="lbl">The QR printed on this photo ${exp > new Date() ? 'works until ' + exp.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'has expired'}. Guest links (this QR too) work for 12 hours after the photo; after that, share the event album.</div>` : ''}
         <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm" id="copyPhoto">Copy link</button><button class="btn sm" id="showTab">Show on tablet</button></div>
         <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">${kind === 'photo' ? '<label class="field" style="width:80px" for="rpC">Copies<input class="in mono" id="rpC" type="number" min="1" max="10" value="1"></label><button class="btn pri" id="reprint" style="align-self:flex-end">Print again</button>' : ''}<button class="btn" id="dlOrig" style="align-self:flex-end">Download original</button>${kind === 'photo' && p.media_path ? `<button class="btn" id="dlGif" style="align-self:flex-end">Download ${/\.gif$/.test(p.media_path) ? 'GIF' : 'boomerang'}</button>` : ''}<button class="btn" id="delPhoto" style="align-self:flex-end;color:#ff8a80">Delete</button></div>
       </div>
@@ -1500,7 +1500,9 @@ $('#albumSave').onclick = async () => {
   const v = $('#albumExp').value, pinV = $('#albumPin').value.trim();
   if (pinV && !/^\d{4,8}$/.test(pinV)) return toast('PIN must be 4 to 8 digits');
   const upd = { album_enabled: $('#albumOn').checked, album_pin: pinV };
-  if (v === 'never') upd.album_expires_at = null; else if (v !== 'keep') upd.album_expires_at = new Date(Date.now() + +v * 864e5).toISOString();
+  if (v === 'never') upd.album_expires_at = null;
+  else if (v === '7') { const ev = EVENTS.find(e => e.id === galEvent), t = ev && ev.event_date ? Date.parse(ev.event_date) : NaN, d = new Date(Math.max(Date.now(), Number.isFinite(t) ? t : 0)); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 8); upd.album_expires_at = d.toISOString(); }   // through the 7th day after the event
+  else if (v !== 'keep') upd.album_expires_at = new Date(Date.now() + +v * 864e5).toISOString();
   try { check(await sb.from('events').update(upd).eq('id', galEvent)); renderGallery(); toast('Album settings saved'); } catch (e) { toast(e.message, 4000); }
 };
 $('#gZip').onclick = async () => {
@@ -1663,7 +1665,7 @@ function renderBgPrev() {
   $('#bgFile').accept = { image: 'image/jpeg,image/png,image/webp', gif: 'image/gif', video: 'video/mp4,video/webm' }[S.bg.kind] || '';
 }
 async function renderPq() {
-  $('#pqChip').className = 'chip' + (S.printQr.on ? '' : ' mute'); $('#pqChip').textContent = S.printQr.on ? 'On · 24 h links' : 'Off';
+  $('#pqChip').className = 'chip' + (S.printQr.on ? '' : ' mute'); $('#pqChip').textContent = S.printQr.on ? 'On · 12 h links' : 'Off';
   const c = await compose({ ...BUILTIN[0], output_long: 900 }, samples(3), 'none', { name: ACTIVE ? ACTIVE.name : '', date: ACTIVE ? ACTIVE.event_date : '', qrText: S.printQr.on ? SITE + '?q=preview' : '' });
   $('#pqPrev').src = c.toDataURL('image/jpeg', .85);
 }

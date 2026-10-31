@@ -114,7 +114,7 @@ async function showOne(tok) {
   }
   if (!d) { studio(null); return message('Photo not found', 'This link is not valid any more. Ask the photobooth team if you still need your photo.'); }
   studio(d.studio); $('#eyebrow').textContent = 'Your photo from'; $('#title').textContent = d.event || ''; $('#date').textContent = fmtDate(d.date);
-  if (d.expired) return message('This link has expired', 'Photo links on prints work for 24 hours. Ask the photobooth team if you still need your photo.');
+  if (d.expired) return message('This link has expired', 'Photo links work for 12 hours after the photo is taken. Ask the photobooth team for the event album if you still need your photo.');
   const item = { kind: d.kind, path: d.path, media: d.media_path };
   $('#eyebrow').textContent = { photo: 'Your photo from', gif: 'Your GIF from', boom: 'Your boomerang from', video: 'Your video from' }[d.kind] || 'Your photo from';
   const label = { photo: 'Save photo', gif: 'Save GIF', boom: 'Save boomerang', video: 'Save video' }[d.kind] || 'Save';
