@@ -205,7 +205,7 @@ function detectAreas(img) {
 let USER = null, PROFILE = null, EVENTS = [], ACTIVE = null, TEMPLATES = [], STATION = null, ROLE = null, chan = null, jobChan = null, devices = {};
 const DEFAULT_TYPES = ['Wedding', 'Birthday', 'Corporate', 'Raya'];
 const evType = e => (e && e.settings && e.settings.type) || 'Wedding';
-const allTypes = () => [...new Set([...DEFAULT_TYPES, ...(S.types || []), ...TEMPLATES.map(t => t.event_type), ...EVENTS.map(evType)])];
+const allTypes = () => [...new Set([...DEFAULT_TYPES.filter(t => !(S.hiddenTypes || []).includes(t)), ...(S.types || []), ...TEMPLATES.map(t => t.event_type), ...EVENTS.map(evType)])];
 function allDesigns() { return [...TEMPLATES.filter(t => t.frame_url).map(tplToDesign), ...BUILTIN]; }
 // The layouts guests can choose on the tablet: the ones picked for this event, else all templates of its type, else the standard ones.
 function designsFor(ev) {
@@ -1223,6 +1223,7 @@ async function renderTemplates() {
   const types = allTypes(); if (!types.includes(curType)) curType = types[0];
   $('#typeList').innerHTML = types.map(t => `<button class="type ${t === curType ? 'on' : ''}" data-type="${esc(t)}">${esc(t)}<span class="mono lbl" style="font-size:11px">${TEMPLATES.filter(x => x.event_type === t).length}</span></button>`).join('');
   $('#tplHead').textContent = curType + ' templates';
+  $('#renameType').textContent = `✎ Rename “${curType}”`;
   const list = TEMPLATES.filter(t => t.event_type === curType);
   $('#tplList').innerHTML = list.length ? list.map(t => `<button class="tpl ${draft && draft.id === t.id ? 'on' : ''}" data-id="${t.id}"><img src="${esc(t.frame_url)}" alt="" crossorigin="anonymous"><span><b style="font-size:13.5px">${esc(t.name)}</b><br><span class="lbl" style="font-size:12px">${{ strip: '2x6 strip', portrait: '4x6 portrait', landscape: '4x6 landscape' }[t.paper]} · ${(t.areas || []).length} photo${(t.areas || []).length === 1 ? '' : 's'}</span></span></button>`).join('')
     : '<p class="lbl" style="margin:0">No templates yet. The booth uses the standard layouts (3-photo strip, 4-photo grid, 1 photo) until you add one.</p>';
@@ -1340,8 +1341,36 @@ $('#typeList').addEventListener('click', e => { const b = e.target.closest('[dat
 $('#tplList').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (!b) return; draft = structuredClone(TEMPLATES.find(t => t.id === b.dataset.id)); pendingFrame = null; loadDraft(); });
 $('#addType').onclick = async () => {
   const n = (prompt('Name of the new event type (e.g. Graduation):') || '').trim(); if (!n) return;
+  S.hiddenTypes = (S.hiddenTypes || []).filter(t => t !== n);
   if (!allTypes().includes(n)) { S.types = [...(S.types || []), n]; try { await saveStudio(); } catch (e) { return toast(e.message, 4000); } }
   curType = n; draft = null; renderTemplates(); toast(`Event type “${n}” added`);
+};
+// Rename the selected event type: its templates and events move to the new name.
+$('#renameType').onclick = async () => {
+  const old = curType, n = (prompt(`New name for “${old}”:`, old) || '').trim();
+  if (!n || n === old) return;
+  if (allTypes().includes(n) && !confirm(`“${n}” already exists. Move everything from “${old}” into “${n}”?`)) return;
+  const b = $('#renameType'); b.disabled = true;
+  try {
+    check(await sb.from('templates').update({ event_type: n }).eq('owner', USER.id).eq('event_type', old));
+    for (const e of EVENTS.filter(e => evType(e) === old)) check(await sb.from('events').update({ settings: { ...(e.settings || {}), type: n } }).eq('id', e.id));
+    S.types = [...new Set([...(S.types || []).filter(t => t !== old), n])];
+    if (DEFAULT_TYPES.includes(old)) S.hiddenTypes = [...new Set([...(S.hiddenTypes || []), old])];
+    S.hiddenTypes = (S.hiddenTypes || []).filter(t => t !== n);
+    await saveStudio(); await Promise.all([loadTemplates(), loadEvents()]);
+    curType = n; draft = null; renderTemplates(); announce(); toast(`Renamed to “${n}”`);
+  } catch (e) { toast(e.message, 5000); }
+  b.disabled = false;
+};
+// Remove an event type that has no templates and no events.
+$('#removeType').onclick = async () => {
+  const t = curType;
+  if (TEMPLATES.some(x => x.event_type === t)) return toast(`“${t}” still has templates. Delete or move them first (or rename the type).`, 5000);
+  if (EVENTS.some(e => evType(e) === t)) return toast(`An event still uses “${t}”. Change it in Events → Edit first.`, 5000);
+  if (!confirm(`Remove the event type “${t}”?`)) return;
+  S.types = (S.types || []).filter(x => x !== t);
+  if (DEFAULT_TYPES.includes(t)) S.hiddenTypes = [...new Set([...(S.hiddenTypes || []), t])];
+  try { await saveStudio(); curType = allTypes()[0]; draft = null; renderTemplates(); toast(`“${t}” removed`); } catch (e) { toast(e.message, 4000); }
 };
 $('#addTpl').onclick = () => { draft = newDraft(); pendingFrame = null; loadDraft(); $('#tName').focus(); };
 $('#pngFile').addEventListener('change', e => {
