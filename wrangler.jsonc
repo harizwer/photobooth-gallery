@@ -1,9 +1,15 @@
 {
-  // Cloudflare Workers static site: serves this folder as-is (no build step).
+  // Cloudflare Workers site: static files from public/ (no build step),
+  // plus worker/index.js for /files/* (photos stored in Cloudflare R2).
   "name": "photobooth-studio",
+  "main": "worker/index.js",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./public",
+    "binding": "ASSETS",
     "not_found_handling": "404-page"
-  }
+  },
+  "r2_buckets": [
+    { "binding": "PHOTOS", "bucket_name": "photobooth-photos" }
+  ]
 }

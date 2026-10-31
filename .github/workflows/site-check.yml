@@ -1,0 +1,22 @@
+# After a change to the worker, checks the live website once Cloudflare has deployed it.
+name: Live site check
+on:
+  push:
+    branches: [main]
+    paths: ['worker/**', 'wrangler.jsonc', '.github/workflows/site-check.yml']
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the live site
+        shell: bash
+        run: |
+          S=https://photobooth-studio.harizwer03.workers.dev
+          sleep 150   # give Cloudflare time to build and deploy
+          r() { echo "::notice::$1"; }
+          r "app page: $(curl -s -o /dev/null -w '%{http_code}' $S/app/) · COOP: $(curl -sI $S/app/ | grep -ic cross-origin-opener-policy)"
+          r "worker live: $(curl -s -o /dev/null -w '%{http_code}' -X PUT --data x $S/files/test/x.jpg) (401 = worker answers)"
+          r "old photo via R2: $(curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg)"
+          r "again (now from R2): $(curl -s -o /dev/null -w '%{http_code} %{size_download}' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg) · range: $(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-99' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg)"
+          r "guest page: $(curl -s -o /dev/null -w '%{http_code}' $S/) · 404 page: $(curl -s -o /dev/null -w '%{http_code}' $S/nothing-here)"

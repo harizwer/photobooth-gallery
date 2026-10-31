@@ -18,7 +18,18 @@ const store = {
   set(k, v) { try { localStorage.setItem('pb.' + k, JSON.stringify(v)); } catch (e) {} },
 };
 const deviceId = store.get('device', null) || (() => { const id = 'd' + Math.random().toString(36).slice(2, 10); store.set('device', id); return id; })();
-const fileUrl = path => path ? `${SUPABASE_URL}/storage/v1/object/public/photos/${path}` : '';
+// Photos and studio images live in Cloudflare R2, served by this website's worker at /files/ (see worker/index.js).
+const fileUrl = path => path ? `${location.origin}/files/${path}` : '';
+async function authHeader() { const { data } = await sb.auth.getSession(); const t = data && data.session && data.session.access_token; if (!t) throw new Error('Log in again to save photos.'); return 'Bearer ' + t; }
+// Delete files: from R2, and any older copy still in Supabase storage.
+async function removeFiles(paths) {
+  paths = paths.filter(Boolean); if (!paths.length) return;
+  const auth = await authHeader().catch(() => '');
+  await Promise.all(paths.map(p => fetch(fileUrl(p), { method: 'DELETE', headers: { Authorization: auth } }).catch(() => {})));
+  for (let i = 0; i < paths.length; i += 100) await sb.storage.from('photos').remove(paths.slice(i, i + 100)).catch(() => {});
+}
+// A file path from a saved address (new /files/ addresses and older Supabase ones).
+const pathOfUrl = u => String(u || '').split('/files/')[1] || String(u || '').split('/object/public/photos/')[1] || '';
 const token = (n = 12) => [...crypto.getRandomValues(new Uint8Array(n))].map(b => b.toString(16).padStart(2, '0')).join('');
 const today = () => new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 const timeOf = d => new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -846,7 +857,10 @@ $('#bFilters').addEventListener('click', async e => {
 $('#cMinus').onclick = () => { if (!B.session) return; B.session.copies = Math.max(1, B.session.copies - 1); $('#cNum').textContent = B.session.copies; };
 $('#cPlus').onclick = () => { if (!B.session) return; B.session.copies = Math.min(S.capture.maxCopies || 1, B.session.copies + 1); $('#cNum').textContent = B.session.copies; };
 function busy(msg) { $('#busy').hidden = !msg; if (msg) $('#busyMsg').textContent = msg; }
-async function upload(path, blob, type) { check(await sb.storage.from('photos').upload(path, blob, { contentType: type, upsert: true })); }
+async function upload(path, blob, type) {
+  const r = await fetch(fileUrl(path), { method: 'PUT', headers: { Authorization: await authHeader(), 'Content-Type': type || blob.type || 'application/octet-stream' }, body: blob });
+  if (!r.ok) throw new Error((await r.text().catch(() => '')) || 'Upload failed (' + r.status + ')');
+}
 /* ---------- Saving: the guest gets the QR at once; files upload in the background ---------- */
 const UPLOADS = new Set();   // saves still running (they keep retrying if the internet drops)
 function uploadsChanged() { if (ROLE === 'booth') boothStatus(); }
@@ -1158,7 +1172,7 @@ function openEventModal(ev) {
     try {
       const photos = check(await sb.from('photos').select('path,thumb_path,media_path,print_path').eq('event_id', ev.id));
       const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path]).filter(Boolean);
-      for (let i = 0; i < paths.length; i += 100) await sb.storage.from('photos').remove(paths.slice(i, i + 100));
+      await removeFiles(paths);
       check(await sb.from('events').delete().eq('id', ev.id));
       await loadEvents(); if (!EVENTS.some(x => x.is_active)) await setActive(EVENTS[0].id);
       m.remove(); go('events'); toast('Event deleted');
@@ -1321,7 +1335,7 @@ $('#tSave').onclick = async () => {
 };
 $('#tDelete').onclick = async () => {
   if (!draft.id || !confirm(`Delete the template “${draft.name}”?`)) return;
-  try { check(await sb.from('templates').delete().eq('id', draft.id)); const m = draft.frame_url.split('/object/public/photos/')[1]; if (m) await sb.storage.from('photos').remove([m]); draft = null; announce(); renderTemplates(); toast('Template deleted'); }
+  try { check(await sb.from('templates').delete().eq('id', draft.id)); const m = pathOfUrl(draft.frame_url); if (m) await removeFiles([m]); draft = null; announce(); renderTemplates(); toast('Template deleted'); }
   catch (e) { toast(e.message, 4000); }
 };
 $('#tPreview').onclick = async () => {
@@ -1487,7 +1501,7 @@ $('#thumbs').addEventListener('click', e => {
   m.querySelector('#dlOrig').onclick = async () => { const path = kind === 'photo' ? p.path : (p.media_path || p.path); try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
   m.querySelector('#delPhoto').onclick = async () => {
     if (!confirm('Delete this from the gallery? The guest link stops working.')) return;
-    try { await sb.storage.from('photos').remove([p.path, p.thumb_path, p.media_path, p.print_path].filter(Boolean)); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
+    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
   };
 });
 $('#copyAlbum').onclick = () => copyText($('#albumLink').value, $('#albumLink'));
