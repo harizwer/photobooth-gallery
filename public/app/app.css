@@ -280,3 +280,15 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 #shotPrev{position:absolute;inset:0;margin:auto;max-width:86%;max-height:78%;object-fit:contain;border:8px solid #fff;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.7);z-index:2;animation:pop .25s ease-out}
 @keyframes pop{from{transform:scale(.92);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){#shotPrev{animation:none}}
+
+/* Review: zoom & move each photo */
+#rvWrap{position:relative;display:inline-block;touch-action:none;line-height:0}
+#rvWrap canvas{width:auto;height:auto;display:block;cursor:grab}
+#rvSel{position:absolute;border:3px solid var(--accent);border-radius:3px;pointer-events:none;box-shadow:0 0 0 2px rgba(0,0,0,.35);transform-origin:center}
+#reviewMedia{touch-action:none;user-select:none;-webkit-user-select:none}
+.adjpick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.adjpick button{all:unset;cursor:pointer;padding:8px 14px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line);font-size:14px}
+.adjpick button.on{border-color:var(--accent);color:#fff;background:rgba(255,90,38,.15)}
+.adjrow{display:flex;align-items:center;gap:8px}
+.adjrow > button:not(.btn){all:unset;cursor:pointer;width:44px;height:44px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line);font-size:24px;text-align:center;line-height:44px}
+.adjrow input[type=range]{flex:1;accent-color:var(--accent);height:44px}

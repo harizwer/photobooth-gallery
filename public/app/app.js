@@ -111,6 +111,42 @@ function drawInto(x, img, dx, dy, dw, dh, fit = 'cover') {
   const s = Math.max(dw / iw, dh / ih), sw = dw / s, sh = dh / s;
   x.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, dx, dy, dw, dh);
 }
+// A guest photo with the guest's own zoom and position (adj = { z, dx, dy }; dx/dy are fractions of the photo spot).
+// When zoomed out so far that the photo no longer fills its spot, the spot is filled with the strip's colour first.
+const noAdj = a => !a || ((a.z || 1) === 1 && !a.dx && !a.dy);
+function drawShot(x, img, dx, dy, dw, dh, fit, adj, fill) {
+  if (noAdj(adj)) return drawInto(x, img, dx, dy, dw, dh, fit);
+  const iw = img.naturalWidth || img.videoWidth || img.width, ih = img.naturalHeight || img.videoHeight || img.height;
+  const base = fit === 'contain' ? Math.min(dw / iw, dh / ih) : Math.max(dw / iw, dh / ih), k = base * (adj.z || 1), w = iw * k, h = ih * k;
+  const left = dx + dw / 2 + (adj.dx || 0) * dw - w / 2, top = dy + dh / 2 + (adj.dy || 0) * dh - h / 2;
+  if (left > dx + .5 || top > dy + .5 || left + w < dx + dw - .5 || top + h < dy + dh - .5) { x.fillStyle = fill || '#ffffff'; x.fillRect(dx, dy, dw, dh); }
+  x.drawImage(img, left, top, w, h);
+}
+// The strip's own colour around each photo spot: the most common colour of the frame just outside the spot.
+const fillCache = {};
+async function areaFills(d) {
+  const key = (d.frame_url || 'builtin:' + d.id) + '|' + JSON.stringify(d.areas);
+  if (fillCache[key]) return fillCache[key];
+  const plain = d.builtin ? '#f4efe6' : '#ffffff';
+  const frame = await loadImg(d.frame_url);
+  if (!frame) return (fillCache[key] = d.areas.map(() => plain));
+  const W = 300, H = Math.max(1, Math.round(300 * frame.naturalHeight / frame.naturalWidth));
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(frame, 0, 0, W, H);
+  let px; try { px = x.getImageData(0, 0, W, H).data; } catch (e) { return (fillCache[key] = d.areas.map(() => plain)); }
+  return (fillCache[key] = d.areas.map(a => {
+    const counts = new Map(), ring = Math.max(3, Math.round(W * .02));
+    const x0 = Math.floor(a.x * W) - ring, y0 = Math.floor(a.y * H) - ring, x1 = Math.ceil((a.x + a.w) * W) + ring, y1 = Math.ceil((a.y + a.h) * H) + ring;
+    for (let yy = Math.max(0, y0); yy < Math.min(H, y1); yy++) for (let xx = Math.max(0, x0); xx < Math.min(W, x1); xx++) {
+      const inside = xx >= a.x * W && xx < (a.x + a.w) * W && yy >= a.y * H && yy < (a.y + a.h) * H; if (inside) continue;
+      const i = (yy * W + xx) * 4; if (px[i + 3] < 200) continue;
+      const q = (px[i] >> 4) << 8 | (px[i + 1] >> 4) << 4 | (px[i + 2] >> 4), e = counts.get(q);
+      if (e) { e.n++; e.r += px[i]; e.g += px[i + 1]; e.b += px[i + 2]; } else counts.set(q, { n: 1, r: px[i], g: px[i + 1], b: px[i + 2] });
+    }
+    let best = null; for (const e of counts.values()) if (!best || e.n > best.n) best = e;
+    return best ? `rgb(${Math.round(best.r / best.n)},${Math.round(best.g / best.n)},${Math.round(best.b / best.n)})` : plain;
+  }));
+}
 function fitText(x, text, maxW, size, font, weight = '') { do { x.font = `${weight} ${size}px ${font}`; size -= 2; } while (x.measureText(text).width > maxW && size > 10); }
 function designSize(d) { const long = Math.min(4000, d.output_long || 3600), s = long / Math.max(d.w, d.h); return [Math.round(d.w * s), Math.round(d.h * s)]; }
 // Compose the finished photo: guest shots in the areas, the PNG frame on top, optional small QR.
@@ -119,18 +155,19 @@ async function compose(d, shots, filter = 'none', opts = {}) {
   const x = c.getContext('2d');
   x.fillStyle = d.builtin ? '#f4efe6' : '#ffffff'; x.fillRect(0, 0, W, H);
   const f = (FILTERS.find(z => z[0] === filter) || FILTERS[0]);
+  const adjs = opts.adjust || [], fills = adjs.some(a => !noAdj(a)) ? await areaFills(d) : [];
   d.areas.forEach((a, i) => {
     const ax = Math.round(a.x * W), ay = Math.round(a.y * H), aw = Math.round(a.w * W), ah = Math.round(a.h * H);
     const shot = shots && shots[i];
     if (a.r) {   // tilted photo area: draw it turned around its centre
       x.save(); x.translate(ax + aw / 2, ay + ah / 2); x.rotate(a.r * Math.PI / 180);
       x.beginPath(); x.rect(-aw / 2, -ah / 2, aw, ah); x.clip();
-      if (shot) { if (FILTER_OK) x.filter = f[2]; drawInto(x, shot, -aw / 2, -ah / 2, aw, ah, d.fit); }
+      if (shot) { if (FILTER_OK) x.filter = f[2]; drawShot(x, shot, -aw / 2, -ah / 2, aw, ah, d.fit, adjs[i], fills[i]); }
       else if (opts.blank) { x.fillStyle = opts.blank; x.fillRect(-aw / 2, -ah / 2, aw, ah); }
       else { x.fillStyle = '#c9c9d1'; x.fillRect(-aw / 2, -ah / 2, aw, ah); x.fillStyle = '#8a8a96'; x.font = `bold ${Math.min(aw, ah) * .28}px system-ui`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(i + 1), 0, 0); }
       x.restore(); return;
     }
-    if (shot) { x.save(); x.beginPath(); x.rect(ax, ay, aw, ah); x.clip(); if (FILTER_OK) x.filter = f[2]; drawInto(x, shot, ax, ay, aw, ah, d.fit); x.restore(); if (!FILTER_OK) manualFilter(x, filter, ax, ay, aw, ah); }
+    if (shot) { x.save(); x.beginPath(); x.rect(ax, ay, aw, ah); x.clip(); if (FILTER_OK) x.filter = f[2]; drawShot(x, shot, ax, ay, aw, ah, d.fit, adjs[i], fills[i]); x.restore(); if (!FILTER_OK) manualFilter(x, filter, ax, ay, aw, ah); }
     else if (opts.blank) { x.fillStyle = opts.blank; x.fillRect(ax, ay, aw, ah); }
     else { x.fillStyle = '#c9c9d1'; x.fillRect(ax, ay, aw, ah); x.fillStyle = '#8a8a96'; x.font = `bold ${Math.min(aw, ah) * .28}px system-ui`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(i + 1), ax + aw / 2, ay + ah / 2); }
   });
@@ -836,13 +873,13 @@ function recordBurst(me, secs = 1) {
 }
 // Strip boomerang: the chosen strip (same frame and background) with every photo moving at the same time,
 // forward and back. Shared by QR/link, never printed. Video where the browser can record, otherwise an animated GIF.
-async function stripBoomerang(design, bursts, filter, name, date) {
+async function stripBoomerang(design, bursts, filter, name, date, adjust) {
   const lists = await Promise.all(bursts.map(b => Promise.all(b).then(l => l.filter(Boolean))));
   const k = Math.min(...lists.map(l => l.length)); if (k < 4) return null;
   const d = { ...design, output_long: 1280 }, frames = [];
   for (let i = 0; i < k; i++) {   // one strip picture per moment, kept as a JPEG
     const imgs = await Promise.all(lists.map(l => createImageBitmap(l[i])));
-    const c = await compose(d, imgs, filter, { name, date }); imgs.forEach(b => b.close && b.close());
+    const c = await compose(d, imgs, filter, { name, date, adjust }); imgs.forEach(b => b.close && b.close());
     frames.push(await new Promise(res => c.toBlob(res, 'image/jpeg', .88))); await sleep(0);
   }
   // Recorded at ~10 frames a second, played a little faster (15) like a real boomerang; long ones loop once
@@ -854,8 +891,12 @@ async function stripBoomerang(design, bursts, filter, name, date) {
 async function renderSession() {
   const s = B.session, box = $('#reviewMedia');
   if (s.mode === 'photo') {
-    const prev = await compose({ ...s.design, output_long: 1400 }, s.shots, s.filter, { name: ACTIVE.name, date: ACTIVE.event_date });
-    box.innerHTML = `<img class="media ${s.design.paper === 'landscape' ? 'wide' : ''}" alt="Your photo" src="${prev.toDataURL('image/jpeg', .85)}">`;
+    const prev = await compose({ ...s.design, output_long: s.dragging ? 800 : 1200 }, s.shots, s.filter, { name: ACTIVE.name, date: ACTIVE.event_date, adjust: s.adjust });
+    prev.className = 'media' + (s.design.paper === 'landscape' ? ' wide' : ''); prev.setAttribute('aria-label', 'Your photo. Tap a photo to zoom or move it.');
+    let wrap = $('#rvWrap');
+    if (!wrap || !box.contains(wrap)) { box.innerHTML = '<div id="rvWrap"><div id="rvSel" hidden></div></div>'; wrap = $('#rvWrap'); }
+    const old = wrap.querySelector('canvas'); if (old) old.replaceWith(prev); else wrap.prepend(prev);
+    showAdjSel();
   } else {
     if (!s.media) {
       busy(s.mode === 'gif' ? 'Making your GIF…' : s.mode === 'boom' ? 'Making your boomerang…' : 'Preparing your video…');
@@ -871,8 +912,11 @@ async function renderSession() {
 }
 async function openReview() {
   const s = B.session;
+  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; }
   try { await renderSession(); } catch (e) { return showErr('Something went wrong', e.message, () => openReview(), goHome); }
   const isPhoto = s.mode === 'photo';
+  $('#adjWrap').hidden = !isPhoto;
+  if (isPhoto) renderAdjButtons();
   $('#filterWrap').hidden = !isPhoto;
   $('#bFilters').innerHTML = FILTERS.map(f => `<button class="${f[0] === s.filter ? 'on' : ''}" data-fl="${f[0]}">${f[1]}</button>`).join('');
   const maxC = Math.max(1, S.capture.maxCopies || 1);
@@ -889,6 +933,62 @@ $('#bFilters').addEventListener('click', async e => {
   const b = e.target.closest('[data-fl]'); if (!b || !B.session) return;
   B.session.filter = b.dataset.fl; $$('#bFilters button').forEach(x => x.classList.toggle('on', x === b)); await renderSession();
 });
+/* ---------- Zoom & move each photo on the review screen ---------- */
+const ADJ_MIN = .5, ADJ_MAX = 3;
+function renderAdjButtons() {
+  const s = B.session; if (!s || !s.adjust) return;
+  $('#adjPick').innerHTML = s.adjust.length > 1 ? s.adjust.map((_, i) => `<button class="${i === s.adjSel ? 'on' : ''}" data-adj="${i}">Photo ${i + 1}</button>`).join('') : '';
+  $('#adjZoom').value = Math.round((s.adjust[s.adjSel].z || 1) * 100);
+}
+function showAdjSel() {
+  const s = B.session, sel = $('#rvSel'), cv = $('#rvWrap canvas'); if (!sel || !cv || !s || !s.adjust) return;
+  const a = s.design.areas[s.adjSel]; if (!a) { sel.hidden = true; return; }
+  sel.hidden = s.adjust.length < 2 && noAdj(s.adjust[0]);
+  sel.style.cssText = `left:${a.x * 100}%;top:${a.y * 100}%;width:${a.w * 100}%;height:${a.h * 100}%;transform:rotate(${a.r || 0}deg)`;
+}
+let adjRaf = 0;
+function adjChanged() {   // redraw at most once per screen frame while the guest drags
+  $('#adjZoom').value = Math.round((B.session.adjust[B.session.adjSel].z || 1) * 100);
+  if (adjRaf) return; adjRaf = requestAnimationFrame(async () => { adjRaf = 0; if (B.session) await renderSession(); });
+}
+function setZoom(z) { const a = B.session.adjust[B.session.adjSel]; a.z = Math.min(ADJ_MAX, Math.max(ADJ_MIN, Math.round(z * 100) / 100)); clampPan(a); adjChanged(); }
+function clampPan(a) { const lim = .5 + Math.max(.5, (a.z || 1) / 2); a.dx = Math.max(-lim, Math.min(lim, a.dx || 0)); a.dy = Math.max(-lim, Math.min(lim, a.dy || 0)); }
+$('#adjPick').addEventListener('click', e => { const b = e.target.closest('[data-adj]'); if (!b || !B.session) return; B.session.adjSel = +b.dataset.adj; renderAdjButtons(); showAdjSel(); });
+$('#adjMinus').onclick = () => B.session && setZoom((B.session.adjust[B.session.adjSel].z || 1) - .1);
+$('#adjPlus').onclick = () => B.session && setZoom((B.session.adjust[B.session.adjSel].z || 1) + .1);
+$('#adjZoom').oninput = () => B.session && setZoom(+$('#adjZoom').value / 100);
+$('#adjReset').onclick = () => { if (!B.session) return; B.session.adjust[B.session.adjSel] = { z: 1, dx: 0, dy: 0 }; adjChanged(); };
+// Touch the strip: tap picks a photo, one finger moves it, two fingers pinch to zoom.
+{
+  const pts = new Map(); let start = null;
+  const box = $('#reviewMedia');
+  const local = e => { const r = box.querySelector('canvas').getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, r]; };
+  box.addEventListener('pointerdown', e => {
+    const s = B.session; if (!s || !s.adjust || !box.querySelector('canvas')) return;
+    e.preventDefault(); box.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 1) {
+      const [u, v] = local(e), hit = s.design.areas.findIndex(a => u >= a.x && u <= a.x + a.w && v >= a.y && v <= a.y + a.h);
+      if (hit >= 0 && hit !== s.adjSel) { s.adjSel = hit; renderAdjButtons(); showAdjSel(); }
+    }
+    const a = s.adjust[s.adjSel], p = [...pts.values()];
+    start = { a: { ...a }, p, dist: p.length > 1 ? Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) : 0 };
+  });
+  box.addEventListener('pointermove', e => {
+    const s = B.session; if (!s || !start || !pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    const p = [...pts.values()], a = s.adjust[s.adjSel], ar = s.design.areas[s.adjSel], r = box.querySelector('canvas').getBoundingClientRect();
+    if (p.length > 1 && start.dist) { a.z = Math.min(ADJ_MAX, Math.max(ADJ_MIN, start.a.z * Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) / start.dist)); }
+    else if (p.length === 1 && start.p.length === 1) {
+      // finger movement, turned into the photo spot's own direction when the spot is rotated
+      let mx = p[0][0] - start.p[0][0], my = p[0][1] - start.p[0][1]; const t = -(ar.r || 0) * Math.PI / 180;
+      [mx, my] = [mx * Math.cos(t) - my * Math.sin(t), mx * Math.sin(t) + my * Math.cos(t)];
+      a.dx = start.a.dx + mx / (ar.w * r.width); a.dy = start.a.dy + my / (ar.h * r.height);
+    }
+    s.dragging = true; clampPan(a); adjChanged();
+  });
+  const up = e => { pts.delete(e.pointerId); if (!pts.size && B.session && B.session.dragging) { B.session.dragging = false; adjChanged(); } const s = B.session; if (s && s.adjust) { const p = [...pts.values()]; start = p.length ? { a: { ...s.adjust[s.adjSel] }, p, dist: p.length > 1 ? Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) : 0 } : null; } };
+  box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+}
 $('#cMinus').onclick = () => { if (!B.session) return; B.session.copies = Math.max(1, B.session.copies - 1); $('#cNum').textContent = B.session.copies; };
 $('#cPlus').onclick = () => { if (!B.session) return; B.session.copies = Math.min(S.capture.maxCopies || 1, B.session.copies + 1); $('#cNum').textContent = B.session.copies; };
 function busy(msg) { $('#busy').hidden = !msg; if (msg) $('#busyMsg').textContent = msg; }
@@ -918,14 +1018,14 @@ function startSave(s) {
     await sleep(30);   // let the "Thank you" screen appear first
     let full; const work = [];
     if (s.mode === 'photo') {
-      full = await compose(s.design, s.shots, s.filter, { name: evName, date: evDate });
+      full = await compose(s.design, s.shots, s.filter, { name: evName, date: evDate, adjust: s.adjust });
       let sheet = full;
       if (qrOn) { sheet = document.createElement('canvas'); sheet.width = full.width; sheet.height = full.height; const x = sheet.getContext('2d'); x.drawImage(full, 0, 0); drawPrintQr(x, full.width, full.height, s.design, `${SITE}?q=${row.print_token}`); }
       const printBlob = await jpeg(printCanvas(s.design, sheet), q);
       work.push(retry(() => upload(row.print_path, printBlob, 'image/jpeg')));
       if (photoGifOn && s.bursts && s.bursts.length > 1) {
         try {
-          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate);
+          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust);
           if (g) { const ext = g.type === 'image/gif' ? 'gif' : g.type === 'video/mp4' ? 'mp4' : 'webm'; row.media_path = `${ev}/${id}.${ext}`; work.push(retry(() => upload(row.media_path, g, g.type))); }
         } catch (e) { /* the photo still saves without the boomerang */ }
         s.bursts = null;

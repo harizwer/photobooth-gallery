@@ -392,6 +392,10 @@
     <div id="reviewMedia"></div>
     <div class="rp">
       <h2 style="margin:0;font-size:30px">Looking good!</h2>
+      <div id="adjWrap"><div class="lbl" style="font-size:14px;margin-bottom:8px">Zoom &amp; move: tap a photo, drag to move, pinch or use − / +</div>
+        <div class="adjpick" id="adjPick"></div>
+        <div class="adjrow"><button id="adjMinus" aria-label="Zoom out">−</button><input type="range" id="adjZoom" min="50" max="300" step="1" value="100" aria-label="Zoom"><button id="adjPlus" aria-label="Zoom in">+</button><button class="btn sm" id="adjReset">Reset</button></div>
+      </div>
       <div id="filterWrap"><div class="lbl" style="font-size:14px;margin-bottom:8px">Choose a filter</div><div class="filters" id="bFilters"></div></div>
       <div class="copies" id="copiesWrap"><span>Copies</span><button id="cMinus" aria-label="Fewer copies">−</button><b class="mono" id="cNum">1</b><button id="cPlus" aria-label="More copies">+</button></div>
       <button class="btn pri rbtn" id="printBtn">Print</button>
