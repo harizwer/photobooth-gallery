@@ -194,6 +194,21 @@ function drawPrintQr(x, W, H, d, text) {
   x.fillStyle = '#000';
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (mat.isDark(r, c)) x.fillRect(qx + c * px, qy + r * px, px, px);
 }
+// 4R sheet (4×6 in at 300 dpi) with the photo 4 times, each in a 2×3 in (2R) spot. A landscape photo is turned to fit.
+function sheet4R(img) {
+  if (!img) throw new Error('photo not found');
+  const SW = 1200, SH = 1800, tw = SW / 2, th = SH / 2;
+  const c = document.createElement('canvas'); c.width = SW; c.height = SH; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, SW, SH); x.imageSmoothingQuality = 'high';
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, turn = iw > ih;
+  const w = turn ? ih : iw, h = turn ? iw : ih, k = Math.min(tw / w, th / h), dw = w * k, dh = h * k;
+  for (let r = 0; r < 2; r++) for (let q = 0; q < 2; q++) {
+    x.save(); x.translate(q * tw + tw / 2, r * th + th / 2); if (turn) x.rotate(Math.PI / 2);
+    if (turn) x.drawImage(img, -dh / 2, -dw / 2, dh, dw); else x.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    x.restore();
+  }
+  return c;
+}
 // What goes on the 4x6 sheet: strips are printed twice side by side.
 function printCanvas(d, design) {
   if (d.paper !== 'strip') return design;
@@ -1306,7 +1321,7 @@ function openEventModal(ev) {
     if (!confirm(`Delete “${ev.name}” and all of its photos? This cannot be undone.`)) return;
     try {
       const photos = check(await sb.from('photos').select('path,thumb_path,media_path,print_path').eq('event_id', ev.id));
-      const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path]).filter(Boolean);
+      const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path, p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]).filter(Boolean);
       await removeFiles(paths);
       check(await sb.from('events').delete().eq('id', ev.id));
       await loadEvents(); if (!EVENTS.some(x => x.is_active)) await setActive(EVENTS[0].id);
@@ -1657,7 +1672,7 @@ $('#gFilters').addEventListener('click', e => { const b = e.target.closest('[dat
 $('#thumbs').addEventListener('click', e => {
   const b = e.target.closest('[data-i]'); if (!b) return; const i = +b.dataset.i, p = galPhotos[i], kind = p.kind || 'photo';
   const link = shareLink(p), ev = EVENTS.find(x => x.id === p.event_id);
-  const media = kind === 'gif' ? `<img src="${fileUrl(p.media_path)}" alt="" style="max-height:56vh;max-width:min(320px,100%);border-radius:4px">` : kind === 'photo' ? `<img src="${fileUrl(p.path)}" alt="" style="max-height:56vh;max-width:min(320px,100%);border-radius:4px">` : `<video src="${fileUrl(p.media_path)}" controls autoplay loop muted playsinline style="max-height:56vh;max-width:min(320px,100%);border-radius:4px"></video>`;
+  const media = kind === 'gif' ? `<img src="${fileUrl(p.media_path)}" alt="" style="max-height:56vh;max-width:min(320px,100%);border-radius:4px">` : kind === 'photo' ? `<img id="gPhotoImg" src="${fileUrl(p.path)}" alt="" crossorigin="anonymous" style="max-height:56vh;max-width:min(320px,100%);border-radius:4px">` : `<video src="${fileUrl(p.media_path)}" controls autoplay loop muted playsinline style="max-height:56vh;max-width:min(320px,100%);border-radius:4px"></video>`;
   const exp = p.print_expires_at ? new Date(p.print_expires_at) : null;
   const m = modal(`<div class="row" style="justify-content:space-between"><b>Session #${galPhotos.length - i} · ${MODE_INFO[kind][0]}</b><button class="ico" data-close aria-label="Close">✕</button></div>
     <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
@@ -1668,20 +1683,45 @@ $('#thumbs').addEventListener('click', e => {
         <input class="in mono" id="photoLink" readonly value="${esc(link)}" aria-label="Photo link" style="font-size:12px">
         ${S.printQr.on && kind === 'photo' && exp ? `<div class="lbl">The QR printed on this photo ${exp > new Date() ? 'works until ' + exp.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'has expired'}. Guest links (this QR too) work for 12 hours after the photo; after that, share the event album.</div>` : ''}
         <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm" id="copyPhoto">Copy link</button><button class="btn sm" id="showTab">Show on tablet</button></div>
+        ${kind === 'photo' ? '<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px"><button class="btn sm" id="dup4r" aria-pressed="false">⊞ Duplicate to 4R</button><span class="lbl" id="dup4rInfo" style="font-size:12px">Print this photo small, 4 times on one 4×6 (4R) sheet.</span></div>' : ''}
         <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">${kind === 'photo' ? '<label class="field" style="width:80px" for="rpC">Copies<input class="in mono" id="rpC" type="number" min="1" max="10" value="1"></label><button class="btn pri" id="reprint" style="align-self:flex-end">Print again</button>' : ''}<button class="btn" id="dlOrig" style="align-self:flex-end">Download original</button>${kind === 'photo' && p.media_path ? `<button class="btn" id="dlGif" style="align-self:flex-end">Download ${/\.gif$/.test(p.media_path) ? 'GIF' : 'boomerang'}</button>` : ''}<button class="btn" id="delPhoto" style="align-self:flex-end;color:#ff8a80">Delete</button></div>
       </div>
     </div>`, 780);
   qr(m.querySelector('#photoQr'), link, 112);
   m.querySelector('#copyPhoto').onclick = () => copyText(link, m.querySelector('#photoLink'));
   m.querySelector('#showTab').onclick = () => { if (!others().some(d => d.role === 'booth')) return toast('The tablet is not connected'); chan.send({ type: 'broadcast', event: 'show-qr', payload: { url: link, label: 'Scan to get your photo' } }); toast('QR shown on the tablet'); };
+  // "Duplicate to 4R": the photo four times (2 × 2, each 2R size) on one 4×6 sheet. Toggles back to the normal print.
+  let as4r = false, sheet4r = null, sheet4rPath = '';
+  const d4 = m.querySelector('#dup4r'), img = m.querySelector('#gPhotoImg'), origSrc = img && img.src;
+  if (d4) d4.onclick = async () => {
+    as4r = !as4r; d4.setAttribute('aria-pressed', as4r); d4.textContent = as4r ? '↩ Back to 2R' : '⊞ Duplicate to 4R';
+    m.querySelector('#dup4rInfo').textContent = as4r ? 'Print again and download now use the 4R sheet (4 copies).' : 'Print this photo small, 4 times on one 4×6 (4R) sheet.';
+    if (m.querySelector('#dlOrig')) m.querySelector('#dlOrig').textContent = as4r ? 'Download 4R sheet' : 'Download original';
+    if (!as4r) { img.src = origSrc; return; }
+    try { if (!sheet4r) { d4.disabled = true; sheet4r = sheet4R(await loadImg(fileUrl(p.path))); } img.src = scaled(sheet4r, 900).toDataURL('image/jpeg', .85); }
+    catch (err) { toast('Could not make the 4R sheet: ' + err.message, 5000); as4r = false; d4.textContent = '⊞ Duplicate to 4R'; }
+    finally { d4.disabled = false; }
+  };
+  const path4r = async () => {   // upload the 4R sheet once, so the printing laptop can fetch it
+    if (sheet4rPath) return sheet4rPath;
+    const path = p.path.replace(/\.jpg$/, '') + '-4r.jpg'; await upload(path, await jpeg(sheet4r, .95), 'image/jpeg'); return (sheet4rPath = path);
+  };
   const rp = m.querySelector('#reprint');
-  if (rp) rp.onclick = async () => { try { const c = Math.max(1, Math.min(10, +m.querySelector('#rpC').value || 1)); check(await sb.from('print_jobs').insert({ event_id: p.event_id, photo_id: p.id, path: p.print_path || p.path, copies: c, label: `${ev ? ev.name : ''} · reprint` })); toast(printerOn() ? 'Sent to the printer' : 'Added to the print queue. Turn on printing in Printer.'); runPrinter(); } catch (err) { toast(err.message, 4000); } };
+  if (rp) rp.onclick = async () => {
+    rp.disabled = true;
+    try {
+      const c = Math.max(1, Math.min(10, +m.querySelector('#rpC').value || 1)), path = as4r ? await path4r() : (p.print_path || p.path);
+      check(await sb.from('print_jobs').insert({ event_id: p.event_id, photo_id: p.id, path, copies: c, label: `${ev ? ev.name : ''} · reprint${as4r ? ' · 4R ×4' : ''}` }));
+      toast(printerOn() ? 'Sent to the printer' : 'Added to the print queue. Turn on printing in Printer.'); runPrinter();
+    } catch (err) { toast(err.message, 4000); }
+    rp.disabled = false;
+  };
   const dlPath = async path => { try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
   if (m.querySelector('#dlGif')) m.querySelector('#dlGif').onclick = () => dlPath(p.media_path);
-  m.querySelector('#dlOrig').onclick = async () => { const path = kind === 'photo' ? p.path : (p.media_path || p.path); try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
+  m.querySelector('#dlOrig').onclick = async () => { if (as4r && sheet4r) return download(await jpeg(sheet4r, .95), p.path.split('/').pop().replace(/\.jpg$/, '') + '-4R.jpg'); const path = kind === 'photo' ? p.path : (p.media_path || p.path); try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
   m.querySelector('#delPhoto').onclick = async () => {
     if (!confirm('Delete this from the gallery? The guest link stops working.')) return;
-    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
+    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path, p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
   };
 });
 $('#copyAlbum').onclick = () => copyText($('#albumLink').value, $('#albumLink'));
