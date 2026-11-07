@@ -55,7 +55,7 @@ const STUDIO_DEFAULT = {
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   stickers: { on: true, packs: ['props', 'love', 'party', 'raya', 'fun'], custom: [], texts: [{ t: 'Selamat Pengantin Baru', font: 'Great Vibes', color: '#ffffff' }] },
-  guestbook: { on: false, prompt: 'Write a message for the couple ✍️', auto: false },
+  guestbook: { on: false, prompt: 'Write a message for the couple ✍️', auto: false, paper: 'cream', paperSrc: '', screen: '#141416', screenSrc: '', pdfBg: true },
   beauty: 0,
   smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
@@ -1351,6 +1351,7 @@ function openGuestbook() {
   const s = B.session; if (!s || !s.row) return;
   clearInterval(B.doneT); GB.strokes = []; $('#gbName').value = '';
   $('#gbPrompt').textContent = (S.guestbook && S.guestbook.prompt) || 'Write a message for the couple ✍️';
+  paintGuestbook($('#b-msg'), $('#b-msg .gbpad'));
   bscreen('b-msg'); requestAnimationFrame(gbSetup);
 }
 function backToDone(msg) {
@@ -2202,7 +2203,7 @@ function renderStudio() {
   $('#bgDim').value = S.bg.dim; $('#bgSub').value = S.bg.sub || '';
   $$('#bgColors .sw').forEach(x => x.classList.toggle('on', x.dataset.c === S.bg.color));
   $('#bgFileName').textContent = S.bg.src ? S.bg.src.split('/').pop() : 'No file yet';
-  applyBrand(); renderBgPrev(); renderPq(); renderPsSettings(); renderStickerSettings();
+  applyBrand(); renderBgPrev(); renderPq(); renderPsSettings(); renderStickerSettings(); renderGbStyleSettings();
 }
 function renderBgPrev() {
   paintBg($('#bgPrevLayer'), $('#bgPrevShade'), S.bg); $('#bgPrevTitle').textContent = ACTIVE ? ACTIVE.name : '';
@@ -2318,6 +2319,57 @@ $('#gbPromptIn').addEventListener('input', () => { S.guestbook.prompt = $('#gbPr
 $('#gbAuto').onchange = () => { S.guestbook.auto = $('#gbAuto').checked; };
 $('#beautyDef').onchange = () => { S.beauty = +$('#beautyDef').value; };
 
+/* ---- Guestbook look: the writing card and the screen behind it (also used for the PDF pages) ---- */
+const GB_PAPERS = {
+  cream: ['Cream', '#fffdf8', '#fffdf8'],
+  white: ['White', '#ffffff', '#ffffff'],
+  lined: ['Lined', 'linear-gradient(90deg,transparent 58px,#f0b4b4 58px 60px,transparent 60px),repeating-linear-gradient(#fffdf8 0 38px,#c9dcf0 38px 40px)', '#fffdf8'],
+  dotted: ['Dotted', 'radial-gradient(#d6ccbc 1.6px,transparent 2.2px) 0 0/26px 26px,#fffdf8', '#fffdf8'],
+  kraft: ['Kraft', 'radial-gradient(rgba(90,60,30,.08) 1px,transparent 1.5px) 0 0/7px 7px,#d9bb8f', '#d9bb8f'],
+  blush: ['Blush', 'radial-gradient(120% 90% at 20% 10%,#fff4f6,#fbdde4)', '#fde8ec'],
+};
+const GB_SCREENS = ['#141416', '#2b1d1f', '#1d2433', '#24301f', '#3a2b1c', '#f4efe6'];
+const gbStyle = () => ({ paper: 'cream', paperSrc: '', screen: '#141416', screenSrc: '', ...(S.guestbook || {}) });
+// The card and the screen behind it, on the tablet (or the admin preview)
+function paintGuestbook(screenEl, padEl) {
+  const g = gbStyle(), paper = GB_PAPERS[g.paper] || GB_PAPERS.cream;
+  padEl.style.background = g.paper === 'image' && g.paperSrc ? `url("${g.paperSrc}") center/cover no-repeat, #fff` : paper[1];
+  screenEl.style.background = g.screenSrc ? `url("${g.screenSrc}") center/cover no-repeat, ${g.screen}` : `radial-gradient(90% 80% at 50% 30%, ${g.screen}, ${g.screen === '#f4efe6' ? '#e6dccb' : '#0b0b0c'})`;
+  const light = !g.screenSrc && g.screen === '#f4efe6';
+  screenEl.classList.toggle('gblight', light);
+}
+function renderGbStyleSettings() {
+  const g = gbStyle();
+  $('#gbPapers').innerHTML = Object.entries(GB_PAPERS).map(([k, [n, css]]) => `<button class="gbsw ${g.paper === k ? 'on' : ''}" data-paper="${k}" style="background:${css}" title="${n}"><span>${n}</span></button>`).join('')
+    + `<button class="gbsw ${g.paper === 'image' ? 'on' : ''}" data-paper="image" style="${g.paperSrc ? `background:url('${esc(g.paperSrc)}') center/cover` : ''}" title="Your picture"><span>${g.paperSrc ? 'Your picture' : 'Upload…'}</span></button>`;
+  $('#gbScreens').innerHTML = GB_SCREENS.map(c => `<button class="sw ${!g.screenSrc && g.screen === c ? 'on' : ''}" data-screen="${c}" style="background:${c}" aria-label="Screen colour ${c}"></button>`).join('');
+  $('#gbScreenFileName').textContent = g.screenSrc ? 'Picture in use' : 'No picture';
+  $('#gbScreenClear').hidden = !g.screenSrc;
+  $('#gbPdfBg').checked = g.pdfBg !== false;
+  paintGuestbook($('#gbPrev'), $('#gbPrevPad'));
+}
+$('#gbPapers').addEventListener('click', e => {
+  const b = e.target.closest('[data-paper]'); if (!b) return;
+  if (b.dataset.paper === 'image' && !S.guestbook.paperSrc) return $('#gbPaperFile').click();
+  S.guestbook.paper = b.dataset.paper; renderGbStyleSettings();
+});
+$('#gbScreens').addEventListener('click', e => { const b = e.target.closest('[data-screen]'); if (!b) return; S.guestbook.screen = b.dataset.screen; S.guestbook.screenSrc = ''; renderGbStyleSettings(); });
+$('#gbScreenClear').onclick = () => { S.guestbook.screenSrc = ''; renderGbStyleSettings(); };
+$('#gbPdfBg').onchange = () => { S.guestbook.pdfBg = $('#gbPdfBg').checked; };
+async function gbUpload(f, prefix) {
+  if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { toast('Use a JPG or PNG picture.'); return ''; }
+  if (f.size > 15 * 1024 * 1024) { toast('That picture is over 15 MB.'); return ''; }
+  const path = `u-${USER.id}/${prefix}-${Date.now().toString(36)}.${f.type === 'image/png' ? 'png' : f.type === 'image/webp' ? 'webp' : 'jpg'}`;
+  await upload(path, f, f.type); return fileUrl(path);
+}
+$('#gbPaperFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { const u = await gbUpload(f, 'gbcard'); if (u) { S.guestbook.paperSrc = u; S.guestbook.paper = 'image'; renderGbStyleSettings(); toast('Uploaded. Press Save to send to the tablet.'); } } catch (err) { toast(err.message, 4000); }
+});
+$('#gbScreenFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { const u = await gbUpload(f, 'gbscreen'); if (u) { S.guestbook.screenSrc = u; renderGbStyleSettings(); toast('Uploaded. Press Save to send to the tablet.'); } } catch (err) { toast(err.message, 4000); }
+});
 /* ---- Guestbook PDF: every message of the event with its photo ---- */
 async function imgData(url, max, type) {
   const r = await fetch(url); if (!r.ok) throw new Error('Could not load ' + url.split('/').pop());
@@ -2335,16 +2387,24 @@ $('#gGuestbook').onclick = async () => {
   const b = $('#gGuestbook'); b.disabled = true; b.textContent = 'Making the PDF…';
   try {
     await loadScript('../vendor/jspdf.umd.min.js');
-    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' }), PW = 210, PH = 297;
+    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' }), PW = 210, PH = 297, g = gbStyle();
+    // Page background: the guestbook card picture (cover), or the paper colour
+    let pageImg = null;
+    if (g.pdfBg !== false && g.paper === 'image' && g.paperSrc) { try { pageImg = await imgData(g.paperSrc, 1800, 'image/jpeg'); } catch (e) { } }
+    const hex = (g.pdfBg !== false && GB_PAPERS[g.paper] ? GB_PAPERS[g.paper][2] : '#faf6f0').replace('#', '');
+    const paintPage = () => {
+      if (pageImg) { const k = Math.max(PW / pageImg.w, PH / pageImg.h), w = pageImg.w * k, h = pageImg.h * k; doc.addImage(pageImg.data, 'JPEG', (PW - w) / 2, (PH - h) / 2, w, h, 'pagebg'); }
+      else { doc.setFillColor(parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)); doc.rect(0, 0, PW, PH, 'F'); }
+    };
     // Cover
-    doc.setFillColor(250, 246, 240); doc.rect(0, 0, PW, PH, 'F');
+    paintPage();
     doc.setTextColor(91, 74, 51); doc.setFont('times', 'italic'); doc.setFontSize(40); doc.text(doc.splitTextToSize(ev.name || 'Our day', 170), PW / 2, 120, { align: 'center' });
     doc.setFont('helvetica', 'normal'); doc.setFontSize(14); doc.text(String(ev.event_date || ''), PW / 2, 150, { align: 'center' });
     doc.setFontSize(12); doc.text(`Guestbook · ${list.length} message${list.length > 1 ? 's' : ''}`, PW / 2, 162, { align: 'center' });
     doc.setFontSize(10); doc.setTextColor(140, 130, 115); doc.text(S.brand || '', PW / 2, PH - 20, { align: 'center' });
     // Two messages a page: the photo on the left, the handwriting on the right
     for (let i = 0; i < list.length; i++) {
-      if (i % 2 === 0) { doc.addPage(); doc.setFillColor(250, 246, 240); doc.rect(0, 0, PW, PH, 'F'); }
+      if (i % 2 === 0) { doc.addPage(); paintPage(); }
       b.textContent = `Making the PDF… ${i + 1}/${list.length}`;
       const p = list[i], top = i % 2 === 0 ? 14 : PH / 2 + 4, boxH = PH / 2 - 22;
       try {

@@ -378,6 +378,13 @@
           <div class="lbl" style="margin-top:-6px">After each session the tablet offers “Write a message”. Guests write with a finger. Download the guestbook PDF in Gallery &amp; share.</div>
           <label class="field" for="gbPromptIn">Button and title text<input class="in" id="gbPromptIn" maxlength="50" placeholder="Write a message for the couple ✍️"></label>
           <label class="tog" style="justify-content:flex-start;gap:10px">Open the message screen by itself after Print / Done<input type="checkbox" id="gbAuto"></label>
+          <div class="lbl" style="margin-top:4px">Writing card</div>
+          <div class="row" id="gbPapers" style="flex-wrap:wrap;gap:8px"></div>
+          <div class="row" style="gap:10px"><label class="btn sm" for="gbPaperFile" style="cursor:pointer">Upload card picture</label><input type="file" id="gbPaperFile" accept="image/jpeg,image/png,image/webp" hidden><span class="lbl" style="font-size:12px">e.g. a card design from Canva. Best size 1800 × 850 px (wide); keep the edges simple, they may be trimmed a little.</span></div>
+          <div class="lbl" style="margin-top:4px">Screen behind the card</div>
+          <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center"><span class="row" id="gbScreens" style="gap:6px"></span><label class="btn sm" for="gbScreenFile" style="cursor:pointer">Upload picture</label><input type="file" id="gbScreenFile" accept="image/jpeg,image/png,image/webp" hidden><span class="lbl" id="gbScreenFileName" style="font-size:12px"></span><button class="btn sm" id="gbScreenClear" hidden>Remove picture</button></div>
+          <div class="gbprev" id="gbPrev"><div class="gbprevtitle">Write a message ✍️</div><div class="gbprevpad" id="gbPrevPad"><span style="font-family:'Dancing Script',cursive;font-size:22px;color:#1d1d1f">Selamat pengantin baru!</span></div></div>
+          <label class="tog" style="justify-content:flex-start;gap:10px">Use the card look for the guestbook PDF pages<input type="checkbox" id="gbPdfBg"></label>
           <label class="field" for="beautyDef" style="width:260px">Beauty filter to start with<select class="in" id="beautyDef"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Strong</option></select></label>
         </div>
         <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">

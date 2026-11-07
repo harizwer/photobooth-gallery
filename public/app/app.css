@@ -344,4 +344,12 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .gbcard{width:min(900px,100%);display:flex;flex-direction:column;gap:12px}
 .gbpad{position:relative;background:#fffdf8;border-radius:16px;height:min(52vh,460px);box-shadow:0 10px 40px rgba(0,0,0,.5);overflow:hidden}
 .gbpad canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.gbsw{all:unset;cursor:pointer;width:84px;height:56px;border-radius:10px;border:2px solid var(--line2);position:relative;overflow:hidden;background:#333}
+.gbsw span{position:absolute;left:0;right:0;bottom:0;font-size:11px;padding:2px 4px;background:rgba(0,0,0,.55);color:#fff;text-align:center}
+.gbsw.on{border-color:var(--accent);box-shadow:0 0 0 2px rgba(255,90,38,.35)}
+.gbprev{border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--line2)}
+.gbprevtitle{font-weight:700;color:#fff}
+.gbprev.gblight .gbprevtitle{color:#3a2f22}
+.gbprevpad{height:120px;border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+#b-msg.gblight{color:#3a2f22}
 .gbhint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b9b2a6;font-size:22px;pointer-events:none}
