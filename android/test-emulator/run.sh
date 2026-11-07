@@ -4,6 +4,7 @@ set -x
 mkdir -p out-emu
 adb install -r app.apk
 adb shell pm grant my.photobooth.booth android.permission.CAMERA
+adb shell pm grant my.photobooth.booth android.permission.RECORD_AUDIO
 adb shell am start -n my.photobooth.booth/.MainActivity
 sleep 30
 adb exec-out screencap -p > out-emu/1-start.png

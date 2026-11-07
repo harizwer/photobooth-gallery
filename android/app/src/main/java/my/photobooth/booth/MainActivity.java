@@ -92,8 +92,9 @@ public class MainActivity extends Activity {
         f.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         registerReceiver(usbEvents, f);
 
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[]{Manifest.permission.CAMERA}, 1);
+        // Camera for the tablet-camera fallback, microphone for video messages
+        String[] missing = missingOf(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO});
+        if (missing.length > 0) requestPermissions(missing, 1);
     }
 
     private void createWebView() {
@@ -196,12 +197,35 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
-        if (pendingWebPermission != null) {
-            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) pendingWebPermission.grant(pendingWebPermission.getResources());
-            else pendingWebPermission.deny();
-            pendingWebPermission = null;
+    private String[] missingOf(String[] perms) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String p : perms) if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) out.add(p);
+        return out.toArray(new String[0]);
+    }
+
+    /** Android permissions a web page request needs (camera and/or microphone). */
+    private static String[] permsFor(PermissionRequest r) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String res : r.getResources()) {
+            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res)) out.add(Manifest.permission.CAMERA);
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res)) out.add(Manifest.permission.RECORD_AUDIO);
         }
+        return out.toArray(new String[0]);
+    }
+
+    /** Grants the parts of a web page request that Android allows; denies it if none. */
+    private void answerWebPermission(PermissionRequest r) {
+        java.util.List<String> ok = new java.util.ArrayList<>();
+        for (String res : r.getResources()) {
+            String need = PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res) ? Manifest.permission.CAMERA
+                    : PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res) ? Manifest.permission.RECORD_AUDIO : null;
+            if (need != null && checkSelfPermission(need) == PackageManager.PERMISSION_GRANTED) ok.add(res);
+        }
+        if (ok.isEmpty()) r.deny(); else r.grant(ok.toArray(new String[0]));
+    }
+
+    @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        if (pendingWebPermission != null) { answerWebPermission(pendingWebPermission); pendingWebPermission = null; }
     }
 
     @Override protected void onActivityResult(int req, int result, Intent data) {
@@ -304,8 +328,9 @@ public class MainActivity extends Activity {
     final class Chrome extends WebChromeClient {
         @Override public void onPermissionRequest(PermissionRequest r) {
             if (!ours(r.getOrigin())) { r.deny(); return; }
-            if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) r.grant(r.getResources());
-            else { pendingWebPermission = r; requestPermissions(new String[]{Manifest.permission.CAMERA}, 1); }
+            String[] missing = missingOf(permsFor(r));
+            if (missing.length == 0) answerWebPermission(r);
+            else { pendingWebPermission = r; requestPermissions(missing, 1); }
         }
 
         @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams p) {

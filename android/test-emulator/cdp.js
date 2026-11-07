@@ -25,6 +25,8 @@ const check = `(async () => { const out = {}; try {
   const lim = (pr, ms) => Promise.race([pr, new Promise((_, r) => setTimeout(() => r(new Error('timed out')), ms))]);
   try { const s = await lim(navigator.mediaDevices.getUserMedia({ video: true }), 20000); out.tabletCamera = s.getVideoTracks()[0].label || 'ok'; s.getTracks().forEach(t => t.stop()); }
   catch (e) { out.tabletCamera = 'ERROR ' + e.name + ': ' + e.message; }
+  try { const m = await lim(navigator.mediaDevices.getUserMedia({ audio: true }), 15000); out.microphone = m.getAudioTracks()[0].label || 'ok'; m.getTracks().forEach(t => t.stop()); }
+  catch (e) { out.microphone = 'ERROR ' + e.name + ': ' + e.message; }
   out.loginScreen = !!document.querySelector('#v-login.on');
   out.boothCodeLoaded = typeof window.__pbNativeDone === 'function';
   out.log = PBNative.log();

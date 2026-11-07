@@ -57,6 +57,7 @@ const STUDIO_DEFAULT = {
   stickers: { on: true, packs: ['props', 'love', 'party', 'raya', 'fun'], custom: [], texts: [{ t: 'Selamat Pengantin Baru', font: 'Great Vibes', color: '#ffffff' }] },
   guestbook: { on: false, prompt: 'Write a message for the couple ✍️', auto: false, paper: 'cream', paperSrc: '', screen: '#141416', screenSrc: '', pdfBg: true },
   beauty: 0,
+  videoBook: { on: false, sec: 20, prompt: 'Say something to the couple! 🎥', montage: { format: 'portrait', bg: 'leather', bgSrc: '', title: 'Video Guestbook', names: '', font: 'Great Vibes', color: '#ffffff' } },
   smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
   modes: { photo: true, gif: true, boom: true, video: false },
@@ -71,7 +72,7 @@ function mergeStudio(d) {
 }
 const cachedStudio = store.get('studio', null);
 // Older saved setting 'laptop' (removed): use the Canon on the tablet
-function fixOldSettings(o) { if (o && o.capture && !/^(dslr|user|environment)$/.test(o.capture.camera)) o.capture.camera = 'dslr'; o.modes = { photo: true, gif: false, boom: false, video: false }; if (o && o.capture && o.capture.photoGif === undefined) o.capture.photoGif = true; return o; }   // photo mode only; the strip boomerang is optional
+function fixOldSettings(o) { if (o && o.capture && !/^(dslr|user|environment)$/.test(o.capture.camera)) o.capture.camera = 'dslr'; o.modes = { photo: true, gif: false, boom: false, video: !!(o.videoBook && o.videoBook.on) }; if (o && o.capture && o.capture.photoGif === undefined) o.capture.photoGif = true; return o; }   // photo mode only; the strip boomerang is optional
 if (cachedStudio) S = mergeStudio(cachedStudio);
 const DEFAULT_LOGO = sz => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="#ff5a26" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3 7M21 12l-7 3M12 21l-3-7M3 12l7-3"/></svg>`;
 function applyBrand() {
@@ -431,7 +432,7 @@ const ac = () => actx || (actx = new (window.AudioContext || window.webkitAudioC
 function beep(f = 880, d = .12) { try { const a = ac(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = f; g.gain.setValueAtTime(.25, a.currentTime); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + d); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + d); } catch (e) {} }
 function shutter() { try { const a = ac(), n = a.sampleRate * .18, b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); const s = a.createBufferSource(), g = a.createGain(); g.gain.value = .5; s.buffer = b; s.connect(g).connect(a.destination); s.start(); } catch (e) {} }
 function bscreen(id) { $$('#v-booth .bs').forEach(s => s.classList.toggle('on', s.id === id)); }
-const MODE_INFO = { photo: ['Photo', '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'], gif: ['GIF', '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 12h3v3M14 9v6M17 9h-3M17 12h-2"/>'], boom: ['Boomerang', '<path d="M4 12a8 8 0 0114-5M20 12a8 8 0 01-14 5"/><path d="M18 3v4h-4M6 21v-4h4"/>'], video: ['Video', '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/>'] };
+const MODE_INFO = { photo: ['Photo', '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'], gif: ['GIF', '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 12h3v3M14 9v6M17 9h-3M17 12h-2"/>'], boom: ['Boomerang', '<path d="M4 12a8 8 0 0114-5M20 12a8 8 0 01-14 5"/><path d="M18 3v4h-4M6 21v-4h4"/>'], video: ['Video message', '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/>'] };
 const enabledModes = () => Object.keys(MODE_INFO).filter(k => S.modes[k]);
 
 async function startBooth() {
@@ -910,27 +911,36 @@ async function startSession(design) {
       const t0 = performance.now();
       while (performance.now() - t0 < 1600) { if (B.session !== me) return; me.shots.push(grabFrame(1920)); await sleep(70); }
     } else if (me.mode === 'video') {
-      if (!(await countdown(me, 'Video · say something nice!'))) return;
-      $('#b-count').textContent = '';
-      me.blob = await recordStream(liveStream(), (S.capture.videoSec || 10) * 1000, me, s => { $('#shotInfo').innerHTML = `<span class="recdot"></span>Recording · ${s}s left`; $('#b-count').textContent = s; });
+      const VB = S.videoBook || {}, sec = Math.max(5, Math.min(60, +VB.sec || 20));
+      let mic = null;
+      try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }); }
+      catch (e) { toast('The microphone is not allowed, so this video has no sound. Allow the microphone for the app or website.', 7000); }
+      try {
+        if (!(await countdown(me, VB.prompt || 'Say something nice! 🎥'))) return;
+        $('#b-count').textContent = ''; $('#recStop').hidden = false;
+        const stream = new MediaStream([...liveStream().getVideoTracks(), ...(mic ? mic.getAudioTracks() : [])]);
+        me.blob = await recordStream(stream, sec * 1000, me, s => { $('#shotInfo').innerHTML = `<span class="recdot"></span>Recording · ${s}s left`; $('#b-count').textContent = s; }, 4e6);
+      } finally { $('#recStop').hidden = true; if (mic) mic.getTracks().forEach(t => t.stop()); }
       if (B.session !== me) return;
-      me.poster = grabFrame(4000);
+      me.poster = grabFrame(1920);
     }
   } catch (e) { return showErr('Camera problem', e.message, () => startSession(design), goHome); }
   $('#b-count').textContent = '';
   await openReview();
 }
-function recMime() { const c = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']; return c.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || ''; }
-function recordStream(stream, ms, me, tick) {
+function recMime() { const c = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']; return c.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || ''; }
+function recordStream(stream, ms, me, tick, bitrate = 12e6) {
   return new Promise((res, rej) => {
     if (!window.MediaRecorder) return rej(new Error('This browser cannot record video.'));
     const mime = recMime(), chunks = [];
-    const r = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 12e6 } : { videoBitsPerSecond: 12e6 });
+    const r = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: bitrate, audioBitsPerSecond: 128e3 } : { videoBitsPerSecond: bitrate });
+    me.stopRec = () => { if (r.state === 'recording') r.stop(); };
     r.ondataavailable = e => e.data.size && chunks.push(e.data);
-    r.onstop = () => res(new Blob(chunks, { type: (r.mimeType || mime || 'video/webm').split(';')[0] }));
+    let t = 0;
+    r.onstop = () => { clearInterval(t); res(new Blob(chunks, { type: (r.mimeType || mime || 'video/webm').split(';')[0] })); };
     r.start(250);
     let left = Math.round(ms / 1000); tick && tick(left);
-    const t = setInterval(() => { left--; if (B.session !== me || left <= 0) { clearInterval(t); r.stop(); } else tick && tick(left); }, 1000);
+    t = setInterval(() => { left--; if (B.session !== me || left <= 0) { clearInterval(t); if (r.state !== 'inactive') r.stop(); } else tick && tick(left); }, 1000);
   });
 }
 // Boomerang: play the frames forward and back twice, recorded to a video file.
@@ -1020,7 +1030,8 @@ async function renderSession() {
       } finally { busy(false); }
     }
     const url = URL.createObjectURL(s.media);
-    box.innerHTML = s.mode === 'gif' ? `<img class="media wide" alt="Your GIF" src="${url}">` : `<video class="media wide" src="${url}" autoplay loop muted playsinline></video>`;
+    box.innerHTML = s.mode === 'gif' ? `<img class="media wide" alt="Your GIF" src="${url}">` : s.mode === 'video' ? `<video class="media wide" src="${url}" autoplay playsinline controls></video>` : `<video class="media wide" src="${url}" autoplay loop muted playsinline></video>`;
+    if (s.mode === 'video') { const v = box.querySelector('video'); v.play().catch(() => { v.muted = true; v.play().catch(() => {}); }); }
   }
 }
 async function openReview() {
@@ -1402,6 +1413,7 @@ function showErr(title, msg, onRetry, onCancel) {
   $('#errRetry').onclick = () => { $('#bErr').hidden = true; onRetry && onRetry(); };
   $('#errCancel').onclick = () => { $('#bErr').hidden = true; (onCancel || goHome)(); };
 }
+$('#recStop').onclick = () => { if (B.session && B.session.stopRec) B.session.stopRec(); };
 $('#printBtn').onclick = doPrint; $('#doneBtn').onclick = finish; $('#backStart').onclick = goHome;
 $('#retakeBtn').onclick = () => { const s = B.session; if (s) { B.mode = s.mode; startSession(s.design); } };
 $('#pickBack').onclick = goHome; $('#cancelShoot').onclick = goHome;
@@ -1840,7 +1852,7 @@ const MODES = [
   { key: 'boom', name: 'Boomerang', spec: 'High resolution', note: 'Video · plays forward and back' },
   { key: 'video', name: 'Video', spec: 'High resolution', note: 'Video with the length you choose' },
 ];
-function renderMedia() { renderModes(); renderCaptureForm(); renderSmileSettings(); }
+function renderMedia() { renderModes(); renderCaptureForm(); renderSmileSettings(); renderVideoBookSettings(); }
 function renderModes() {
   $('#modes').innerHTML = MODES.map(m => { const on = !!S.modes[m.key]; return `<button class="card mode ${on ? 'on' : ''}" data-m="${m.key}" aria-pressed="${on}"><div class="row" style="justify-content:space-between;width:100%"><span class="row" style="font-weight:600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m.key][1]}</svg>${m.name}</span><span class="chip ${on ? '' : 'mute'}">${on ? 'On' : 'Off'}</span></div><div class="mono" style="font-size:22px;font-weight:600">${m.spec}</div><div class="lbl">${m.note}</div></button>`; }).join('');
 }
@@ -2370,6 +2382,193 @@ $('#gbScreenFile').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   try { const u = await gbUpload(f, 'gbscreen'); if (u) { S.guestbook.screenSrc = u; renderGbStyleSettings(); toast('Uploaded. Press Save to send to the tablet.'); } } catch (err) { toast(err.message, 4000); }
 });
+/* ---- Video guestbook settings (Capture & media) ---- */
+function renderVideoBookSettings() {
+  const v = S.videoBook;
+  $('#vbOn').checked = !!v.on; $('#vbSec').value = v.sec || 20; $('#vbPrompt').value = v.prompt || '';
+}
+$('#vbOn').onchange = () => { S.videoBook.on = $('#vbOn').checked; S.modes.video = S.videoBook.on; };
+$('#vbSec').onchange = () => { S.videoBook.sec = Math.max(5, Math.min(60, Math.round(+$('#vbSec').value || 20))); $('#vbSec').value = S.videoBook.sec; };
+$('#vbPrompt').addEventListener('input', () => { S.videoBook.prompt = $('#vbPrompt').value.trim(); });
+
+/* ---- Video guestbook montage: every video message of the event in one video, on a themed frame ---- */
+const MT_BGS = { leather: ['Leather', '#5b1a17', '#ffffff'], navy: ['Navy', '#1d2433', '#ffffff'], black: ['Black', '#111111', '#ffffff'], sage: ['Sage', '#7f927a', '#ffffff'], blush: ['Blush', '#f3d3da', '#5b2a33'], cream: ['Cream', '#f1e9dc', '#4a3b2a'] };
+let mtTexture = {};
+// A soft texture so plain colours look like card or leather
+function mtBackground(W, H, key) {
+  const k = key + W + 'x' + H; if (mtTexture[k]) return mtTexture[k];
+  const [, base] = MT_BGS[key] || MT_BGS.leather, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  x.fillStyle = base; x.fillRect(0, 0, W, H);
+  if (key === 'leather') {   // pebbled leather: many small soft cells
+    for (let i = 0; i < W * H / 260; i++) { const px = Math.random() * W, py = Math.random() * H, r = 4 + Math.random() * 9; x.fillStyle = `rgba(0,0,0,${.05 + Math.random() * .12})`; x.beginPath(); x.ellipse(px, py, r, r * (.6 + Math.random() * .5), Math.random() * 3, 0, 7); x.fill(); x.fillStyle = 'rgba(255,255,255,.035)'; x.beginPath(); x.arc(px - 2, py - 2, r * .5, 0, 7); x.fill(); }
+  } else {
+    for (let i = 0; i < W * H / 90; i++) { x.fillStyle = `rgba(${Math.random() < .5 ? '0,0,0' : '255,255,255'},.035)`; x.fillRect(Math.random() * W, Math.random() * H, 2, 2); }
+  }
+  const g = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .3, W / 2, H / 2, Math.max(W, H) * .75); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.35)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  return (mtTexture[k] = c);
+}
+function mtLayout(o) {
+  const port = o.format !== 'landscape', W = port ? 1080 : 1920, H = port ? 1920 : 1080;
+  const win = port ? { x: 60, y: 560, w: 960, h: 540 } : { x: 385, y: 190, w: 1150, h: 647 };
+  return { W, H, port, win, titleY: port ? 380 : 120, namesY: port ? 1400 : 950, dateY: port ? 1500 : 1030 };
+}
+// One frame of the montage: background, title, the video window (with caption), names and date
+function mtDraw(x, o, L, bgImg, frame, caption, fade) {
+  const { W, H, win } = L, col = o.color || '#fff';
+  if (bgImg) { const k = Math.max(W / bgImg.width, H / bgImg.height); x.drawImage(bgImg, (W - bgImg.width * k) / 2, (H - bgImg.height * k) / 2, bgImg.width * k, bgImg.height * k); }
+  else x.drawImage(mtBackground(W, H, o.bg), 0, 0);
+  x.fillStyle = col; x.textAlign = 'center'; x.textBaseline = 'middle'; x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = 12;
+  x.font = `${L.port ? 120 : 96}px "Bebas Neue", Geist, sans-serif`; x.fillText((o.title || 'Video Guestbook').toUpperCase(), W / 2, L.titleY, W - 100);
+  x.shadowBlur = 0;
+  // video window with rounded corners
+  x.save(); x.beginPath(); x.roundRect(win.x, win.y, win.w, win.h, 34); x.clip();
+  x.fillStyle = '#000'; x.fillRect(win.x, win.y, win.w, win.h);
+  if (frame) {
+    const iw = frame.videoWidth || frame.width, ih = frame.videoHeight || frame.height;
+    if (iw && ih) { const k = Math.max(win.w / iw, win.h / ih); x.drawImage(frame, win.x + (win.w - iw * k) / 2, win.y + (win.h - ih * k) / 2, iw * k, ih * k); }
+  }
+  if (caption) {
+    x.font = `700 ${L.port ? 40 : 38}px Geist, system-ui, sans-serif`; const tw = Math.min(win.w - 60, x.measureText(caption).width);
+    x.fillStyle = 'rgba(0,0,0,.6)'; x.beginPath(); x.roundRect(W / 2 - tw / 2 - 18, win.y + win.h - 92, tw + 36, 62, 12); x.fill();
+    x.fillStyle = '#fff'; x.fillText(caption, W / 2, win.y + win.h - 61, win.w - 60);
+  }
+  if (fade) { x.fillStyle = `rgba(0,0,0,${fade})`; x.fillRect(win.x, win.y, win.w, win.h); }
+  x.restore();
+  x.strokeStyle = 'rgba(255,255,255,.25)'; x.lineWidth = 3; x.beginPath(); x.roundRect(win.x, win.y, win.w, win.h, 34); x.stroke();
+  x.fillStyle = col; x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = 10;
+  x.font = `${L.port ? 130 : 104}px "${o.font || 'Great Vibes'}", cursive`; x.fillText(o.names || '', W / 2, L.namesY, W - 80);
+  x.font = `500 ${L.port ? 40 : 34}px Geist, system-ui, sans-serif`; x.fillText(o.date || '', W / 2, L.dateY);
+  x.shadowBlur = 0;
+}
+const mtFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+function mtVideo(src) {
+  return new Promise((res, rej) => {
+    const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.playsInline = true; v.preload = 'auto'; v.src = src;
+    v.onloadeddata = () => res(v); v.onerror = () => rej(new Error('Could not load a video'));
+  });
+}
+async function renderMontage(clips, o, onProgress, cancel) {
+  const L = mtLayout(o), c = document.createElement('canvas'); c.width = L.W; c.height = L.H; const x = c.getContext('2d');
+  await Promise.all([document.fonts.load(`120px "Bebas Neue"`), document.fonts.load(`120px "${o.font || 'Great Vibes'}"`)]).catch(() => {});
+  const bgImg = o.bg === 'image' && o.bgSrc ? await loadImg(o.bgSrc) : null;
+  const ac = new (window.AudioContext || window.webkitAudioContext)(), dest = ac.createMediaStreamDestination();
+  const stream = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  const mime = recMime(), chunks = [];
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8e6, audioBitsPerSecond: 160e3 } : {});
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  const stopped = new Promise(r => rec.onstop = r);
+  const total = clips.reduce((t, k) => t + (k.dur || 10), 0) + 4; let done = 0;
+  mtDraw(x, o, L, bgImg, null, '', 0); rec.start(500);
+  // intro: the frame on its own for 2 seconds
+  for (const ti = performance.now(); performance.now() - ti < 2000 && !cancel.on;) { mtDraw(x, o, L, bgImg, null, '', 0); await mtFrame(); }
+  done += 2; onProgress(done / total);
+  for (const k of clips) {
+    if (cancel.on) break;
+    const v = await mtVideo(k.url); const node = ac.createMediaElementSource(v); node.connect(dest);
+    await ac.resume().catch(() => {}); await v.play();
+    const t0 = performance.now();
+    while (!v.ended && !cancel.on) {
+      const el = (performance.now() - t0) / 1000, fade = el < .35 ? 1 - el / .35 : (v.duration && v.duration - v.currentTime < .3 ? 1 - (v.duration - v.currentTime) / .3 : 0);
+      mtDraw(x, o, L, bgImg, v, k.caption || '', Math.max(0, Math.min(1, fade)));
+      onProgress(Math.min(1, (done + v.currentTime) / total));
+      await mtFrame();
+    }
+    v.pause(); node.disconnect(); done += k.dur || v.duration || 0;
+  }
+  for (const ti = performance.now(); performance.now() - ti < 2000 && !cancel.on;) { mtDraw(x, o, L, bgImg, null, '', 0); await mtFrame(); }
+  rec.stop(); await stopped; ac.close().catch(() => {});
+  return cancel.on ? null : new Blob(chunks, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] });
+}
+$('#gVideoBook').onclick = async () => {
+  const ev = EVENTS.find(e => e.id === galEvent); if (!ev) return;
+  const list = galPhotos.filter(p => p.kind === 'video' && p.media_path).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  if (!list.length) return toast('No video messages for this event yet. Turn on Video guestbook in Capture & media.', 6000);
+  const o = { ...S.videoBook.montage }; if (!o.names) o.names = ev.name || ''; o.date = ev.event_date || '';
+  const caps = {}, chosen = new Set(list.map(p => p.id));
+  const m = modal(`<div class="row" style="justify-content:space-between"><b>🎬 Video guestbook · ${esc(ev.name)}</b><button class="ico" data-close aria-label="Close">✕</button></div>
+    <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+      <div style="flex:none;display:flex;flex-direction:column;gap:8px;align-items:center"><canvas id="mtPrev" style="border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:100%"></canvas></div>
+      <div style="flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:10px">
+        <div class="row" style="gap:8px;flex-wrap:wrap"><button class="pill" data-fmt="portrait">Portrait 1080×1920 (TikTok / Reels)</button><button class="pill" data-fmt="landscape">Landscape 1920×1080</button></div>
+        <div><div class="lbl" style="margin-bottom:6px">Background</div><div class="row" id="mtBgs" style="gap:6px;flex-wrap:wrap"></div>
+          <div class="row" style="gap:8px;margin-top:6px"><label class="btn sm" for="mtBgFile" style="cursor:pointer">Upload background</label><input type="file" id="mtBgFile" accept="image/jpeg,image/png,image/webp" hidden><span class="lbl" style="font-size:12px">Best: ${'1080 × 1920'} (portrait)</span></div></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><label class="field" style="flex:1;min-width:150px">Title<input class="in" id="mtTitle" maxlength="30"></label><label class="field" style="flex:1;min-width:150px">Names<input class="in" id="mtNames" maxlength="40"></label></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><label class="field" style="width:190px">Names font<select class="in" id="mtFont">${SMILE_FONTS.map(f => `<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('')}</select></label><label class="field" style="width:90px">Text colour<input type="color" id="mtColor" style="width:100%;height:42px;border:0;background:none;padding:0"></label></div>
+        <div class="lbl">Messages (${list.length}) — untick to leave out, use ↑ ↓ to change the order, and add a caption if you like</div>
+        <div id="mtClips" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto"></div>
+        <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap"><button class="btn pri" id="mtMake">Make video</button><button class="btn" id="mtCancel" hidden>Stop</button><span class="lbl" id="mtInfo"></span></div>
+        <div style="height:8px;border-radius:4px;background:#2a2a2e" id="mtBarWrap" hidden><div id="mtBar" style="height:8px;border-radius:4px;background:var(--accent);width:0"></div></div>
+        <div class="lbl" style="font-size:12px">The video is made in real time on this laptop (about as long as all the messages together). Keep this tab open in front while it works.</div>
+      </div>
+    </div>`, 980);
+  let order = list.slice();
+  const prev = m.querySelector('#mtPrev'), px = prev.getContext('2d');
+  let firstPoster = null; loadImg(fileUrl(list[0].path)).then(i => { firstPoster = i; draw(); });
+  let bgImg = null;
+  async function draw() {
+    const L = mtLayout(o); prev.width = L.W; prev.height = L.H; prev.style.width = (L.port ? 270 : 420) + 'px';
+    if (o.bg === 'image' && o.bgSrc) bgImg = await loadImg(o.bgSrc); else bgImg = null;
+    await document.fonts.load(`40px "${o.font}"`).catch(() => {});
+    mtDraw(px, o, L, bgImg, firstPoster, caps[order[0].id] || '', 0);
+  }
+  function renderOpts() {
+    m.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('on', b.dataset.fmt === (o.format || 'portrait')));
+    m.querySelector('#mtBgs').innerHTML = Object.entries(MT_BGS).map(([k, [n, c]]) => `<button class="pill ${o.bg === k ? 'on' : ''}" data-bg="${k}"><span style="display:inline-block;width:12px;height:12px;border-radius:6px;background:${c};vertical-align:-1px;margin-right:6px;border:1px solid #fff4"></span>${n}</button>`).join('') + (o.bgSrc ? `<button class="pill ${o.bg === 'image' ? 'on' : ''}" data-bg="image">Your picture</button>` : '');
+    m.querySelector('#mtTitle').value = o.title || ''; m.querySelector('#mtNames').value = o.names || ''; m.querySelector('#mtFont').value = o.font || 'Great Vibes'; m.querySelector('#mtColor').value = o.color || '#ffffff';
+    m.querySelector('#mtClips').innerHTML = order.map((p, i) => `<div class="row" style="gap:8px;align-items:center;background:#1a1a1c;border:1px solid var(--line);border-radius:10px;padding:6px">
+      <input type="checkbox" data-pick="${p.id}" ${chosen.has(p.id) ? 'checked' : ''} aria-label="Include message ${i + 1}">
+      <img src="${fileUrl(p.thumb_path || p.path)}" alt="" style="width:64px;height:40px;object-fit:cover;border-radius:6px">
+      <span class="mono lbl" style="width:58px">${timeOf(p.created_at)}</span>
+      <input class="in" data-cap="${p.id}" placeholder="Caption (optional)" value="${esc(caps[p.id] || '')}" style="flex:1;min-width:80px;height:34px">
+      <button class="btn sm" data-up="${i}" aria-label="Move up">↑</button><button class="btn sm" data-down="${i}" aria-label="Move down">↓</button></div>`).join('');
+    draw();
+  }
+  m.addEventListener('click', e => {
+    const f = e.target.closest('[data-fmt]'); if (f) { o.format = f.dataset.fmt; return renderOpts(); }
+    const b = e.target.closest('[data-bg]'); if (b) { o.bg = b.dataset.bg; if (o.bg !== 'image') o.color = MT_BGS[o.bg][2]; return renderOpts(); }
+    const u = e.target.closest('[data-up]'), d = e.target.closest('[data-down]');
+    if (u || d) { const i = +(u || d).dataset[u ? 'up' : 'down'], j = u ? i - 1 : i + 1; if (j < 0 || j >= order.length) return; [order[i], order[j]] = [order[j], order[i]]; renderOpts(); }
+  });
+  m.addEventListener('change', e => { const c = e.target.closest('[data-pick]'); if (c) c.checked ? chosen.add(c.dataset.pick) : chosen.delete(c.dataset.pick); });
+  m.addEventListener('input', e => {
+    const c = e.target.closest('[data-cap]'); if (c) { caps[c.dataset.cap] = c.value.trim(); if (c.dataset.cap === order[0].id) draw(); return; }
+    if (e.target.id === 'mtTitle') o.title = e.target.value; if (e.target.id === 'mtNames') o.names = e.target.value; if (e.target.id === 'mtColor') o.color = e.target.value;
+    if (['mtTitle', 'mtNames', 'mtColor'].includes(e.target.id)) draw();
+  });
+  m.querySelector('#mtFont').onchange = e => { o.font = e.target.value; draw(); };
+  m.querySelector('#mtBgFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    try { const u = await gbUpload(f, 'mtbg'); if (u) { o.bgSrc = u; o.bg = 'image'; renderOpts(); } } catch (err) { toast(err.message, 4000); }
+  });
+  renderOpts();
+  const cancel = { on: false };
+  m.querySelector('#mtCancel').onclick = () => { cancel.on = true; };
+  m.querySelector('#mtMake').onclick = async () => {
+    const clips = order.filter(p => chosen.has(p.id)).map(p => ({ url: fileUrl(p.media_path), caption: caps[p.id] || '', dur: 0 }));
+    if (!clips.length) return toast('Tick at least one message');
+    const mk = m.querySelector('#mtMake'); mk.disabled = true; m.querySelector('#mtCancel').hidden = false; m.querySelector('#mtBarWrap').hidden = false; cancel.on = false;
+    // remember the look for next time (not the names, which belong to this event)
+    S.videoBook.montage = { format: o.format, bg: o.bg, bgSrc: o.bgSrc, title: o.title, font: o.font, color: o.color, names: '' }; saveStudio().catch(() => {});
+    try {
+      m.querySelector('#mtInfo').textContent = 'Getting the videos…';
+      for (const k of clips) { try { const v = await mtVideo(k.url); k.dur = isFinite(v.duration) ? v.duration : 10; v.removeAttribute('src'); v.load(); } catch (e) { k.dur = 10; } }
+      const t0 = Date.now();
+      const blob = await renderMontage(clips, o, f => {
+        m.querySelector('#mtBar').style.width = Math.round(f * 100) + '%';
+        const el = (Date.now() - t0) / 1000, left = f > .02 ? Math.max(0, el / f - el) : 0;
+        m.querySelector('#mtInfo').textContent = `Making the video… ${Math.round(f * 100)}%${left ? ` · about ${Math.ceil(left / 60)} min left` : ''}`;
+      }, cancel);
+      if (!blob) { m.querySelector('#mtInfo').textContent = 'Stopped.'; }
+      else {
+        const ext = blob.type === 'video/mp4' ? 'mp4' : 'webm';
+        download(blob, `video-guestbook-${(ev.name || 'event').replace(/[^\w]+/g, '-')}.${ext}`);
+        m.querySelector('#mtInfo').textContent = `Done · ${(blob.size / 1048576).toFixed(1)} MB downloaded (${ext.toUpperCase()})`;
+      }
+    } catch (e) { m.querySelector('#mtInfo').textContent = 'Could not make the video: ' + e.message; }
+    mk.disabled = false; m.querySelector('#mtCancel').hidden = true;
+  };
+};
 /* ---- Guestbook PDF: every message of the event with its photo ---- */
 async function imgData(url, max, type) {
   const r = await fetch(url); if (!r.ok) throw new Error('Could not load ' + url.split('/').pop());

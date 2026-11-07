@@ -203,6 +203,15 @@
           <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">Photos, GIFs, boomerangs and videos always use the highest resolution your camera can do.</div>
         </div>
       </div>
+      <div class="card" id="vbCard" style="display:flex;flex-direction:column;gap:12px">
+        <div class="row" style="justify-content:space-between"><b style="font-size:15px">🎥 Video guestbook</b><label class="tog" style="gap:8px">On<input type="checkbox" id="vbOn"></label></div>
+        <div class="lbl" style="margin-top:-6px">Adds a “Video message” button on the tablet's start screen. Guests record a short video with sound for the couple. In Gallery &amp; share, “🎬 Video guestbook” joins all the messages into one video.</div>
+        <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <label class="field" for="vbSec" style="width:200px">Longest message (seconds)<input class="in mono" type="number" id="vbSec" min="5" max="60" value="20"></label>
+          <label class="field" for="vbPrompt" style="flex:1;min-width:220px">Text on screen before recording<input class="in" id="vbPrompt" maxlength="60" placeholder="Say something to the couple! 🎥"></label>
+        </div>
+        <div class="lbl" style="font-size:12px">The tablet's microphone records the sound (the Canon has no microphone over USB). Press Save at the top to send it to the tablet.</div>
+      </div>
       <div class="card" id="smileCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
         <div style="flex:2 1 380px;min-width:0;display:flex;flex-direction:column;gap:12px">
           <b style="font-size:15px">Smile screen</b>
@@ -249,7 +258,7 @@
     <section class="sec" id="s-gallery">
       <div class="wrap" style="justify-content:space-between;align-items:center">
         <div><h2 class="title" id="gTitle"></h2><div class="lbl mono" id="gCount"></div></div>
-        <div class="row" style="flex-wrap:wrap"><select class="in" id="gEvent" style="width:240px" aria-label="Event"></select><button class="btn" id="gZip">Download all (ZIP)</button><button class="btn" id="gGuestbook">📖 Guestbook PDF</button></div>
+        <div class="row" style="flex-wrap:wrap"><select class="in" id="gEvent" style="width:240px" aria-label="Event"></select><button class="btn" id="gZip">Download all (ZIP)</button><button class="btn" id="gGuestbook">📖 Guestbook PDF</button><button class="btn" id="gVideoBook">🎬 Video guestbook</button></div>
       </div>
       <div class="wrap" style="align-items:flex-start">
         <div style="flex:3 1 460px;min-width:0;display:flex;flex-direction:column;gap:14px">
@@ -454,7 +463,7 @@
       <button class="btn rbtn" id="pickBack" style="padding:0 30px">← Back</button>
     </div>
   </div>
-  <div class="bs" id="b-shoot"><img id="shotPrev" alt="The photo just taken" hidden><div class="shotinfo" id="shotInfo"></div><div id="b-count"></div><div class="flash" id="flash"></div><button class="btn ghost" id="cancelShoot" style="position:absolute;top:16px;left:16px">✕ Cancel</button></div>
+  <div class="bs" id="b-shoot"><img id="shotPrev" alt="The photo just taken" hidden><div class="shotinfo" id="shotInfo"></div><div id="b-count"></div><button class="btn rbtn recstop" id="recStop" hidden>■ Stop</button><div class="flash" id="flash"></div><button class="btn ghost" id="cancelShoot" style="position:absolute;top:16px;left:16px">✕ Cancel</button></div>
   <div class="bs" id="b-review">
     <div id="reviewMedia"></div>
     <div class="rp">
