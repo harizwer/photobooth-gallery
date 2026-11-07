@@ -249,7 +249,7 @@
     <section class="sec" id="s-gallery">
       <div class="wrap" style="justify-content:space-between;align-items:center">
         <div><h2 class="title" id="gTitle"></h2><div class="lbl mono" id="gCount"></div></div>
-        <div class="row" style="flex-wrap:wrap"><select class="in" id="gEvent" style="width:240px" aria-label="Event"></select><button class="btn" id="gZip">Download all (ZIP)</button></div>
+        <div class="row" style="flex-wrap:wrap"><select class="in" id="gEvent" style="width:240px" aria-label="Event"></select><button class="btn" id="gZip">Download all (ZIP)</button><button class="btn" id="gGuestbook">📖 Guestbook PDF</button></div>
       </div>
       <div class="wrap" style="align-items:flex-start">
         <div style="flex:3 1 460px;min-width:0;display:flex;flex-direction:column;gap:14px">
@@ -365,6 +365,22 @@
           <div class="lbl">Photo: JPG or PNG. GIF: animated GIF. Video: MP4 or WebM (up to 50 MB), plays silently on loop. Best size: 1920 × 1080 or larger.</div>
         </div>
         <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><b>Stickers on the review screen</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="stOn"></label></div>
+          <div class="lbl" style="margin-top:-6px">Guests add stickers on top of their strip. They are printed and saved with the photo.</div>
+          <div><div class="lbl" style="margin-bottom:6px">Sticker packs guests can use</div><div class="row" id="stPacksAdmin" style="flex-wrap:wrap;gap:6px"></div></div>
+          <div><div class="lbl" style="margin-bottom:6px">Your own stickers (PNG with a transparent background)</div><div class="stkgrid" id="stCustom"></div>
+            <div class="row" style="gap:10px;margin-top:8px"><label class="btn sm" for="stFile" style="cursor:pointer">Upload PNG sticker</label><input type="file" id="stFile" accept="image/png,image/webp" multiple hidden></div></div>
+          <div><div class="lbl" style="margin-bottom:6px">Text stickers</div><div class="row" id="stTexts" style="flex-wrap:wrap;gap:6px"></div>
+            <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:flex-end"><label class="field" for="stTextIn" style="flex:1;min-width:180px">New text sticker<input class="in" id="stTextIn" maxlength="40" placeholder="Selamat Pengantin Baru"></label><label class="field" for="stTextFont" style="width:170px">Font<select class="in" id="stTextFont"></select></label><label class="field" for="stTextColor" style="width:80px">Colour<input type="color" id="stTextColor" value="#ffffff" style="width:100%;height:42px;border:0;background:none;padding:0"></label><button class="btn sm" id="stTextAdd" style="height:42px">Add</button></div></div>
+        </div>
+        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><b>Guestbook (messages for the couple)</b><label class="tog" style="gap:8px">On<input type="checkbox" id="gbOn"></label></div>
+          <div class="lbl" style="margin-top:-6px">After each session the tablet offers “Write a message”. Guests write with a finger. Download the guestbook PDF in Gallery &amp; share.</div>
+          <label class="field" for="gbPromptIn">Button and title text<input class="in" id="gbPromptIn" maxlength="50" placeholder="Write a message for the couple ✍️"></label>
+          <label class="tog" style="justify-content:flex-start;gap:10px">Open the message screen by itself after Print / Done<input type="checkbox" id="gbAuto"></label>
+          <label class="field" for="beautyDef" style="width:260px">Beauty filter to start with<select class="in" id="beautyDef"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Strong</option></select></label>
+        </div>
+        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><b>Printing screen (while the photo prints)</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="psOn"></label></div>
           <div class="lbl" style="margin-top:-6px">After the guest taps Print, the tablet shows their photo sliding out of a printer slot on this background, then the thank-you screen with the QR.</div>
           <div class="row" style="flex-wrap:wrap;gap:8px" id="psKinds" role="group" aria-label="Printing screen background">
@@ -436,11 +452,16 @@
     <div id="reviewMedia"></div>
     <div class="rp">
       <h2 style="margin:0;font-size:30px">Looking good!</h2>
-      <div id="adjWrap"><div class="lbl" style="font-size:14px;margin-bottom:8px">Zoom &amp; move: tap a photo, drag to move, pinch or use − / +</div>
+      <div class="rvtabs" id="rvTabs" role="tablist"><button data-tab="adj" class="on">🔍 Zoom</button><button data-tab="stk">⭐ Stickers</button><button data-tab="beauty">✨ Beauty</button><button data-tab="filter">🎨 Filter</button></div>
+      <div id="adjWrap" data-panel="adj"><div class="lbl" style="font-size:14px;margin-bottom:8px">Zoom &amp; move: tap a photo, drag to move, pinch or use − / +</div>
         <div class="adjpick" id="adjPick"></div>
         <div class="adjrow"><button id="adjMinus" aria-label="Zoom out">−</button><input type="range" id="adjZoom" min="50" max="300" step="1" value="100" aria-label="Zoom"><button id="adjPlus" aria-label="Zoom in">+</button><button class="btn sm" id="adjReset">Reset</button></div>
       </div>
-      <div id="filterWrap"><div class="lbl" style="font-size:14px;margin-bottom:8px">Choose a filter</div><div class="filters" id="bFilters"></div></div>
+      <div id="stkWrap" data-panel="stk" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Tap a sticker to add it. Drag to move, pinch to resize and turn.</div>
+        <div class="stkpacks" id="stkPacks"></div><div class="stkgrid" id="stkGrid"></div>
+        <div class="adjrow" id="stkSelRow" hidden><span class="lbl">Selected:</span><button id="stkSmaller" aria-label="Smaller">−</button><button id="stkBigger" aria-label="Bigger">+</button><button id="stkTurn" aria-label="Turn">⟳</button><button class="btn sm" id="stkDel" style="color:#ff8a80">Remove</button></div></div>
+      <div id="beautyWrap" data-panel="beauty" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Smoother skin and a brighter look</div><div class="filters" id="bBeauty"><button data-bt="0" class="on">Off</button><button data-bt="1">Light</button><button data-bt="2">Medium</button><button data-bt="3">Strong</button></div></div>
+      <div id="filterWrap" data-panel="filter" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Choose a filter</div><div class="filters" id="bFilters"></div></div>
       <div class="copies" id="copiesWrap"><span>Copies</span><button id="cMinus" aria-label="Fewer copies">−</button><b class="mono" id="cNum">1</b><button id="cPlus" aria-label="More copies">+</button></div>
       <button class="btn pri rbtn" id="printBtn">Print</button>
       <div class="row"><button class="btn rbtn" style="flex:1" id="retakeBtn">↺ Retake</button><button class="btn rbtn" style="flex:1" id="doneBtn">Done</button></div>
@@ -451,11 +472,24 @@
     <div class="psbg" aria-hidden="true"><div class="bglayer" id="psLayer"></div><div class="bgshade" id="psShade"></div></div>
     <div class="pscard"><div class="pstext" id="psText"></div><div class="psslot"></div><div class="psout"><img id="psImg" alt="Your photo is printing"></div><div class="psskip">Tap to continue</div></div>
   </div>
+  <div class="bs" id="b-msg">
+    <div class="gbcard">
+      <div class="row" style="justify-content:space-between;align-items:center"><b id="gbPrompt" style="font-size:22px"></b><button class="btn sm" id="gbCancel">Skip</button></div>
+      <div class="gbpad"><canvas id="gbCanvas" aria-label="Write your message here with your finger"></canvas><div class="gbhint" id="gbHint">Write here with your finger</div></div>
+      <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center">
+        <span class="row" id="gbColors" style="gap:6px"><button class="sw on" data-c="#1d1d1f" aria-label="Black" style="background:#1d1d1f"></button><button class="sw" data-c="#c0392b" aria-label="Red" style="background:#c0392b"></button><button class="sw" data-c="#1f5fbf" aria-label="Blue" style="background:#1f5fbf"></button><button class="sw" data-c="#b8860b" aria-label="Gold" style="background:#b8860b"></button><button class="sw" data-c="#d63384" aria-label="Pink" style="background:#d63384"></button></span>
+        <span class="row" id="gbSizes" style="gap:6px"><button class="pill" data-w="3">Thin</button><button class="pill on" data-w="6">Medium</button><button class="pill" data-w="10">Thick</button></span>
+        <button class="btn sm" id="gbUndo">↶ Undo</button><button class="btn sm" id="gbClear">Clear</button>
+      </div>
+      <div class="row" style="gap:10px;align-items:flex-end"><label class="field" for="gbName" style="flex:1">Your name (optional)<input class="in" id="gbName" maxlength="40" autocomplete="off"></label><button class="btn pri rbtn" id="gbSave" style="width:auto;padding:0 28px">Save message</button></div>
+    </div>
+  </div>
   <div class="bs" id="b-done">
     <div style="display:flex;flex-direction:column;gap:12px;max-width:320px">
       <div class="bt" style="font-size:52px">Thank you!</div>
       <div style="font-size:17px" id="printMsg"></div>
       <div style="height:6px;border-radius:3px;background:#2a2a2e" id="printBarWrap"><div id="printBar" style="width:10%;height:6px;border-radius:3px;background:var(--accent);transition:width 1.2s"></div></div>
+      <button class="btn pri rbtn" id="gbOpen" hidden>✍️ Write a message</button>
       <button class="btn rbtn" id="backStart" style="margin-top:10px">Back to start</button>
       <div class="lbl" id="doneTimer"></div>
     </div>

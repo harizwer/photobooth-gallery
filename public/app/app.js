@@ -54,6 +54,9 @@ const STUDIO_DEFAULT = {
   brand: 'Photobooth Studio', guestFooter: '', logo: '',
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
+  stickers: { on: true, packs: ['props', 'love', 'party', 'raya', 'fun'], custom: [], texts: [{ t: 'Selamat Pengantin Baru', font: 'Great Vibes', color: '#ffffff' }] },
+  guestbook: { on: false, prompt: 'Write a message for the couple ✍️', auto: false },
+  beauty: 0,
   smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
   modes: { photo: true, gif: true, boom: true, video: false },
@@ -149,6 +152,64 @@ async function areaFills(d) {
     return best ? `rgb(${Math.round(best.r / best.n)},${Math.round(best.g / best.n)},${Math.round(best.b / best.n)})` : plain;
   }));
 }
+/* ---------- Stickers: emoji, text or picture, placed by the guest (x, y, w as fractions of the strip; r in degrees) ---------- */
+const STICKER_PACKS = {
+  props: ['Props', ['👓', '🕶️', '👑', '🎩', '🧢', '🎀', '💋', '🥸', '👒', '🪭']],
+  love: ['Love', ['💖', '💕', '💘', '💍', '💐', '🌹', '😍', '🥰', '💌']],
+  party: ['Party', ['🎉', '🎊', '🥳', '🎈', '✨', '⭐', '🎂', '🍾', '🎁']],
+  raya: ['Raya', ['🌙', '🕌', '🪔', '✨', '🤲', '🎆', '⭐', '🌟', '🥮']],
+  fun: ['Fun', ['😎', '😂', '🤪', '😜', '👍', '✌️', '🔥', '💯', '🙌']],
+};
+const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+// Size of a sticker in strip pixels (before rotation)
+function stkBox(st, W, H, x) {
+  const size = st.w * Math.min(W, H);
+  if (st.k === 't') { const f = size * .32; let w = [...st.v].length * f * .55; if (x) { x.save(); x.font = `700 ${f}px "${st.font || 'Geist'}", Geist, sans-serif`; w = x.measureText(st.v).width; x.restore(); } return [w + f * .4, f * 1.35]; }
+  if (st.k === 'i' && st.ar) return st.ar >= 1 ? [size, size / st.ar] : [size * st.ar, size];
+  return [size, size];
+}
+async function drawSticker(x, st, W, H) {
+  const size = st.w * Math.min(W, H);
+  x.save(); x.translate(st.x * W, st.y * H); x.rotate((st.r || 0) * Math.PI / 180);
+  if (st.k === 'i') {
+    const im = await loadImg(st.v);
+    if (im) { const ar = im.naturalWidth / im.naturalHeight, w = ar >= 1 ? size : size * ar, h = ar >= 1 ? size / ar : size; x.drawImage(im, -w / 2, -h / 2, w, h); }
+  } else if (st.k === 't') {
+    const f = size * .32; x.font = `700 ${f}px "${st.font || 'Geist'}", Geist, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.lineJoin = 'round'; x.lineWidth = f * .14; x.strokeStyle = 'rgba(0,0,0,.55)'; x.strokeText(st.v, 0, 0); x.fillStyle = st.color || '#fff'; x.fillText(st.v, 0, 0);
+  } else {
+    x.font = `${size * .9}px ${EMOJI_FONT}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(st.v, 0, size * .04);
+  }
+  x.restore();
+}
+/* ---------- Beauty: smoother skin (edge-preserving, skin tones only) and a slightly brighter look ---------- */
+const BEAUTY_K = [0, .35, .6, .85];
+function beautify(src, k, maxSide = 2400) {
+  const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight, sc = Math.min(1, maxSide / Math.max(w0, h0));
+  const w = Math.round(w0 * sc), h = Math.round(h0 * sc);
+  const out = document.createElement('canvas'); out.width = w; out.height = h; const o = out.getContext('2d', { willReadFrequently: true });
+  const r = Math.max(2, Math.round(Math.min(w, h) * .006 * (.6 + k)));
+  o.filter = `blur(${r}px)`; o.drawImage(src, 0, 0, w, h); o.filter = 'none';
+  const B = o.getImageData(0, 0, w, h).data; o.drawImage(src, 0, 0, w, h);
+  const A = o.getImageData(0, 0, w, h), a = A.data, thr = 14 + 26 * k, inv = 1 / (thr * thr), lift = 1 + .07 * k;
+  for (let i = 0; i < a.length; i += 4) {
+    const R = a[i], G = a[i + 1], Bl = a[i + 2];
+    const cb = 128 - .168736 * R - .331264 * G + .5 * Bl, cr = 128 + .5 * R - .418688 * G - .081312 * Bl;
+    const skin = cb > 77 && cb < 130 && cr > 132 && cr < 175 ? 1 : .2;
+    const dd = (Math.abs(R - B[i]) + Math.abs(G - B[i + 1]) + Math.abs(Bl - B[i + 2])) / 3, wgt = k * skin * Math.exp(-dd * dd * inv);
+    a[i] = Math.min(255, (R + (B[i] - R) * wgt) * lift + 2 * k);
+    a[i + 1] = Math.min(255, (G + (B[i + 1] - G) * wgt) * lift);
+    a[i + 2] = Math.min(255, (Bl + (B[i + 2] - Bl) * wgt) * lift);
+  }
+  o.putImageData(A, 0, 0); return out;
+}
+// The shots to use for this session: with the beauty level applied (made once per level, then kept)
+async function reviewShots(s) {
+  const lv = +s.beauty || 0; if (!lv || !s.shots) return s.shots;
+  s._beauty = s._beauty || {};
+  if (!s._beauty[lv]) { busy('Applying beauty…'); await sleep(30); try { s._beauty[lv] = s.shots.map(c => beautify(c, BEAUTY_K[lv])); } finally { busy(false); } }
+  return s._beauty[lv];
+}
 function fitText(x, text, maxW, size, font, weight = '') { do { x.font = `${weight} ${size}px ${font}`; size -= 2; } while (x.measureText(text).width > maxW && size > 10); }
 function designSize(d) { const long = Math.min(4000, d.output_long || 3600), s = long / Math.max(d.w, d.h); return [Math.round(d.w * s), Math.round(d.h * s)]; }
 // Compose the finished photo: guest shots in the areas, the PNG frame on top, optional small QR.
@@ -182,6 +243,7 @@ async function compose(d, shots, filter = 'none', opts = {}) {
     if (name) { fitText(x, name, fw * .86, Math.round(fh * (date ? .34 : .46)), font, 'italic 600'); x.fillText(name, fx + fw / 2, fy + fh * (date ? .4 : .5)); }
     if (date) { fitText(x, date, fw * .8, Math.round(fh * .15), 'Geist, system-ui, sans-serif'); x.fillText(date, fx + fw / 2, fy + fh * .74); }
   }
+  for (const st of opts.stickers || []) await drawSticker(x, st, W, H);
   if (opts.qrText) drawPrintQr(x, W, H, d, opts.qrText);
   return c;
 }
@@ -923,13 +985,14 @@ function recordBurst(me, secs = 1) {
 }
 // Strip boomerang: the chosen strip (same frame and background) with every photo moving at the same time,
 // forward and back. Shared by QR/link, never printed. Video where the browser can record, otherwise an animated GIF.
-async function stripBoomerang(design, bursts, filter, name, date, adjust) {
+async function stripBoomerang(design, bursts, filter, name, date, adjust, stickers, beauty) {
   const lists = await Promise.all(bursts.map(b => Promise.all(b).then(l => l.filter(Boolean))));
   const k = Math.min(...lists.map(l => l.length)); if (k < 4) return null;
   const d = { ...design, output_long: 1280 }, frames = [];
   for (let i = 0; i < k; i++) {   // one strip picture per moment, kept as a JPEG
-    const imgs = await Promise.all(lists.map(l => createImageBitmap(l[i])));
-    const c = await compose(d, imgs, filter, { name, date, adjust }); imgs.forEach(b => b.close && b.close());
+    let imgs = await Promise.all(lists.map(l => createImageBitmap(l[i])));
+    if (beauty) { const bm = imgs; imgs = bm.map(b => beautify(b, beauty, 640)); bm.forEach(b => b.close && b.close()); }
+    const c = await compose(d, imgs, filter, { name, date, adjust, stickers }); imgs.forEach(b => b.close && b.close());
     frames.push(await new Promise(res => c.toBlob(res, 'image/jpeg', .88))); await sleep(0);
   }
   // Recorded at ~10 frames a second, played a little faster (15) like a real boomerang; long ones loop once
@@ -941,12 +1004,12 @@ async function stripBoomerang(design, bursts, filter, name, date, adjust) {
 async function renderSession() {
   const s = B.session, box = $('#reviewMedia');
   if (s.mode === 'photo') {
-    const prev = await compose({ ...s.design, output_long: s.dragging ? 800 : 1200 }, s.shots, s.filter, { name: ACTIVE.name, date: ACTIVE.event_date, adjust: s.adjust });
+    const prev = await compose({ ...s.design, output_long: s.dragging ? 800 : 1200 }, await reviewShots(s), s.filter, { name: ACTIVE.name, date: ACTIVE.event_date, adjust: s.adjust, stickers: s.stickers });
     prev.className = 'media' + (s.design.paper === 'landscape' ? ' wide' : ''); prev.setAttribute('aria-label', 'Your photo. Tap a photo to zoom or move it.');
     let wrap = $('#rvWrap');
     if (!wrap || !box.contains(wrap)) { box.innerHTML = '<div id="rvWrap"><div id="rvSel" hidden></div></div>'; wrap = $('#rvWrap'); }
     const old = wrap.querySelector('canvas'); if (old) old.replaceWith(prev); else wrap.prepend(prev);
-    showAdjSel();
+    showAdjSel(); showStkSel();
   } else {
     if (!s.media) {
       busy(s.mode === 'gif' ? 'Making your GIF…' : s.mode === 'boom' ? 'Making your boomerang…' : 'Preparing your video…');
@@ -962,12 +1025,13 @@ async function renderSession() {
 }
 async function openReview() {
   const s = B.session;
-  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; }
+  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; s.stickers = []; s.stkSel = -1; s.beauty = +S.beauty || 0; }
   try { await renderSession(); } catch (e) { return showErr('Something went wrong', e.message, () => openReview(), goHome); }
   const isPhoto = s.mode === 'photo';
-  $('#adjWrap').hidden = !isPhoto;
-  if (isPhoto) renderAdjButtons();
-  $('#filterWrap').hidden = !isPhoto;
+  $('#rvTabs').hidden = !isPhoto;
+  $('#rvTabs [data-tab=stk]').hidden = !(S.stickers && S.stickers.on !== false);
+  showReviewTab(isPhoto ? 'adj' : '');
+  if (isPhoto) { renderAdjButtons(); renderStickerPanel(); $$('#bBeauty [data-bt]').forEach(b => b.classList.toggle('on', +b.dataset.bt === (+s.beauty || 0))); }
   $('#bFilters').innerHTML = FILTERS.map(f => `<button class="${f[0] === s.filter ? 'on' : ''}" data-fl="${f[0]}">${f[1]}</button>`).join('');
   const maxC = Math.max(1, S.capture.maxCopies || 1);
   s.copies = 1; $('#cNum').textContent = 1; $('#copiesWrap').hidden = !isPhoto || maxC <= 1;
@@ -1008,26 +1072,106 @@ $('#adjMinus').onclick = () => B.session && setZoom((B.session.adjust[B.session.
 $('#adjPlus').onclick = () => B.session && setZoom((B.session.adjust[B.session.adjSel].z || 1) + .1);
 $('#adjZoom').oninput = () => B.session && setZoom(+$('#adjZoom').value / 100);
 $('#adjReset').onclick = () => { if (!B.session) return; B.session.adjust[B.session.adjSel] = { z: 1, dx: 0, dy: 0 }; adjChanged(); };
-// Touch the strip: tap picks a photo, one finger moves it, two fingers pinch to zoom.
+function showReviewTab(t) {
+  $$('#rvTabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  $$('#b-review [data-panel]').forEach(p => { p.hidden = p.dataset.panel !== t; });
+}
+$('#rvTabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showReviewTab(b.dataset.tab); });
+$('#bBeauty').addEventListener('click', async e => {
+  const b = e.target.closest('[data-bt]'); if (!b || !B.session) return;
+  B.session.beauty = +b.dataset.bt; $$('#bBeauty button').forEach(x => x.classList.toggle('on', x === b)); await renderSession();
+});
+// Sticker panel: the packs the studio turned on, plus the studio's own pictures and text stickers
+let stkPack = '';
+function stickerPacks() {
+  const st = S.stickers || {}, list = (st.packs || []).filter(k => STICKER_PACKS[k]).map(k => [k, STICKER_PACKS[k][0]]);
+  if ((st.custom || []).length || (st.texts || []).length) list.unshift(['mine', '★ Ours']);
+  return list;
+}
+function renderStickerPanel() {
+  const packs = stickerPacks(); if (!packs.some(p => p[0] === stkPack)) stkPack = packs.length ? packs[0][0] : '';
+  $('#stkPacks').innerHTML = packs.map(([k, n]) => `<button class="${k === stkPack ? 'on' : ''}" data-pack="${k}">${esc(n)}</button>`).join('');
+  const st = S.stickers || {};
+  $('#stkGrid').innerHTML = stkPack === 'mine'
+    ? [...(st.texts || []).map((t, i) => `<button class="txt" data-add="t:${i}" style="font-family:'${esc(t.font || 'Geist')}';color:${esc(t.color || '#fff')}">${esc(t.t)}</button>`), ...(st.custom || []).map((u, i) => `<button data-add="i:${i}"><img src="${esc(u.url || u)}" alt="" crossorigin="anonymous"></button>`)].join('')
+    : (STICKER_PACKS[stkPack] ? STICKER_PACKS[stkPack][1] : []).map(e => `<button data-add="e:${e}">${e}</button>`).join('');
+  $('#stkSelRow').hidden = !(B.session && B.session.stkSel >= 0);
+}
+$('#stkPacks').addEventListener('click', e => { const b = e.target.closest('[data-pack]'); if (!b) return; stkPack = b.dataset.pack; renderStickerPanel(); });
+$('#stkGrid').addEventListener('click', e => {
+  const b = e.target.closest('[data-add]'), s = B.session; if (!b || !s) return;
+  const k = b.dataset.add[0], v = b.dataset.add.slice(2), st = S.stickers || {};
+  let item;
+  if (k === 'e') item = { k: 'e', v, w: .22 };
+  else if (k === 't') { const t = st.texts[+v]; item = { k: 't', v: t.t, font: t.font, color: t.color, w: Math.min(.5, .8 / Math.max(1, [...t.t].length * .176)) }; }   // long texts start small enough to fit
+  else { const u = st.custom[+v], im = b.querySelector('img'); item = { k: 'i', v: u.url || u, w: .3, ar: im && im.naturalWidth ? im.naturalWidth / im.naturalHeight : 1 }; }
+  // new stickers land near the middle, a little apart from each other
+  const n = s.stickers.length; Object.assign(item, { x: .5 + ((n % 3) - 1) * .12, y: .35 + (n % 4) * .08, r: 0 });
+  s.stickers.push(item); s.stkSel = s.stickers.length - 1; renderStickerPanel(); adjChanged();
+});
+const stkSel = () => B.session && B.session.stkSel >= 0 ? B.session.stickers[B.session.stkSel] : null;
+$('#stkSmaller').onclick = () => { const t = stkSel(); if (t) { t.w = Math.max(.06, t.w / 1.15); adjChanged(); } };
+$('#stkBigger').onclick = () => { const t = stkSel(); if (t) { t.w = Math.min(1.5, t.w * 1.15); adjChanged(); } };
+$('#stkTurn').onclick = () => { const t = stkSel(); if (t) { t.r = ((t.r || 0) + 15) % 360; adjChanged(); } };
+$('#stkDel').onclick = () => { const s = B.session; if (!s || s.stkSel < 0) return; s.stickers.splice(s.stkSel, 1); s.stkSel = -1; renderStickerPanel(); adjChanged(); };
+// Outline around the selected sticker on the preview
+function showStkSel() {
+  const s = B.session, cv = $('#rvWrap canvas'); if (!cv || !s) return;
+  let el = $('#rvStk'); if (!el) { el = document.createElement('div'); el.id = 'rvStk'; $('#rvWrap').appendChild(el); }
+  const t = stkSel(); if (!t) { el.hidden = true; return; }
+  const W = cv.width, H = cv.height, [bw, bh] = stkBox(t, W, H, cv.getContext('2d'));
+  el.hidden = false; el.style.cssText = `left:${(t.x * W - bw / 2) / W * 100}%;top:${(t.y * H - bh / 2) / H * 100}%;width:${bw / W * 100}%;height:${bh / H * 100}%;transform:rotate(${t.r || 0}deg)`;
+}
+// Which sticker is under the finger (top one first)? u, v are fractions of the strip.
+function stickerAt(s, u, v, cv) {
+  const W = cv.width, H = cv.height, x = cv.getContext('2d');
+  for (let i = s.stickers.length - 1; i >= 0; i--) {
+    const t = s.stickers[i], [bw, bh] = stkBox(t, W, H, x), a = -(t.r || 0) * Math.PI / 180;
+    const px = (u - t.x) * W, py = (v - t.y) * H, lx = px * Math.cos(a) - py * Math.sin(a), ly = px * Math.sin(a) + py * Math.cos(a);
+    if (Math.abs(lx) <= bw / 2 + 12 && Math.abs(ly) <= bh / 2 + 12) return i;
+  }
+  return -1;
+}
+// Touch the strip: a sticker under the finger moves (two fingers resize and turn it);
+// otherwise tap picks a photo, one finger moves it, two fingers pinch to zoom.
 {
   const pts = new Map(); let start = null;
   const box = $('#reviewMedia');
-  const local = e => { const r = box.querySelector('canvas').getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, r]; };
+  const local = e => { const r = box.querySelector('canvas').getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+  const two = p => p.length > 1 ? { dist: Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]), ang: Math.atan2(p[1][1] - p[0][1], p[1][0] - p[0][0]) } : { dist: 0, ang: 0 };
+  // remember where the fingers and the thing being moved were when this gesture (or finger count) started
+  const begin = s => {
+    const p = [...pts.values()], stk = start ? start.stk : -1;
+    start = { p, ...two(p), stk };
+    if (stk >= 0) start.t = { ...s.stickers[stk] }; else start.a = { ...s.adjust[s.adjSel] };
+  };
   box.addEventListener('pointerdown', e => {
     const s = B.session; if (!s || !s.adjust || !box.querySelector('canvas')) return;
     e.preventDefault(); box.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
     if (pts.size === 1) {
-      const [u, v] = local(e), hit = s.design.areas.findIndex(a => u >= a.x && u <= a.x + a.w && v >= a.y && v <= a.y + a.h);
-      if (hit >= 0 && hit !== s.adjSel) { s.adjSel = hit; renderAdjButtons(); showAdjSel(); }
+      const [u, v] = local(e), cv = box.querySelector('canvas'), hitS = stickerAt(s, u, v, cv);
+      if (hitS >= 0) { s.stkSel = hitS; start = { stk: hitS }; renderStickerPanel(); showStkSel(); }
+      else {
+        start = { stk: -1 };
+        if (s.stkSel >= 0) { s.stkSel = -1; renderStickerPanel(); showStkSel(); }
+        const hit = s.design.areas.findIndex(a => u >= a.x && u <= a.x + a.w && v >= a.y && v <= a.y + a.h);
+        if (hit >= 0 && hit !== s.adjSel) { s.adjSel = hit; renderAdjButtons(); showAdjSel(); }
+      }
     }
-    const a = s.adjust[s.adjSel], p = [...pts.values()];
-    start = { a: { ...a }, p, dist: p.length > 1 ? Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) : 0 };
+    begin(s);
   });
   box.addEventListener('pointermove', e => {
     const s = B.session; if (!s || !start || !pts.has(e.pointerId)) return;
     pts.set(e.pointerId, [e.clientX, e.clientY]);
-    const p = [...pts.values()], a = s.adjust[s.adjSel], ar = s.design.areas[s.adjSel], r = box.querySelector('canvas').getBoundingClientRect();
-    if (p.length > 1 && start.dist) { a.z = Math.min(ADJ_MAX, Math.max(ADJ_MIN, start.a.z * Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) / start.dist)); }
+    const p = [...pts.values()], r = box.querySelector('canvas').getBoundingClientRect(), g = two(p);
+    if (start.stk >= 0) {   // move / resize / turn the sticker
+      const t = s.stickers[start.stk]; if (!t) return;
+      if (p.length > 1 && start.dist) { t.w = Math.max(.06, Math.min(1.5, start.t.w * g.dist / start.dist)); t.r = (start.t.r || 0) + (g.ang - start.ang) * 180 / Math.PI; }
+      else if (p.length === 1 && start.p.length === 1) { t.x = Math.max(0, Math.min(1, start.t.x + (p[0][0] - start.p[0][0]) / r.width)); t.y = Math.max(0, Math.min(1, start.t.y + (p[0][1] - start.p[0][1]) / r.height)); }
+      s.dragging = true; adjChanged(); return;
+    }
+    const a = s.adjust[s.adjSel], ar = s.design.areas[s.adjSel];
+    if (p.length > 1 && start.dist) { a.z = Math.min(ADJ_MAX, Math.max(ADJ_MIN, start.a.z * g.dist / start.dist)); }
     else if (p.length === 1 && start.p.length === 1) {
       // finger movement, turned into the photo spot's own direction when the spot is rotated
       let mx = p[0][0] - start.p[0][0], my = p[0][1] - start.p[0][1]; const t = -(ar.r || 0) * Math.PI / 180;
@@ -1036,7 +1180,11 @@ $('#adjReset').onclick = () => { if (!B.session) return; B.session.adjust[B.sess
     }
     s.dragging = true; clampPan(a); adjChanged();
   });
-  const up = e => { pts.delete(e.pointerId); if (!pts.size && B.session && B.session.dragging) { B.session.dragging = false; adjChanged(); } const s = B.session; if (s && s.adjust) { const p = [...pts.values()]; start = p.length ? { a: { ...s.adjust[s.adjSel] }, p, dist: p.length > 1 ? Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) : 0 } : null; } };
+  const up = e => {
+    pts.delete(e.pointerId); const s = B.session;
+    if (!pts.size) { if (s && s.dragging) { s.dragging = false; adjChanged(); } start = null; return; }
+    if (s && start) begin(s);   // one finger lifted: carry on with the other
+  };
   box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
 }
 $('#cMinus').onclick = () => { if (!B.session) return; B.session.copies = Math.max(1, B.session.copies - 1); $('#cNum').textContent = B.session.copies; };
@@ -1068,14 +1216,14 @@ function startSave(s) {
     await sleep(30);   // let the "Thank you" screen appear first
     let full; const work = [];
     if (s.mode === 'photo') {
-      full = await compose(s.design, s.shots, s.filter, { name: evName, date: evDate, adjust: s.adjust });
+      full = await compose(s.design, await reviewShots(s), s.filter, { name: evName, date: evDate, adjust: s.adjust, stickers: s.stickers });
       let sheet = full;
       if (qrOn) { sheet = document.createElement('canvas'); sheet.width = full.width; sheet.height = full.height; const x = sheet.getContext('2d'); x.drawImage(full, 0, 0); drawPrintQr(x, full.width, full.height, s.design, `${SITE}?q=${row.print_token}`); }
       const printBlob = await jpeg(printCanvas(s.design, sheet), q);
       work.push(retry(() => upload(row.print_path, printBlob, 'image/jpeg')));
       if (photoGifOn && s.bursts && s.bursts.length > 1) {
         try {
-          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust);
+          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust, s.stickers, BEAUTY_K[+s.beauty || 0]);
           if (g) { const ext = g.type === 'image/gif' ? 'gif' : g.type === 'video/mp4' ? 'mp4' : 'webm'; row.media_path = `${ev}/${id}.${ext}`; work.push(retry(() => upload(row.media_path, g, g.type))); }
         } catch (e) { /* the photo still saves without the boomerang */ }
         s.bursts = null;
@@ -1163,9 +1311,75 @@ function openDone(status, printing) {
   $('#gqrBox').hidden = !(s && s.row);
   if (s && s.row) qr($('#guestQr'), shareLink(s.row), 200);
   bscreen('b-done');
+  $('#gbOpen').hidden = !gbAvailable(s); $('#gbOpen').textContent = (S.guestbook && S.guestbook.prompt) || 'Write a message ✍️';
+  let left = 30; const tick = () => $('#doneTimer').textContent = `Going back automatically in ${left}s`;
+  tick(); clearInterval(B.doneT); B.doneT = setInterval(() => { left--; tick(); if (left <= 0) goHome(); }, 1000);
+  if (gbAvailable(s) && S.guestbook.auto && !s.gbAutoShown) { s.gbAutoShown = true; setTimeout(() => { if (B.session === s && $('#b-done').classList.contains('on')) openGuestbook(); }, 1500); }
+}
+/* ---------- Guestbook: guests write a message with a finger ---------- */
+const GB = { strokes: [], cur: null, color: '#1d1d1f', w: 6 };
+function gbSetup() {
+  const cv = $('#gbCanvas'), r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr)); gbRedraw();
+}
+function gbRedraw() {
+  const cv = $('#gbCanvas'), x = cv.getContext('2d'), k = cv.width / (cv.getBoundingClientRect().width || 1);
+  x.clearRect(0, 0, cv.width, cv.height); x.lineCap = 'round'; x.lineJoin = 'round';
+  for (const st of GB.strokes) gbStroke(x, st, k);
+  $('#gbHint').hidden = GB.strokes.length > 0;
+}
+function gbStroke(x, st, k) {
+  const p = st.p; if (!p.length) return;
+  x.strokeStyle = st.c; x.fillStyle = st.c; x.lineWidth = st.w * k;
+  if (p.length === 1) { x.beginPath(); x.arc(p[0][0] * k, p[0][1] * k, st.w * k / 2, 0, 7); x.fill(); return; }
+  x.beginPath(); x.moveTo(p[0][0] * k, p[0][1] * k);
+  for (let i = 1; i < p.length - 1; i++) { const mx = (p[i][0] + p[i + 1][0]) / 2, my = (p[i][1] + p[i + 1][1]) / 2; x.quadraticCurveTo(p[i][0] * k, p[i][1] * k, mx * k, my * k); }
+  x.lineTo(p[p.length - 1][0] * k, p[p.length - 1][1] * k); x.stroke();
+}
+{
+  const cv = $('#gbCanvas');
+  const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); cv.setPointerCapture(e.pointerId); GB.cur = { c: GB.color, w: GB.w, p: [pos(e)] }; GB.strokes.push(GB.cur); gbRedraw(); });
+  cv.addEventListener('pointermove', e => { if (!GB.cur) return; GB.cur.p.push(pos(e)); gbRedraw(); });
+  const end = () => { GB.cur = null; }; cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+}
+$('#gbColors').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b) return; GB.color = b.dataset.c; $$('#gbColors .sw').forEach(x => x.classList.toggle('on', x === b)); });
+$('#gbSizes').addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (!b) return; GB.w = +b.dataset.w; $$('#gbSizes .pill').forEach(x => x.classList.toggle('on', x === b)); });
+$('#gbUndo').onclick = () => { GB.strokes.pop(); gbRedraw(); };
+$('#gbClear').onclick = () => { GB.strokes = []; gbRedraw(); };
+function openGuestbook() {
+  const s = B.session; if (!s || !s.row) return;
+  clearInterval(B.doneT); GB.strokes = []; $('#gbName').value = '';
+  $('#gbPrompt').textContent = (S.guestbook && S.guestbook.prompt) || 'Write a message for the couple ✍️';
+  bscreen('b-msg'); requestAnimationFrame(gbSetup);
+}
+function backToDone(msg) {
+  const s = B.session; if (!s) return goHome();
+  bscreen('b-done'); if (msg) toast(msg, 3000);
+  $('#gbOpen').hidden = !gbAvailable(s);
   let left = 30; const tick = () => $('#doneTimer').textContent = `Going back automatically in ${left}s`;
   tick(); clearInterval(B.doneT); B.doneT = setInterval(() => { left--; tick(); if (left <= 0) goHome(); }, 1000);
 }
+const gbAvailable = s => !!(S.guestbook && S.guestbook.on && s && s.row && s.mode === 'photo' && !s.messageSaved);
+$('#gbOpen').onclick = openGuestbook;
+$('#gbCancel').onclick = () => backToDone();
+$('#gbSave').onclick = async () => {
+  const s = B.session; if (!s || !s.row) return backToDone();
+  if (!GB.strokes.length) return toast('Write something first, or tap Skip');
+  // the message only, trimmed to what was written, on a transparent background
+  const src = $('#gbCanvas'), k = src.width / src.getBoundingClientRect().width;
+  let x0 = 1e9, y0 = 1e9, x1 = 0, y1 = 0;
+  for (const st of GB.strokes) for (const [px, py] of st.p) { x0 = Math.min(x0, px - st.w); y0 = Math.min(y0, py - st.w); x1 = Math.max(x1, px + st.w); y1 = Math.max(y1, py + st.w); }
+  const pad = 16, c = document.createElement('canvas'); c.width = Math.round((x1 - x0 + pad * 2) * k); c.height = Math.round((y1 - y0 + pad * 2) * k);
+  const x = c.getContext('2d'); x.translate((pad - x0) * k, (pad - y0) * k); x.lineCap = 'round'; x.lineJoin = 'round';
+  for (const st of GB.strokes) gbStroke(x, st, k);
+  const name = $('#gbName').value.trim(), path = s.row.path.replace(/\.jpg$/, '') + '-msg.png', blob = await toBlob(c, 'image/png'), id = s.row.id;
+  s.messageSaved = true; backToDone('Thank you for your message!');
+  (async () => {   // upload in the background; keeps trying if the internet drops
+    try { await retry(() => upload(path, blob, 'image/png')); await s.savePromise; await retry(async () => check(await sb.from('photos').update({ message_path: path, message_name: name || null }).eq('id', id))); }
+    catch (e) { console.warn('guestbook save failed', e); }
+  })();
+};
 function boothJob(job) {
   const s = B.session; if (!s || job.id !== s.jobId) return;
   const txt = { waiting: printerOnline() ? 'Sending to the printer…' : 'Waiting for the printer laptop…', printing: 'Printing… collect your photo at the printer.', done: 'Done! Collect your photo at the printer.', failed: 'Printer problem — please call the attendant.', cancelled: 'Print cancelled.' }[job.status];
@@ -1396,8 +1610,8 @@ function openEventModal(ev) {
     if (EVENTS.length <= 1) return toast('You need at least one event.');
     if (!confirm(`Delete “${ev.name}” and all of its photos? This cannot be undone.`)) return;
     try {
-      const photos = check(await sb.from('photos').select('path,thumb_path,media_path,print_path').eq('event_id', ev.id));
-      const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path, p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]).filter(Boolean);
+      const photos = check(await sb.from('photos').select('path,thumb_path,media_path,print_path,message_path').eq('event_id', ev.id));
+      const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]).filter(Boolean);
       await removeFiles(paths);
       check(await sb.from('events').delete().eq('id', ev.id));
       await loadEvents(); if (!EVENTS.some(x => x.is_active)) await setActive(EVENTS[0].id);
@@ -1776,7 +1990,7 @@ $('#thumbs').addEventListener('click', e => {
   const exp = p.print_expires_at ? new Date(p.print_expires_at) : null;
   const m = modal(`<div class="row" style="justify-content:space-between"><b>Session #${galPhotos.length - i} · ${MODE_INFO[kind][0]}</b><button class="ico" data-close aria-label="Close">✕</button></div>
     <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
-      <div style="flex:none;max-width:100%">${media}</div>
+      <div style="flex:none;max-width:100%;display:flex;flex-direction:column;gap:10px">${media}${p.message_path ? `<div style="background:#fffdf8;border-radius:10px;padding:10px;max-width:320px"><img src="${fileUrl(p.message_path)}" alt="Guestbook message" style="max-width:100%;max-height:160px;display:block;margin:auto">${p.message_name ? `<div style="color:#5b4a33;font-style:italic;text-align:right;margin-top:6px">— ${esc(p.message_name)}</div>` : ''}</div>` : ''}</div>
       <div style="flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:12px">
         <div class="cap">Share this ${kind === 'photo' ? 'photo' : 'file'} again</div>
         <div class="row" style="align-items:center;gap:14px"><div class="qrbox" id="photoQr"></div><p class="lbl" style="margin:0;line-height:1.5">Show this to the guest to scan. It opens only this ${kind === 'photo' ? 'photo' : 'file'}.</p></div>
@@ -1821,7 +2035,7 @@ $('#thumbs').addEventListener('click', e => {
   m.querySelector('#dlOrig').onclick = async () => { if (as4r && sheet4r) return download(await jpeg(sheet4r, .95), p.path.split('/').pop().replace(/\.jpg$/, '') + '-4R.jpg'); const path = kind === 'photo' ? p.path : (p.media_path || p.path); try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
   m.querySelector('#delPhoto').onclick = async () => {
     if (!confirm('Delete this from the gallery? The guest link stops working.')) return;
-    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path, p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
+    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
   };
 });
 $('#copyAlbum').onclick = () => copyText($('#albumLink').value, $('#albumLink'));
@@ -1988,7 +2202,7 @@ function renderStudio() {
   $('#bgDim').value = S.bg.dim; $('#bgSub').value = S.bg.sub || '';
   $$('#bgColors .sw').forEach(x => x.classList.toggle('on', x.dataset.c === S.bg.color));
   $('#bgFileName').textContent = S.bg.src ? S.bg.src.split('/').pop() : 'No file yet';
-  applyBrand(); renderBgPrev(); renderPq(); renderPsSettings();
+  applyBrand(); renderBgPrev(); renderPq(); renderPsSettings(); renderStickerSettings();
 }
 function renderBgPrev() {
   paintBg($('#bgPrevLayer'), $('#bgPrevShade'), S.bg); $('#bgPrevTitle').textContent = ACTIVE ? ACTIVE.name : '';
@@ -2066,6 +2280,92 @@ $('#psFile').addEventListener('change', async e => {
   try { const path = `u-${USER.id}/ps-${Date.now().toString(36)}.${f.name.split('.').pop().toLowerCase()}`; await upload(path, f, f.type); S.printScreen.src = fileUrl(path); $('#psFileName').textContent = f.name; psPreview(); toast('Uploaded. Press Save to use it on the tablet.'); }
   catch (err) { $('#psFileName').textContent = 'Upload failed'; toast(err.message, 4000); }
 });
+/* ---- Stickers, guestbook and beauty settings (Studio settings) ---- */
+function renderStickerSettings() {
+  const st = S.stickers;
+  $('#stOn').checked = st.on !== false;
+  $('#stPacksAdmin').innerHTML = Object.entries(STICKER_PACKS).map(([k, [n, em]]) => `<button class="pill ${(st.packs || []).includes(k) ? 'on' : ''}" data-pk="${k}">${em[0]} ${n}</button>`).join('');
+  $('#stCustom').innerHTML = (st.custom || []).map((u, i) => `<button data-rmc="${i}" title="Remove"><img src="${esc(u.url || u)}" alt="" crossorigin="anonymous"><span class="x">✕</span></button>`).join('') || '<span class="lbl">None yet</span>';
+  $('#stTexts').innerHTML = (st.texts || []).map((t, i) => `<button class="pill" data-rmt="${i}" title="Remove" style="font-family:'${esc(t.font || 'Geist')}';color:${esc(t.color || '#fff')}">${esc(t.t)} <span style="color:#ff8a80">✕</span></button>`).join('') || '<span class="lbl">None yet</span>';
+  if (!$('#stTextFont').options.length) $('#stTextFont').innerHTML = SMILE_FONTS.map(f => `<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('');
+  const g = S.guestbook;
+  $('#gbOn').checked = !!g.on; $('#gbPromptIn').value = g.prompt || ''; $('#gbAuto').checked = !!g.auto; $('#beautyDef').value = String(+S.beauty || 0);
+}
+$('#stOn').onchange = () => { S.stickers.on = $('#stOn').checked; };
+$('#stPacksAdmin').addEventListener('click', e => {
+  const b = e.target.closest('[data-pk]'); if (!b) return;
+  const set = new Set(S.stickers.packs || []); set.has(b.dataset.pk) ? set.delete(b.dataset.pk) : set.add(b.dataset.pk);
+  S.stickers.packs = Object.keys(STICKER_PACKS).filter(k => set.has(k)); renderStickerSettings();
+});
+$('#stCustom').addEventListener('click', e => { const b = e.target.closest('[data-rmc]'); if (!b || !confirm('Remove this sticker?')) return; S.stickers.custom.splice(+b.dataset.rmc, 1); renderStickerSettings(); });
+$('#stTexts').addEventListener('click', e => { const b = e.target.closest('[data-rmt]'); if (!b) return; S.stickers.texts.splice(+b.dataset.rmt, 1); renderStickerSettings(); });
+$('#stTextAdd').onclick = () => {
+  const t = $('#stTextIn').value.trim(); if (!t) return toast('Type the sticker text first');
+  S.stickers.texts = [...(S.stickers.texts || []), { t, font: $('#stTextFont').value, color: $('#stTextColor').value }]; $('#stTextIn').value = ''; renderStickerSettings();
+};
+$('#stFile').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  for (const f of files) {
+    if (!/^image\/(png|webp)$/.test(f.type)) { toast('Use PNG or WebP stickers (with a transparent background).'); continue; }
+    if (f.size > 5 * 1024 * 1024) { toast(f.name + ' is over 5 MB.'); continue; }
+    try { const path = `u-${USER.id}/stk-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}.${f.type === 'image/webp' ? 'webp' : 'png'}`; await upload(path, f, f.type); S.stickers.custom = [...(S.stickers.custom || []), { url: fileUrl(path) }]; }
+    catch (err) { toast(err.message, 4000); }
+  }
+  renderStickerSettings(); toast('Uploaded. Press Save to send to the tablet.');
+});
+$('#gbOn').onchange = () => { S.guestbook.on = $('#gbOn').checked; };
+$('#gbPromptIn').addEventListener('input', () => { S.guestbook.prompt = $('#gbPromptIn').value.trim(); });
+$('#gbAuto').onchange = () => { S.guestbook.auto = $('#gbAuto').checked; };
+$('#beautyDef').onchange = () => { S.beauty = +$('#beautyDef').value; };
+
+/* ---- Guestbook PDF: every message of the event with its photo ---- */
+async function imgData(url, max, type) {
+  const r = await fetch(url); if (!r.ok) throw new Error('Could not load ' + url.split('/').pop());
+  const bm = await createImageBitmap(await r.blob()), k = Math.min(1, max / Math.max(bm.width, bm.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k);
+  const x = c.getContext('2d'); if (type === 'image/jpeg') { x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); }
+  x.drawImage(bm, 0, 0, c.width, c.height); bm.close && bm.close();
+  return { data: c.toDataURL(type, .88), w: c.width, h: c.height };
+}
+function loadScript(src) { return new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const t = document.createElement('script'); t.src = src; t.onload = res; t.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(t); }); }
+$('#gGuestbook').onclick = async () => {
+  const ev = EVENTS.find(e => e.id === galEvent); if (!ev) return;
+  const list = galPhotos.filter(p => p.message_path).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  if (!list.length) return toast('No guestbook messages for this event yet. Turn on the guestbook in Studio settings.', 5000);
+  const b = $('#gGuestbook'); b.disabled = true; b.textContent = 'Making the PDF…';
+  try {
+    await loadScript('../vendor/jspdf.umd.min.js');
+    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' }), PW = 210, PH = 297;
+    // Cover
+    doc.setFillColor(250, 246, 240); doc.rect(0, 0, PW, PH, 'F');
+    doc.setTextColor(91, 74, 51); doc.setFont('times', 'italic'); doc.setFontSize(40); doc.text(doc.splitTextToSize(ev.name || 'Our day', 170), PW / 2, 120, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(14); doc.text(String(ev.event_date || ''), PW / 2, 150, { align: 'center' });
+    doc.setFontSize(12); doc.text(`Guestbook · ${list.length} message${list.length > 1 ? 's' : ''}`, PW / 2, 162, { align: 'center' });
+    doc.setFontSize(10); doc.setTextColor(140, 130, 115); doc.text(S.brand || '', PW / 2, PH - 20, { align: 'center' });
+    // Two messages a page: the photo on the left, the handwriting on the right
+    for (let i = 0; i < list.length; i++) {
+      if (i % 2 === 0) { doc.addPage(); doc.setFillColor(250, 246, 240); doc.rect(0, 0, PW, PH, 'F'); }
+      b.textContent = `Making the PDF… ${i + 1}/${list.length}`;
+      const p = list[i], top = i % 2 === 0 ? 14 : PH / 2 + 4, boxH = PH / 2 - 22;
+      try {
+        const ph = await imgData(fileUrl(p.path), 1400, 'image/jpeg'), k = Math.min(70 / ph.w, boxH / ph.h), w = ph.w * k, h = ph.h * k;
+        doc.addImage(ph.data, 'JPEG', 16 + (70 - w) / 2, top + (boxH - h) / 2, w, h);
+      } catch (e) { /* photo missing: keep the message */ }
+      try {
+        const m = await imgData(fileUrl(p.message_path), 1600, 'image/png'), k = Math.min(100 / m.w, (boxH - 18) / m.h, .5), w = m.w * k, h = m.h * k;
+        doc.addImage(m.data, 'PNG', 96 + (100 - w) / 2, top + (boxH - 18 - h) / 2, w, h);
+      } catch (e) { }
+      doc.setTextColor(91, 74, 51); doc.setFont('times', 'italic'); doc.setFontSize(14);
+      doc.text(p.message_name ? '— ' + p.message_name : '', 146, top + boxH - 8, { align: 'center' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(150, 140, 125);
+      doc.text(new Date(p.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), 146, top + boxH - 2, { align: 'center' });
+      if (i % 2 === 0 && i + 1 < list.length) { doc.setDrawColor(220, 210, 195); doc.line(20, PH / 2, PW - 20, PH / 2); }
+    }
+    download(doc.output('blob'), `guestbook-${(ev.name || 'event').replace(/[^\w]+/g, '-')}.pdf`);
+    toast('Guestbook PDF downloaded');
+  } catch (e) { toast('Could not make the PDF: ' + e.message, 6000); }
+  b.disabled = false; b.textContent = '📖 Guestbook PDF';
+};
 $('#studioSave').onclick = async () => { try { await saveStudio(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); } };
 
 /* ---- Accounts & PIN ---- */

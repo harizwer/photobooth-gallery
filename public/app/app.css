@@ -325,3 +325,23 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 @keyframes smfloat{0%{opacity:0;transform:translate(-50%,-30%) scale(.4)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}100%{opacity:0;transform:translate(-50%,-110%) scale(.9)}}
 .smprev{position:relative;aspect-ratio:16/10;border-radius:14px;overflow:hidden;border:1px solid var(--line2);background:linear-gradient(160deg,#4b5563,#1f2937)}
 #smPrevCount{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-shadow:0 0 30px rgba(0,0,0,.5)}
+
+/* Review tabs */
+.rvtabs{display:flex;gap:6px;flex-wrap:wrap}
+.rvtabs button{all:unset;cursor:pointer;padding:9px 12px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line);font-size:14px}
+.rvtabs button.on{border-color:var(--accent);background:rgba(255,90,38,.15);color:#fff}
+.stkpacks{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.stkpacks button{all:unset;cursor:pointer;padding:6px 10px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line);font-size:13px}
+.stkpacks button.on{border-color:var(--accent)}
+.stkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px;max-height:190px;overflow:auto}
+.stkgrid button{all:unset;cursor:pointer;height:52px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:30px;overflow:hidden;position:relative}
+.stkgrid button img{max-width:44px;max-height:44px}
+.stkgrid button.txt{grid-column:span 3;font-size:14px;padding:0 8px;text-align:center}
+.stkgrid button .x{position:absolute;top:2px;right:4px;font-size:12px;color:#ff8a80}
+#rvStk{position:absolute;border:2px dashed #fff;border-radius:6px;pointer-events:none;box-shadow:0 0 0 1px rgba(0,0,0,.5)}
+/* Guestbook */
+#b-msg{align-items:center;justify-content:center;background:linear-gradient(160deg,#1c1c1f,#0b0b0c);padding:20px}
+.gbcard{width:min(900px,100%);display:flex;flex-direction:column;gap:12px}
+.gbpad{position:relative;background:#fffdf8;border-radius:16px;height:min(52vh,460px);box-shadow:0 10px 40px rgba(0,0,0,.5);overflow:hidden}
+.gbpad canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.gbhint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b9b2a6;font-size:22px;pointer-events:none}
