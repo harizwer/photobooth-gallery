@@ -1,0 +1,38 @@
+11-07 17:35:05.025  1661  1661 D AndroidRuntime: >>>>>> START com.android.internal.os.ZygoteInit uid 0 <<<<<<
+11-07 17:35:05.276  1662  1662 D AndroidRuntime: >>>>>> START com.android.internal.os.ZygoteInit uid 0 <<<<<<
+11-07 17:35:05.317  1661  1661 I AndroidRuntime: Using default boot image
+11-07 17:35:05.317  1661  1661 I AndroidRuntime: Leaving lock profiling enabled
+11-07 17:35:05.365  1662  1662 I AndroidRuntime: Using default boot image
+11-07 17:35:05.365  1662  1662 I AndroidRuntime: Leaving lock profiling enabled
+11-07 17:35:09.190  2194  2194 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+11-07 17:35:09.236  2201  2201 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+11-07 17:35:10.723  2447  2447 I bootstat: Canonical boot reason: reboot,factory_reset
+11-07 17:35:11.020  2489  2489 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-07 17:35:11.027  2489  2489 I AndroidRuntime: Using default boot image
+11-07 17:35:11.027  2489  2489 I AndroidRuntime: Leaving lock profiling enabled
+11-07 17:35:11.098  2489  2489 D AndroidRuntime: Calling main entry com.android.commands.input.Input
+11-07 17:35:11.111  2489  2489 D AndroidRuntime: Shutting down VM
+11-07 17:35:11.646  1764  1988 V installd: DexInv: --- BEGIN '/data/app/my.photobooth.booth-SPw9qLhuZ5s_JkM4DthvqQ==/base.apk' ---
+11-07 17:35:11.666  2686  2686 I dex2oat : /apex/com.android.runtime/bin/dex2oat --input-vdex-fd=-1 --output-vdex-fd=10 --resolve-startup-const-strings=true --max-image-block-size=524288 --compiler-filter=speed-profile --classpath-dir=/data/app/my.photobooth.booth-SPw9qLhuZ5s_JkM4DthvqQ== --class-loader-context=PCL[] --generate-mini-debug-info --compact-dex-level=none --compilation-reason=install
+11-07 17:35:12.523  2686  2873 W dex2oat : Verification of void my.photobooth.booth.MainActivity$Client.onReceivedError(android.webkit.WebView, android.webkit.WebResourceRequest, android.webkit.WebResourceError) took 169.930ms
+11-07 17:35:12.526  2686  2686 W dex2oat : Verification of boolean my.photobooth.booth.MainActivity$Chrome.onConsoleMessage(android.webkit.ConsoleMessage) took 222.721ms
+11-07 17:35:13.413  2686  2686 W dex2oat : Compilation of int my.photobooth.booth.UsbOpener$AndroidLink.write(byte[], int, int) took 364.067ms
+11-07 17:35:14.316  3050  3096 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-07 17:35:14.436  3050  3098 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-07 17:35:14.512  3050  3094 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-07 17:35:14.526  3050  3113 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-07 17:35:14.873  1764  1988 V installd: DexInv: --- END '/data/app/my.photobooth.booth-SPw9qLhuZ5s_JkM4DthvqQ==/base.apk' (success) ---
+11-07 17:35:14.921  3050  3103 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-07 17:35:15.334  1909  2671 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=my.photobooth.booth/.MainActivity} from uid 2000
+11-07 17:35:15.362  1909  1936 I ActivityManager: Start proc 3248:my.photobooth.booth/u0a116 for activity {my.photobooth.booth/my.photobooth.booth.MainActivity}
+11-07 17:35:15.412  3248  3248 W hotobooth.boot: Unexpected CPU variant for X86 using defaults: x86_64
+11-07 17:35:15.515  3248  3248 I hotobooth.boot: The ClassLoaderContext is a special shared library.
+11-07 17:35:15.612  1909  1936 I ActivityManager: Start proc 3298:com.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0/u0ai9000 for  {my.photobooth.booth/org.chromium.content.app.SandboxedProcessService0}
+11-07 17:35:15.618  3248  3248 E chromium: [ERROR:filesystem_posix.cc(89)] stat /data/user/0/my.photobooth.booth/cache/WebView/Crashpad: No such file or directory (2)
+11-07 17:35:15.618  3248  3248 E chromium: [ERROR:filesystem_posix.cc(62)] mkdir /data/user/0/my.photobooth.booth/cache/WebView/Crashpad: No such file or directory (2)
+11-07 17:35:15.530  3248  3248 W RenderThread: type=1400 audit(0.0:23): avc: denied { write } for name="property_service" dev="tmpfs" ino=6844 scontext=u:r:untrusted_app:s0:c116,c256,c512,c768 tcontext=u:object_r:property_socket:s0 tclass=sock_file permissive=0 app=my.photobooth.booth
+11-07 17:35:16.076  1909  1934 I ActivityTaskManager: Displayed my.photobooth.booth/.MainActivity: +698ms
+11-07 17:35:16.543  3248  3365 I chatty  : uid=10116(my.photobooth.booth) Chrome_InProcGp identical 2 lines
+11-07 17:35:16.920  1909  2693 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.packageinstaller/.PackageInstalledReceiver
+11-07 17:35:16.921  1909  1935 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.gallery3d/.app.PackagesMonitor
+11-07 17:35:16.921  1909  1935 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.musicfx/.Compatibility$Receiver
