@@ -316,3 +316,12 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .pst-cream{background:radial-gradient(circle at 30% 20%,#fffdf8 0,#f1e9dc 65%)}
 .pst-night{background:radial-gradient(80% 60% at 50% 30%,#2f3352,#0b0c14)}
 .pst-confetti{background:radial-gradient(#ff6f91 2.5px,transparent 3.5px) 0 0/44px 44px,radial-gradient(#ffc93c 2.5px,transparent 3.5px) 22px 22px/44px 44px,radial-gradient(#5ec8f2 2px,transparent 3px) 11px 30px/44px 44px,#fff8f0}
+
+/* Smile word */
+.smilew{display:inline-flex;align-items:center;gap:.15em;line-height:1.05;font-weight:800;white-space:nowrap;animation:smpop .35s cubic-bezier(.2,1.6,.4,1) both}
+.smemo{font-size:.7em}
+.smdeco{position:absolute;transform:translate(-50%,-50%);animation:smfloat 1.4s ease-out both;pointer-events:none;text-shadow:none;-webkit-text-stroke:0}
+@keyframes smpop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes smfloat{0%{opacity:0;transform:translate(-50%,-30%) scale(.4)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}100%{opacity:0;transform:translate(-50%,-110%) scale(.9)}}
+.smprev{position:relative;aspect-ratio:16/10;border-radius:14px;overflow:hidden;border:1px solid var(--line2);background:linear-gradient(160deg,#4b5563,#1f2937)}
+#smPrevCount{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-shadow:0 0 30px rgba(0,0,0,.5)}

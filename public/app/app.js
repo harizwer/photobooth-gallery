@@ -54,6 +54,7 @@ const STUDIO_DEFAULT = {
   brand: 'Photobooth Studio', guestFooter: '', logo: '',
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
+  smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
   modes: { photo: true, gif: true, boom: true, video: false },
   capture: { res: '4k', camera: 'dslr', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true, canonLive: true },
@@ -773,9 +774,42 @@ function startFlow(mode) {
 // onAt runs when `at` seconds are left (used to start recording the boomerang); minSecs makes the countdown at least that long.
 async function countdown(me, label, onAt, at = 1, minSecs = 0) {
   const el = $('#b-count'); $('#shotInfo').textContent = label;
-  for (let n = Math.max(1, S.capture.countdown || 3, minSecs); n > 0; n--) { if (B.session !== me) return false; el.textContent = n; beep(n === 1 ? 1320 : 880); if (n === at && onAt) onAt(); await sleep(1000); }
+  for (let n = Math.max(1, S.capture.countdown || 3, minSecs); n > 0; n--) { if (B.session !== me) return false; showCount(el, n); beep(n === 1 ? 1320 : 880); if (n === at && onAt) onAt(); await sleep(1000); }
   if (B.session !== me) return false;
-  el.textContent = 'Smile!'; await sleep(250); return true;
+  showSmile(el); await sleep(250); return true;
+}
+/* ---------- The "Smile!" word: text, font, colour, outline, emoji and a pattern, all set in Capture & media ---------- */
+const SMILE_FONTS = ['Geist', 'Playfair Display', 'Pacifico', 'Lobster', 'Bebas Neue', 'Dancing Script', 'Fredoka', 'Bungee', 'Great Vibes', 'Baloo 2', 'Righteous', 'Permanent Marker'];
+const SMILE_EMOJI = ['', '📸', '😄', '✨', '💖', '🎉', '🌸', '👑', '🥳', '💍', '🌙', '⭐'];
+const SMILE_DECO = { none: ['None', []], sparkles: ['Sparkles', ['✨', '⭐']], hearts: ['Hearts', ['💖', '💕', '❤️']], stars: ['Stars', ['⭐', '🌟']], confetti: ['Confetti', ['🎉', '🎊', '✨']], flowers: ['Flowers', ['🌸', '🌼', '🌺']] };
+function smileStyle(el, m, sizeCss) {
+  el.style.fontFamily = `"${m.font || 'Geist'}", Geist, system-ui, sans-serif`;
+  el.style.color = m.color || '#fff';
+  el.style.webkitTextStroke = m.stroke ? `${m.stroke / 100}em ${m.strokeColor || '#000'}` : '';
+  el.style.paintOrder = 'stroke fill';
+  if (sizeCss) el.style.fontSize = sizeCss;
+}
+function showCount(el, n) {
+  el.textContent = n; el.removeAttribute('style');
+  if (S.smile && S.smile.numbers) smileStyle(el, { ...S.smile, stroke: S.smile.stroke });
+}
+// root: where to draw (the booth countdown or the admin preview); vmin: how big the screen is, in px of 1vh/1vw
+function showSmile(el, m = S.smile || {}, preview) {
+  const emo = m.emoji || '', text = (m.text || 'Smile!').trim() || 'Smile!';
+  const chars = [...text].length + (emo ? 4 : 0), k = (m.size || 100) / 100;
+  el.removeAttribute('style');
+  el.innerHTML = `<span class="smilew">${emo ? `<span class="smemo">${emo}</span>` : ''}<span class="smtxt">${esc(text)}</span>${emo ? `<span class="smemo">${emo}</span>` : ''}</span>`;
+  const t = el.querySelector('.smilew');
+  smileStyle(t, m, preview ? `${Math.min(60, 520 / Math.max(4, chars)) * k}px` : `min(${30 * k}vh, ${Math.round(150 / Math.max(4, chars) * k)}vw)`);
+  t.querySelectorAll('.smemo').forEach(e => { e.style.webkitTextStroke = '0'; });
+  const deco = (SMILE_DECO[m.deco] || SMILE_DECO.none)[1];
+  for (let i = 0; i < (deco.length ? 14 : 0); i++) {
+    const d = document.createElement('span'); d.className = 'smdeco'; d.textContent = deco[i % deco.length];
+    const ang = (i / 14) * Math.PI * 2, r = 38 + (i % 3) * 8;
+    d.style.left = `${50 + Math.cos(ang) * r}%`; d.style.top = `${50 + Math.sin(ang) * r * .8}%`;
+    d.style.fontSize = `${(preview ? 18 : 6) + (i % 3) * (preview ? 6 : 2)}${preview ? 'px' : 'vmin'}`; d.style.animationDelay = `${(i % 5) * 60}ms`;
+    el.appendChild(d);
+  }
 }
 function flash() { shutter(); const f = $('#flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }
 async function startSession(design) {
@@ -1591,7 +1625,7 @@ const MODES = [
   { key: 'boom', name: 'Boomerang', spec: 'High resolution', note: 'Video · plays forward and back' },
   { key: 'video', name: 'Video', spec: 'High resolution', note: 'Video with the length you choose' },
 ];
-function renderMedia() { renderModes(); renderCaptureForm(); }
+function renderMedia() { renderModes(); renderCaptureForm(); renderSmileSettings(); }
 function renderModes() {
   $('#modes').innerHTML = MODES.map(m => { const on = !!S.modes[m.key]; return `<button class="card mode ${on ? 'on' : ''}" data-m="${m.key}" aria-pressed="${on}"><div class="row" style="justify-content:space-between;width:100%"><span class="row" style="font-weight:600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m.key][1]}</svg>${m.name}</span><span class="chip ${on ? '' : 'mute'}">${on ? 'On' : 'Off'}</span></div><div class="mono" style="font-size:22px;font-weight:600">${m.spec}</div><div class="lbl">${m.note}</div></button>`; }).join('');
 }
@@ -1605,6 +1639,30 @@ function renderDslrState() { $('#dslrState').textContent = dslr ? 'Connected' : 
 $('#modes').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; S.modes[b.dataset.m] = !S.modes[b.dataset.m]; if (!enabledModes().length) S.modes.photo = true; renderModes(); });
 $('#capQ').oninput = () => $('#capQv').textContent = $('#capQ').value + '%';
 $('#capCam').onchange = () => { camTestOff(); if ($('#capCam').value === 'dslr') $('#dslrCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+/* ---- Smile settings ---- */
+function renderSmileSettings() {
+  const m = S.smile;
+  $('#smText').value = m.text || ''; $('#smFont').value = m.font || 'Geist'; $('#smColor').value = m.color || '#ffffff';
+  $('#smStroke').value = String(m.stroke || 0); $('#smStrokeColor').value = m.strokeColor || '#000000'; $('#smStrokeColor').disabled = !m.stroke;
+  $('#smSize').value = m.size || 100; $('#smSizeV').textContent = (m.size || 100) + '%'; $('#smNumbers').checked = !!m.numbers;
+  $$('#smColors [data-c]').forEach(b => b.classList.toggle('on', b.dataset.c.toLowerCase() === (m.color || '').toLowerCase()));
+  $('#smEmoji').innerHTML = SMILE_EMOJI.map(e => `<button class="pill ${e === (m.emoji || '') ? 'on' : ''}" data-e="${e}">${e || 'None'}</button>`).join('');
+  $('#smDeco').innerHTML = Object.entries(SMILE_DECO).map(([k, [n, em]]) => `<button class="pill ${k === (m.deco || 'none') ? 'on' : ''}" data-d="${k}">${em[0] ? em[0] + ' ' : ''}${n}</button>`).join('');
+  smilePreview();
+}
+function smilePreview() { const box = $('#smPrevCount'); showSmile(box, S.smile, true); box.classList.remove('go'); void box.offsetWidth; box.classList.add('go'); }
+$('#smFont').innerHTML = SMILE_FONTS.map(f => `<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('');
+$('#smText').addEventListener('input', () => { S.smile.text = $('#smText').value; smilePreview(); });
+$('#smFont').onchange = () => { S.smile.font = $('#smFont').value; smilePreview(); };
+$('#smColor').oninput = () => { S.smile.color = $('#smColor').value; $$('#smColors [data-c]').forEach(b => b.classList.remove('on')); smilePreview(); };
+$('#smColors').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b) return; S.smile.color = b.dataset.c; renderSmileSettings(); });
+$('#smStroke').onchange = () => { S.smile.stroke = +$('#smStroke').value; renderSmileSettings(); };
+$('#smStrokeColor').oninput = () => { S.smile.strokeColor = $('#smStrokeColor').value; smilePreview(); };
+$('#smSize').oninput = () => { S.smile.size = +$('#smSize').value; $('#smSizeV').textContent = S.smile.size + '%'; smilePreview(); };
+$('#smNumbers').onchange = () => { S.smile.numbers = $('#smNumbers').checked; };
+$('#smEmoji').addEventListener('click', e => { const b = e.target.closest('[data-e]'); if (!b) return; S.smile.emoji = b.dataset.e; renderSmileSettings(); });
+$('#smDeco').addEventListener('click', e => { const b = e.target.closest('[data-d]'); if (!b) return; S.smile.deco = b.dataset.d; renderSmileSettings(); });
+$('#smPlay').onclick = smilePreview;
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
   const liveBefore = S.capture.canonLive !== false;
