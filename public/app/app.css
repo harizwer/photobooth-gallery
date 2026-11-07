@@ -292,3 +292,27 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .adjrow{display:flex;align-items:center;gap:8px}
 .adjrow > button:not(.btn){all:unset;cursor:pointer;width:44px;height:44px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line);font-size:24px;text-align:center;line-height:44px}
 .adjrow input[type=range]{flex:1;accent-color:var(--accent);height:44px}
+
+/* Printing screen */
+#b-print{align-items:center;justify-content:center;overflow:hidden;cursor:pointer}
+.psbg{position:absolute;inset:0}
+.pscard{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center}
+.pstext{color:var(--ps-ink,#fff);font-size:clamp(18px,2.6vw,30px);font-weight:600;margin-bottom:18px;text-align:center;text-shadow:0 1px 8px rgba(0,0,0,.15)}
+.psslot{height:22px;border-radius:11px;background:linear-gradient(#e6e9ee,#aab1bb);box-shadow:0 6px 18px rgba(0,0,0,.25),inset 0 -2px 0 rgba(0,0,0,.15);position:relative;z-index:2}
+.psslot::after{content:'';position:absolute;left:14px;right:14px;top:9px;height:5px;border-radius:3px;background:#24262b}
+.psout{overflow:hidden;margin-top:-9px;position:relative;z-index:1}
+.psout img{display:block;transform:translateY(-100%);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.psskip{margin-top:18px;font-size:13px;color:var(--ps-ink,#fff);opacity:.6}
+.psprev{aspect-ratio:16/10}
+.psprev .pscard{position:absolute;inset:0;justify-content:flex-start;padding-top:5%}
+.psprev .pstext{font-size:14px;margin-bottom:8px}
+.psprev .psslot{height:12px;border-radius:6px}.psprev .psslot::after{top:4px;height:3px;left:8px;right:8px}
+.psprev .psout{margin-top:-5px}
+.pstheme{position:absolute;inset:0}
+.pst-knit{background:repeating-linear-gradient(90deg,#a23c4b 0 4px,#b44c5b 4px 8px)}
+.pst-knit::before{content:'';position:absolute;top:0;bottom:0;left:24%;right:24%;box-shadow:0 0 50px rgba(0,0,0,.3);
+  background:radial-gradient(ellipse 9px 15px at 25% 50%,rgba(120,100,80,.10) 62%,transparent 66%) 0 0/34px 30px,radial-gradient(ellipse 9px 15px at 75% 50%,rgba(120,100,80,.10) 62%,transparent 66%) 0 15px/34px 30px,repeating-linear-gradient(90deg,transparent 0 32px,rgba(120,100,80,.10) 32px 34px),#f4f0ea}
+.pst-knit .bow{position:absolute;left:calc(24% - 34px);top:5%;font-size:clamp(40px,6vw,72px);filter:drop-shadow(0 4px 6px rgba(0,0,0,.2))}
+.pst-cream{background:radial-gradient(circle at 30% 20%,#fffdf8 0,#f1e9dc 65%)}
+.pst-night{background:radial-gradient(80% 60% at 50% 30%,#2f3352,#0b0c14)}
+.pst-confetti{background:radial-gradient(#ff6f91 2.5px,transparent 3.5px) 0 0/44px 44px,radial-gradient(#ffc93c 2.5px,transparent 3.5px) 22px 22px/44px 44px,radial-gradient(#5ec8f2 2px,transparent 3px) 11px 30px/44px 44px,#fff8f0}

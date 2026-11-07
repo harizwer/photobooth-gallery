@@ -336,6 +336,22 @@
           <label class="field" for="bgSub">Line under the event name<input class="in" id="bgSub" maxlength="60" placeholder="Tap to make memories"></label>
           <div class="lbl">Photo: JPG or PNG. GIF: animated GIF. Video: MP4 or WebM (up to 50 MB), plays silently on loop. Best size: 1920 × 1080 or larger.</div>
         </div>
+        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><b>Printing screen (while the photo prints)</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="psOn"></label></div>
+          <div class="lbl" style="margin-top:-6px">After the guest taps Print, the tablet shows their photo sliding out of a printer slot on this background, then the thank-you screen with the QR.</div>
+          <div class="row" style="flex-wrap:wrap;gap:8px" id="psKinds" role="group" aria-label="Printing screen background">
+            <button class="pill" data-k="theme">Theme</button><button class="pill" data-k="image">Photo</button><button class="pill" data-k="gif">GIF</button><button class="pill" data-k="video">Video</button>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:8px" id="psThemes"><button class="pill" data-t="knit">🎀 Knit rose</button><button class="pill" data-t="cream">Cream</button><button class="pill" data-t="night">Night</button><button class="pill" data-t="confetti">Confetti</button></div>
+          <div class="bgprev psprev" id="psPrev"><div class="bglayer" id="psPrevLayer"></div><div class="bgshade" id="psPrevShade"></div><div class="pscard"><div class="pstext" id="psPrevText"></div><div class="psslot"></div><div class="psout"><img id="psPrevImg" alt=""></div></div></div>
+          <div class="row" style="flex-wrap:wrap;gap:10px"><button class="btn sm" id="psPlay">▶ Play preview</button><span class="row" id="psUploadRow" style="gap:10px" hidden><label class="btn sm" for="psFile" style="cursor:pointer" id="psUploadLbl">Upload photo</label><input type="file" id="psFile" hidden><span class="lbl" id="psFileName">No file yet</span></span></div>
+          <label class="field" for="psTextIn">Text above the slot<input class="in" id="psTextIn" maxlength="50" placeholder="Printing your photo…"></label>
+          <div class="row" style="flex-wrap:wrap;gap:12px;align-items:flex-end">
+            <label class="field" for="psSec" style="width:200px">Animation length (seconds)<input class="in mono" type="number" id="psSec" min="3" max="30" value="12"></label>
+            <label class="field" for="psDim" id="psDimRow" style="flex:1;min-width:200px">Darken background <span class="mono" id="psDimV">25%</span><input type="range" id="psDim" min="0" max="80" value="25" style="accent-color:var(--accent)"></label>
+          </div>
+          <div class="lbl">Tip: set the length close to how long your printer takes (the DNP takes about 10–15 seconds). Press Save at the top to send it to the tablet.</div>
+        </div>
       </div>
     </section>
 
@@ -402,6 +418,10 @@
       <div class="row"><button class="btn rbtn" style="flex:1" id="retakeBtn">↺ Retake</button><button class="btn rbtn" style="flex:1" id="doneBtn">Done</button></div>
       <div class="lbl" id="reviewTimer"></div>
     </div>
+  </div>
+  <div class="bs" id="b-print" aria-live="polite">
+    <div class="psbg" aria-hidden="true"><div class="bglayer" id="psLayer"></div><div class="bgshade" id="psShade"></div></div>
+    <div class="pscard"><div class="pstext" id="psText"></div><div class="psslot"></div><div class="psout"><img id="psImg" alt="Your photo is printing"></div><div class="psskip">Tap to continue</div></div>
   </div>
   <div class="bs" id="b-done">
     <div style="display:flex;flex-direction:column;gap:12px;max-width:320px">

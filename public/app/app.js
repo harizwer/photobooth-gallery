@@ -54,6 +54,7 @@ const STUDIO_DEFAULT = {
   brand: 'Photobooth Studio', guestFooter: '', logo: '',
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
+  printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
   modes: { photo: true, gif: true, boom: true, video: false },
   capture: { res: '4k', camera: 'dslr', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true, canonLive: true },
   types: [],
@@ -1068,14 +1069,53 @@ async function doPrint() {
   const s = B.session; if (!s || s.printed) return;
   s.printed = true; $('#printBtn').disabled = true; clearInterval(B.reviewT);
   startSave(s);
-  openDone('Getting your print ready…', true);
+  s.printMsg = 'Getting your print ready…';
+  const shot = $('#rvWrap canvas');
+  if (S.printScreen && S.printScreen.on !== false && shot) showPrinting(s, shot); else openDone(s.printMsg, true);
   const copies = s.copies, label = `${ACTIVE.name} · ${s.design.name}`, ev = ACTIVE.id;
   try {
     const row = await s.savePromise;
     const job = await retry(async () => check(await sb.from('print_jobs').insert({ event_id: ev, photo_id: row.id, path: row.print_path || row.path, copies, label }).select().single()));
     s.jobId = job.id;
+    s.printMsg = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.';
     if (B.session === s && $('#b-done').classList.contains('on')) { $('#printMsg').textContent = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.'; $('#printBar').style.width = '30%'; }
-  } catch (e) { if (B.session === s) $('#printMsg').textContent = 'Could not send the print. Please call the attendant.'; }
+  } catch (e) { if (B.session === s) { s.printMsg = 'Could not send the print. Please call the attendant.'; $('#printMsg').textContent = s.printMsg; } }
+}
+/* ---------- Printing screen: the guest's photo slides out of a printer slot over the chosen background ---------- */
+const PS_THEMES = { knit: ['Knit rose', '#8a2f3d'], cream: ['Cream', '#5b4a33'], night: ['Night', '#ffffff'], confetti: ['Confetti', '#5b4a33'] };
+function paintPs(layer, shade, P) {
+  if (P.kind === 'theme' || !P.src) {
+    const t = PS_THEMES[P.theme] ? P.theme : 'knit', key = 'theme:' + t;
+    if (layer.dataset.k !== key) { layer.innerHTML = `<div class="pstheme pst-${t}">${t === 'knit' ? '<span class="bow">🎀</span>' : ''}</div>`; layer.style.background = ''; layer.dataset.k = key; }
+    shade.style.opacity = 0; return PS_THEMES[t][1];
+  }
+  paintBg(layer, shade, { kind: P.kind, src: P.src, dim: P.dim ?? 25 }); return '#ffffff';
+}
+// Puts the picture under the slot at a size that fits the screen (or the admin preview box).
+function layoutPs(root, img, maxW, maxH) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, k = Math.min(maxW / w, maxH / h);
+  const out = root.querySelector('.psout'), pic = root.querySelector('.psout img');
+  out.style.width = Math.round(w * k) + 'px'; out.style.height = Math.round(h * k) + 'px';
+  pic.style.width = out.style.width; pic.style.height = out.style.height;
+  root.querySelector('.psslot').style.width = Math.round(w * k + 40) + 'px';
+}
+function playPs(root, sec) {
+  const pic = root.querySelector('.psout img');
+  pic.getAnimations().forEach(a => a.cancel());
+  return pic.animate([{ transform: 'translateY(-100%)' }, { transform: 'translateY(0)' }], { duration: sec * 1000, easing: 'linear', fill: 'forwards' });
+}
+function showPrinting(s, shot) {
+  const P = S.printScreen || {}, root = $('#b-print');
+  root.style.setProperty('--ps-ink', paintPs($('#psLayer'), $('#psShade'), P));
+  $('#psText').textContent = P.text || 'Printing your photo…';
+  const pic = $('#psImg'); pic.src = shot.toDataURL('image/jpeg', .85);
+  layoutPs(root, shot, Math.min(innerWidth * .42, 380), innerHeight * .62);
+  bscreen('b-print'); clearInterval(B.doneT);
+  const sec = Math.max(3, Math.min(30, +P.sec || 12)), anim = playPs(root, sec);
+  let gone = false;
+  const next = () => { if (gone) return; gone = true; if (B.session === s && root.classList.contains('on')) openDone(s.printMsg || 'Printing… collect your photo at the printer.', true); };
+  anim.onfinish = () => setTimeout(next, 1200);
+  root.onclick = next;   // a tap skips to the QR
 }
 function finish() {
   clearInterval(B.reviewT);
@@ -1093,8 +1133,10 @@ function openDone(status, printing) {
   tick(); clearInterval(B.doneT); B.doneT = setInterval(() => { left--; tick(); if (left <= 0) goHome(); }, 1000);
 }
 function boothJob(job) {
-  const s = B.session; if (!s || job.id !== s.jobId || !$('#b-done').classList.contains('on')) return;
+  const s = B.session; if (!s || job.id !== s.jobId) return;
   const txt = { waiting: printerOnline() ? 'Sending to the printer…' : 'Waiting for the printer laptop…', printing: 'Printing… collect your photo at the printer.', done: 'Done! Collect your photo at the printer.', failed: 'Printer problem — please call the attendant.', cancelled: 'Print cancelled.' }[job.status];
+  if (txt) s.printMsg = txt;
+  if (!$('#b-done').classList.contains('on')) return;   // still on the printing animation: shown when it ends
   if (txt) $('#printMsg').textContent = txt;
   $('#printBar').style.width = { waiting: '15%', printing: '60%', done: '100%' }[job.status] || '100%';
 }
@@ -1888,7 +1930,7 @@ function renderStudio() {
   $('#bgDim').value = S.bg.dim; $('#bgSub').value = S.bg.sub || '';
   $$('#bgColors .sw').forEach(x => x.classList.toggle('on', x.dataset.c === S.bg.color));
   $('#bgFileName').textContent = S.bg.src ? S.bg.src.split('/').pop() : 'No file yet';
-  applyBrand(); renderBgPrev(); renderPq();
+  applyBrand(); renderBgPrev(); renderPq(); renderPsSettings();
 }
 function renderBgPrev() {
   paintBg($('#bgPrevLayer'), $('#bgPrevShade'), S.bg); $('#bgPrevTitle').textContent = ACTIVE ? ACTIVE.name : '';
@@ -1928,6 +1970,44 @@ $('#logoFile').addEventListener('change', async e => {
   catch (err) { toast(err.message, 4000); }
 });
 $('#logoReset').onclick = async () => { S.logo = ''; try { await saveStudio(); toast('Default logo restored'); } catch (e) { toast(e.message, 4000); } };
+/* ---- Printing screen settings ---- */
+function renderPsSettings() {
+  const P = S.printScreen;
+  $('#psOn').checked = P.on !== false; $('#psTextIn').value = P.text || ''; $('#psSec').value = P.sec || 12; $('#psDim').value = P.dim ?? 25; $('#psDimV').textContent = (P.dim ?? 25) + '%';
+  $$('#psKinds .pill').forEach(b => b.classList.toggle('on', b.dataset.k === P.kind));
+  $$('#psThemes [data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === P.theme));
+  $('#psThemes').hidden = P.kind !== 'theme'; $('#psUploadRow').hidden = P.kind === 'theme'; $('#psDimRow').hidden = P.kind === 'theme';
+  $('#psUploadLbl').textContent = { image: 'Upload photo', gif: 'Upload GIF', video: 'Upload video' }[P.kind] || '';
+  $('#psFile').accept = { image: 'image/jpeg,image/png,image/webp', gif: 'image/gif', video: 'video/mp4,video/webm' }[P.kind] || '';
+  $('#psFileName').textContent = P.src ? P.src.split('/').pop() : 'No file yet';
+  psPreview();
+}
+let psSample = null;
+async function psPreview(play) {
+  const P = S.printScreen, box = $('#psPrev');
+  box.style.setProperty('--ps-ink', paintPs($('#psPrevLayer'), $('#psPrevShade'), P));
+  $('#psPrevText').textContent = P.text || 'Printing your photo…';
+  if (!psSample) psSample = await compose({ ...BUILTIN[0], output_long: 600 }, samples(3), 'none', { name: ACTIVE ? ACTIVE.name : '', date: ACTIVE ? ACTIVE.event_date : '' });
+  const img = $('#psPrevImg'); if (!img.src) img.src = psSample.toDataURL('image/jpeg', .8);
+  layoutPs(box, psSample, box.clientWidth * .3, box.clientHeight * .62);
+  if (play) playPs(box, Math.max(3, Math.min(30, +P.sec || 12)));
+}
+$('#psOn').onchange = () => { S.printScreen.on = $('#psOn').checked; };
+$('#psKinds').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (!b) return; if (S.printScreen.kind !== b.dataset.k) S.printScreen.src = ''; S.printScreen.kind = b.dataset.k; renderPsSettings(); });
+$('#psThemes').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (!b) return; S.printScreen.theme = b.dataset.t; renderPsSettings(); });
+$('#psTextIn').addEventListener('input', () => { S.printScreen.text = $('#psTextIn').value.trim(); $('#psPrevText').textContent = S.printScreen.text || 'Printing your photo…'; });
+$('#psSec').addEventListener('change', () => { S.printScreen.sec = Math.max(3, Math.min(30, Math.round(+$('#psSec').value || 12))); $('#psSec').value = S.printScreen.sec; });
+$('#psDim').oninput = () => { S.printScreen.dim = +$('#psDim').value; $('#psDimV').textContent = S.printScreen.dim + '%'; psPreview(); };
+$('#psPlay').onclick = () => psPreview(true);
+$('#psFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const k = S.printScreen.kind, ok = k === 'video' ? /^video\/(mp4|webm)$/.test(f.type) : k === 'gif' ? f.type === 'image/gif' : /^image\/(jpeg|png|webp)$/.test(f.type);
+  if (!ok) return toast('That file type does not match. Choose a ' + ({ image: 'JPG or PNG photo', gif: 'GIF', video: 'MP4 or WebM video' }[k]));
+  if (f.size > 50 * 1024 * 1024) return toast('That file is over 50 MB.');
+  $('#psFileName').textContent = 'Uploading ' + f.name + '…';
+  try { const path = `u-${USER.id}/ps-${Date.now().toString(36)}.${f.name.split('.').pop().toLowerCase()}`; await upload(path, f, f.type); S.printScreen.src = fileUrl(path); $('#psFileName').textContent = f.name; psPreview(); toast('Uploaded. Press Save to use it on the tablet.'); }
+  catch (err) { $('#psFileName').textContent = 'Upload failed'; toast(err.message, 4000); }
+});
 $('#studioSave').onclick = async () => { try { await saveStudio(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); } };
 
 /* ---- Accounts & PIN ---- */
