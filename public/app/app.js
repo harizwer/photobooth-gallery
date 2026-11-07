@@ -1504,8 +1504,32 @@ function fillCmd() { $('#cmdList').innerHTML = [...SECS.map(k => CRUMB[k]), ...E
 /* ---- Home ---- */
 let STATS = [];
 async function loadStats() { STATS = check(await sb.from('photos').select('id,kind,created_at,event_id').eq('owner', USER.id).order('created_at', { ascending: false }).limit(10000)); }
+/* ---------- Storage used in Cloudflare R2 (10 GB free) ---------- */
+const fmtSize = b => b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : b >= 1e6 ? Math.round(b / 1e6) + ' MB' : Math.max(0, Math.round(b / 1e3)) + ' KB';
+let STORAGE = null;
+async function loadStorage(fresh) {
+  const r = await fetch('/api/storage' + (fresh ? '?fresh=1' : ''), { headers: { Authorization: await authHeader() } });
+  if (!r.ok) throw new Error((await r.text().catch(() => '')) || 'Could not read the storage');
+  return (STORAGE = await r.json());
+}
+async function renderStorage(fresh) {
+  try { await loadStorage(fresh); } catch (e) { $('#stUsed').textContent = '–'; $('#stOf').textContent = 'Could not read the storage right now.'; return; }
+  const { bytes, freeBytes, folders } = STORAGE, pct = Math.min(100, bytes / freeBytes * 100), left = Math.max(0, freeBytes - bytes);
+  $('#stUsed').textContent = fmtSize(bytes); $('#stOf').textContent = `of ${fmtSize(freeBytes)} used (${pct < 1 && bytes ? '<1' : Math.round(pct)}%)`;
+  $('#stFill').style.width = Math.max(bytes ? 1 : 0, pct) + '%'; $('#stBar').setAttribute('aria-valuenow', Math.round(pct));
+  $('#stBar').className = 'stbar' + (pct >= 95 ? ' full' : pct >= 80 ? ' warn' : '');
+  const chip = $('#stChip'); chip.hidden = pct < 80;
+  chip.textContent = pct >= 100 ? 'Over the free 10 GB: small charge per extra GB' : pct >= 95 ? 'Almost full' : 'Getting full'; chip.className = 'chip' + (pct >= 95 ? ' bad' : ' warn');
+  $('#stLeft').textContent = bytes > freeBytes ? `${fmtSize(bytes - freeBytes)} over the free amount` : `${fmtSize(left)} free`;
+  // about 9 MB per photo session (photo, print strip, boomerang)
+  $('#stSessions').textContent = left ? `room for about ${Math.floor(left / 9e6).toLocaleString('en-GB')} more photo sessions` : 'Free up space: download and delete an old event';
+  const top = Object.entries(folders || {}).map(([id, b]) => [EVENTS.find(e => e.id === id), b]).filter(([e]) => e).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  $('#stTop').textContent = top.length ? 'Biggest events: ' + top.map(([e, b]) => `${e.name} ${fmtSize(b)}`).join(' · ') : '';
+}
+$('#stRefresh').onclick = () => renderStorage(true);
 async function renderHome() {
   try { await Promise.all([loadEvents(), loadTemplates(), loadStation(), loadStats()]); } catch (e) { toast(e.message, 4000); }
+  renderStorage();
   fillCmd();
   const per = id => STATS.filter(p => p.event_id === id).length;
   $('#hTotal').textContent = STATS.length.toLocaleString('en-GB');
@@ -1986,6 +2010,7 @@ async function renderGallery() {
   $('#albumExpInfo').textContent = ev.album_expires_at ? (new Date(ev.album_expires_at) < new Date() ? 'Expired on ' : 'Expires on ') + new Date(ev.album_expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Never expires';
   try { galPhotos = check(await sb.from('photos').select('*').eq('event_id', galEvent).eq('owner', USER.id).order('created_at', { ascending: false })); } catch (e) { toast(e.message, 4000); galPhotos = []; }
   $('#gCount').textContent = `${galPhotos.length} session${galPhotos.length === 1 ? '' : 's'}`;
+  (STORAGE ? Promise.resolve(STORAGE) : loadStorage().catch(() => null)).then(st => { const b = st && st.folders && st.folders[galEvent]; $('#gSize').hidden = !b; if (b) $('#gSize').textContent = fmtSize(b) + ' used'; });
   drawThumbs();
 }
 function drawThumbs() {

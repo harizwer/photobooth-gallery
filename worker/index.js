@@ -21,6 +21,7 @@ export default {
   async fetch(request, env, ctx) {
     SB = env.SUPABASE_URL || SUPABASE_URL;   // overridable for local tests
     const url = new URL(request.url);
+    if (url.pathname === '/api/storage') return storageUsage(request, env).catch(e => text(500, 'Storage error: ' + (e && e.message || e)));
     if (!url.pathname.startsWith('/files/')) return env.ASSETS.fetch(request);
     const path = decodeURIComponent(url.pathname.slice('/files/'.length));
     if (!validPath(path)) return text(400, 'Bad file name');
@@ -102,6 +103,28 @@ async function mayWrite(user, path) {
   return Array.isArray(rows) && rows.length === 1;
 }
 
+// How much of the R2 bucket is used: total, and per top folder (each event has its own folder).
+// Logged-in users only. Kept for a minute so opening the admin often costs almost nothing.
+let usageCache = null;
+async function storageUsage(request, env) {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  const user = await userId(request);
+  if (!user) return text(401, 'Log in again.');
+  const fresh = new URL(request.url).searchParams.has('fresh');
+  if (!usageCache || fresh || Date.now() - usageCache.at > 60000) {
+    let bytes = 0, objects = 0, cursor;
+    const folders = {};
+    do {
+      const page = await env.PHOTOS.list({ cursor, limit: 1000 });
+      for (const o of page.objects) { bytes += o.size; objects++; const top = o.key.split('/')[0]; folders[top] = (folders[top] || 0) + o.size; }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+    usageCache = { at: Date.now(), bytes, objects, folders };
+  }
+  const { bytes, objects, folders } = usageCache;
+  return new Response(JSON.stringify({ bytes, objects, folders, freeBytes: 10 * 1e9, at: usageCache.at }), { headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+}
+
 async function put(request, env, path) {
   const user = await userId(request);
   if (!user) return text(401, 'Log in again to save photos.');
@@ -113,6 +136,7 @@ async function put(request, env, path) {
   if (!body.byteLength) return text(400, 'Empty file');
   if (body.byteLength > MAX_UPLOAD) return text(413, 'File too big');
   await env.PHOTOS.put(path, body, { httpMetadata: { contentType: type } });
+  usageCache = null;
   return new Response(JSON.stringify({ ok: true, path, size: body.byteLength }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
 }
 
@@ -121,5 +145,6 @@ async function del(request, env, path) {
   if (!user) return text(401, 'Log in again.');
   if (!(await mayWrite(user, path))) return text(403, 'Not allowed.');
   await env.PHOTOS.delete(path);
+  usageCache = null;
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
 }

@@ -95,6 +95,13 @@
         </div>
       </div>
       <div class="grid-auto" id="homeEvents"></div>
+      <div class="card" id="storageCard" style="display:flex;flex-direction:column;gap:10px">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><div class="lbl">Photo storage · Cloudflare R2 (10 GB free)</div><button class="btn sm" id="stRefresh">↻ Refresh</button></div>
+        <div class="row" style="align-items:baseline;gap:10px;flex-wrap:wrap"><span class="mono num" id="stUsed">–</span><span class="lbl" id="stOf"></span><span class="chip" id="stChip" hidden></span></div>
+        <div class="stbar" role="progressbar" aria-label="Storage used" aria-valuemin="0" aria-valuemax="100" id="stBar"><div id="stFill"></div></div>
+        <div class="row lbl" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><span id="stLeft"></span><span id="stSessions"></span></div>
+        <div class="lbl" id="stTop" style="font-size:12px"></div>
+      </div>
       <div class="wrap">
         <div class="card" style="flex:3 1 440px">
           <div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="lbl">Captures by hour · <span id="activeName"></span></div><span class="chip mute" id="hPeak" hidden></span></div>
@@ -258,7 +265,7 @@
     <section class="sec" id="s-gallery">
       <div class="wrap" style="justify-content:space-between;align-items:center">
         <div><h2 class="title" id="gTitle"></h2><div class="lbl mono" id="gCount"></div></div>
-        <div class="row" style="flex-wrap:wrap"><select class="in" id="gEvent" style="width:240px" aria-label="Event"></select><button class="btn" id="gZip">Download all (ZIP)</button><button class="btn" id="gGuestbook">📖 Guestbook PDF</button><button class="btn" id="gVideoBook">🎬 Video guestbook</button></div>
+        <div class="row" style="flex-wrap:wrap;align-items:center"><span class="chip mute" id="gSize" title="Storage this event uses" hidden></span><select class="in" id="gEvent" style="width:240px" aria-label="Event"></select><button class="btn" id="gZip">Download all (ZIP)</button><button class="btn" id="gGuestbook">📖 Guestbook PDF</button><button class="btn" id="gVideoBook">🎬 Video guestbook</button></div>
       </div>
       <div class="wrap" style="align-items:flex-start">
         <div style="flex:3 1 460px;min-width:0;display:flex;flex-direction:column;gap:14px">
