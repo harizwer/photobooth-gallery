@@ -1,7 +1,0 @@
-page: about:blank
-{
- "page": "about:blank",
- "title": "",
- "ua": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.210820.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36 PhotoboothApp/1.0",
- "bodyText": "One update needed This tablet's Android System WebView is too old (version 74). The booth needs version 98 or newer. Updating it is free. Update in Play Store After updating, close this app and open it again. Also update Google Chrome if Play Store offers it. Continue anyway"
-}
