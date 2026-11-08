@@ -688,6 +688,7 @@ async function dslrLoop(d) {
       LV.frames++; LV.lastMs = Math.round(performance.now() - t0); LV.slowest = Math.max(LV.slowest, LV.lastMs);
       if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
       x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
+      if (d.recTrack) { d.recTrack.requestFrame(); continue; }   // recording a video message: next picture straight away
       // Full speed while guests look at the camera; a gentle keep-alive while the start screen covers it
       await sleep(document.hidden ? 600 : (ROLE === 'booth' && $('#b-attract').classList.contains('on')) ? 400 : 15);   // as fast as the Canon allows while guests look at it
     } catch (e) {
@@ -809,6 +810,19 @@ async function capturePhoto() {
   return grabFrame();
 }
 function liveStream() { return dslr && !dslr.noLive ? dslr.canvas.captureStream(24) : B.stream; }
+// Video messages: with the Canon, each live view picture is recorded exactly once, at the moment it arrives
+// (no repeated or skipped pictures, and it stays in step with the sound). The app is asked for full speed.
+function recVideoStream(mic) {
+  let vt;
+  if (dslr && !dslr.noLive) {
+    vt = dslr.canvas.captureStream(0).getVideoTracks()[0]; dslr.recTrack = vt;
+    if (NATIVE) nativeCall('liveFast').catch(() => {});
+  } else vt = B.stream.getVideoTracks()[0];
+  return new MediaStream([vt, ...(mic ? mic.getAudioTracks() : [])]);
+}
+function endRecVideo() {
+  if (dslr && dslr.recTrack) { dslr.recTrack.stop(); dslr.recTrack = null; if (NATIVE) nativeCall('liveNormal').catch(() => {}); }
+}
 
 /* ---------- Session flow ---------- */
 function goHome() {
@@ -914,14 +928,13 @@ async function startSession(design) {
     } else if (me.mode === 'video') {
       const VB = S.videoBook || {}, sec = Math.max(5, Math.min(60, +VB.sec || 20));
       let mic = null;
-      try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }); }
+      try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true, channelCount: 1 }, video: false }); }
       catch (e) { toast('The microphone is not allowed, so this video has no sound. Allow the microphone for the app or website.', 7000); }
       try {
         if (!(await countdown(me, VB.prompt || 'Say something nice! 🎥'))) return;
         $('#b-count').textContent = ''; $('#recStop').hidden = false;
-        const stream = new MediaStream([...liveStream().getVideoTracks(), ...(mic ? mic.getAudioTracks() : [])]);
-        me.blob = await recordStream(stream, sec * 1000, me, s => { $('#shotInfo').innerHTML = `<span class="recdot"></span>Recording · ${s}s left`; $('#b-count').textContent = s; }, 4e6);
-      } finally { $('#recStop').hidden = true; if (mic) mic.getTracks().forEach(t => t.stop()); }
+        me.blob = await recordStream(recVideoStream(mic), sec * 1000, me, s => { $('#shotInfo').innerHTML = `<span class="recdot"></span>Recording · ${s}s left`; $('#b-count').textContent = s; }, 4e6);
+      } finally { $('#recStop').hidden = true; endRecVideo(); if (mic) mic.getTracks().forEach(t => t.stop()); }
       if (B.session !== me) return;
       me.poster = grabFrame(1920);
     }
@@ -2438,6 +2451,8 @@ $('#vbPrompt').addEventListener('input', () => { S.videoBook.prompt = $('#vbProm
 
 /* ---- Video guestbook montage: every video message of the event in one video, on a themed frame ---- */
 const MT_BGS = { leather: ['Leather', '#5b1a17', '#ffffff'], navy: ['Navy', '#1d2433', '#ffffff'], black: ['Black', '#111111', '#ffffff'], sage: ['Sage', '#7f927a', '#ffffff'], blush: ['Blush', '#f3d3da', '#5b2a33'], cream: ['Cream', '#f1e9dc', '#4a3b2a'] };
+const MT_ANIMS = { none: 'Static', fade: 'Fade in', float: 'Float', bounce: 'Bounce', pulse: 'Pulse', wave: 'Wave', swing: 'Swing', type: 'Typewriter', pop: 'Pop', glow: 'Glow' };
+const MT_ANIM_DEFAULT = { titleAnim: 'float', namesAnim: 'glow', dateAnim: 'fade', capAnim: 'pop' };
 let mtTexture = {};
 // A soft texture so plain colours look like card or leather
 function mtBackground(W, H, key) {
@@ -2458,33 +2473,57 @@ function mtLayout(o) {
   const win = port ? { x: 60, y: 560, w: 960, h: 540 } : { x: 385, y: 190, w: 1150, h: 647 };
   return { W, H, port, win, titleY: port ? 380 : 120, namesY: port ? 1400 : 950, dateY: port ? 1500 : 1030 };
 }
-// One frame of the montage: background, title, the video window (with caption), names and date
-function mtDraw(x, o, L, bgImg, frame, caption, fade) {
-  const { W, H, win } = L, col = o.color || '#fff';
-  if (bgImg) { const k = Math.max(W / bgImg.width, H / bgImg.height); x.drawImage(bgImg, (W - bgImg.width * k) / 2, (H - bgImg.height * k) / 2, bgImg.width * k, bgImg.height * k); }
-  else x.drawImage(mtBackground(W, H, o.bg), 0, 0);
-  x.fillStyle = col; x.textAlign = 'center'; x.textBaseline = 'middle'; x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = 12;
-  x.font = `${L.port ? 120 : 96}px "Bebas Neue", Geist, sans-serif`; x.fillText((o.title || 'Video Guestbook').toUpperCase(), W / 2, L.titleY, W - 100);
-  x.shadowBlur = 0;
-  // video window with rounded corners
+// The parts that never move (background picture or texture), drawn once and reused for every frame
+function mtStatic(o, L, bgImg) {
+  const c = document.createElement('canvas'); c.width = L.W; c.height = L.H; const x = c.getContext('2d');
+  if (bgImg) { const k = Math.max(L.W / bgImg.width, L.H / bgImg.height); x.drawImage(bgImg, (L.W - bgImg.width * k) / 2, (L.H - bgImg.height * k) / 2, bgImg.width * k, bgImg.height * k); }
+  else x.drawImage(mtBackground(L.W, L.H, o.bg), 0, 0);
+  return c;
+}
+const easeOutBack = p => 1 + 2.7 * Math.pow(p - 1, 3) + 1.7 * Math.pow(p - 1, 2);
+// Text with a movement. t = seconds since the movement started.
+function mtText(x, text, cx, cy, font, color, anim, t, maxW, box) {
+  if (!text) return;
+  x.save(); x.font = font; x.textBaseline = 'middle';
+  const size = parseFloat((font.match(/(\d+(?:\.\d+)?)px/) || [0, 40])[1]), chars = [...text];
+  let alpha = 1, dy = 0, sc = 1, rot = 0, shown = text, glow = 0;
+  switch (anim) {
+    case 'fade': alpha = Math.min(1, t / 1.2); break;
+    case 'float': dy = Math.sin(t * 2) * size * .08; break;
+    case 'bounce': dy = -Math.abs(Math.sin(t * 3.2)) * size * .22; break;
+    case 'pulse': sc = 1 + Math.sin(t * 3) * .06; break;
+    case 'swing': rot = Math.sin(t * 2.2) * .07; break;
+    case 'type': shown = chars.slice(0, Math.min(chars.length, Math.floor(t * 14))).join(''); break;
+    case 'pop': { const p = Math.min(1, t / .45); sc = p < 1 ? .3 + .7 * easeOutBack(p) : 1; alpha = Math.min(1, t / .2); break; }
+    case 'glow': glow = 12 + (Math.sin(t * 3) + 1) * 16; break;
+  }
+  const full = x.measureText(text).width, fit = maxW && full > maxW ? maxW / full : 1;
+  x.globalAlpha = alpha; x.translate(cx, cy + dy); x.rotate(rot); x.scale(sc * fit, sc * fit);
+  if (box) { x.fillStyle = box; x.beginPath(); x.roundRect(-full / 2 - size * .45, -size * .78, full + size * .9, size * 1.56, size * .3); x.fill(); }
+  x.fillStyle = color; x.shadowColor = anim === 'glow' ? color : 'rgba(0,0,0,.35)'; x.shadowBlur = anim === 'glow' ? glow : (box ? 0 : 10);
+  if (anim === 'wave') { let px = -full / 2; x.textAlign = 'left'; chars.forEach((ch, i) => { x.fillText(ch, px, Math.sin(t * 4 - i * .5) * size * .12); px += x.measureText(ch).width; }); }
+  else if (anim === 'type') { x.textAlign = 'left'; x.fillText(shown, -full / 2, 0); }
+  else { x.textAlign = 'center'; x.fillText(shown, 0, 0); }
+  x.restore();
+}
+// One frame: the fixed background, the video window (with caption), and the moving words.
+// t = seconds since the montage started; tc = seconds since this message started.
+function mtDraw(x, o, L, stat, frame, caption, fade, t, tc) {
+  const { W, win } = L, col = o.color || '#fff';
+  x.drawImage(stat, 0, 0);
+  mtText(x, (o.title || 'Video Guestbook').toUpperCase(), W / 2, L.titleY, `${L.port ? 120 : 96}px "Bebas Neue", Geist, sans-serif`, col, o.titleAnim || 'none', t, W - 100);
   x.save(); x.beginPath(); x.roundRect(win.x, win.y, win.w, win.h, 34); x.clip();
   x.fillStyle = '#000'; x.fillRect(win.x, win.y, win.w, win.h);
   if (frame) {
     const iw = frame.videoWidth || frame.width, ih = frame.videoHeight || frame.height;
     if (iw && ih) { const k = Math.max(win.w / iw, win.h / ih); x.drawImage(frame, win.x + (win.w - iw * k) / 2, win.y + (win.h - ih * k) / 2, iw * k, ih * k); }
   }
-  if (caption) {
-    x.font = `700 ${L.port ? 40 : 38}px Geist, system-ui, sans-serif`; const tw = Math.min(win.w - 60, x.measureText(caption).width);
-    x.fillStyle = 'rgba(0,0,0,.6)'; x.beginPath(); x.roundRect(W / 2 - tw / 2 - 18, win.y + win.h - 92, tw + 36, 62, 12); x.fill();
-    x.fillStyle = '#fff'; x.fillText(caption, W / 2, win.y + win.h - 61, win.w - 60);
-  }
+  if (caption) mtText(x, caption, W / 2, win.y + win.h - 62, `700 ${L.port ? 40 : 38}px Geist, system-ui, sans-serif`, '#fff', o.capAnim || 'none', tc, win.w - 90, 'rgba(0,0,0,.6)');
   if (fade) { x.fillStyle = `rgba(0,0,0,${fade})`; x.fillRect(win.x, win.y, win.w, win.h); }
   x.restore();
   x.strokeStyle = 'rgba(255,255,255,.25)'; x.lineWidth = 3; x.beginPath(); x.roundRect(win.x, win.y, win.w, win.h, 34); x.stroke();
-  x.fillStyle = col; x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = 10;
-  x.font = `${L.port ? 130 : 104}px "${o.font || 'Great Vibes'}", cursive`; x.fillText(o.names || '', W / 2, L.namesY, W - 80);
-  x.font = `500 ${L.port ? 40 : 34}px Geist, system-ui, sans-serif`; x.fillText(o.date || '', W / 2, L.dateY);
-  x.shadowBlur = 0;
+  mtText(x, o.names || '', W / 2, L.namesY, `${L.port ? 130 : 104}px "${o.font || 'Great Vibes'}", cursive`, col, o.namesAnim || 'none', t, W - 80);
+  mtText(x, o.date || '', W / 2, L.dateY, `500 ${L.port ? 40 : 34}px Geist, system-ui, sans-serif`, col, o.dateAnim || 'none', t, W - 80);
 }
 const mtFrame = () => new Promise(r => requestAnimationFrame(() => r()));
 function mtVideo(src) {
@@ -2496,78 +2535,99 @@ function mtVideo(src) {
 async function renderMontage(clips, o, onProgress, cancel) {
   const L = mtLayout(o), c = document.createElement('canvas'); c.width = L.W; c.height = L.H; const x = c.getContext('2d');
   await Promise.all([document.fonts.load(`120px "Bebas Neue"`), document.fonts.load(`120px "${o.font || 'Great Vibes'}"`)]).catch(() => {});
-  const bgImg = o.bg === 'image' && o.bgSrc ? await loadImg(o.bgSrc) : null;
+  const stat = mtStatic(o, L, o.bg === 'image' && o.bgSrc ? await loadImg(o.bgSrc) : null);
   const ac = new (window.AudioContext || window.webkitAudioContext)(), dest = ac.createMediaStreamDestination();
-  const stream = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  // A constant, inaudible signal keeps the sound track running from the first moment. Without it the recorder
+  // skips the silent intro and every message's sound comes out earlier than its picture.
+  const keep = ac.createConstantSource(); keep.offset.value = 1e-4; keep.connect(dest); keep.start();
+  // Drawing and capturing a picture takes about 0.1 s, so the sound waits the same time and both stay together
+  const lag = ac.createDelay(1); lag.delayTime.value = .1; lag.connect(dest);
+  // Frames are added by hand (one per drawing), so every picture carries the exact time it was shown,
+  // in step with the sound that plays at that moment.
+  const vtrack = c.captureStream(0).getVideoTracks()[0];
+  const stream = new MediaStream([vtrack, ...dest.stream.getAudioTracks()]);
   const mime = recMime(), chunks = [];
   const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8e6, audioBitsPerSecond: 160e3 } : {});
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const stopped = new Promise(r => rec.onstop = r);
   const total = clips.reduce((t, k) => t + (k.dur || 10), 0) + 4; let done = 0;
-  mtDraw(x, o, L, bgImg, null, '', 0); rec.start(500);
+  const T0 = performance.now(), now = () => (performance.now() - T0) / 1000;
+  let lastPaint = 0;
+  const paint = (frame, cap, fade, tc) => { const p = performance.now(); if (p - lastPaint < 30) return; lastPaint = p; mtDraw(x, o, L, stat, frame, cap, fade, now(), tc); vtrack.requestFrame(); };
+  await ac.resume().catch(() => {});
+  rec.start(500);
   // intro: the frame on its own for 2 seconds
-  for (const ti = performance.now(); performance.now() - ti < 2000 && !cancel.on;) { mtDraw(x, o, L, bgImg, null, '', 0); await mtFrame(); }
+  for (const ti = performance.now(); performance.now() - ti < 2000 && !cancel.on;) { paint(null, '', 0, 0); await mtFrame(); }
   done += 2; onProgress(done / total);
   for (const k of clips) {
     if (cancel.on) break;
-    const v = await mtVideo(k.url); const node = ac.createMediaElementSource(v); node.connect(dest);
-    await ac.resume().catch(() => {}); await v.play();
+    const v = await mtVideo(k.src || k.url); const node = ac.createMediaElementSource(v); node.connect(lag);
+    await v.play();
     const t0 = performance.now();
     while (!v.ended && !cancel.on) {
-      const el = (performance.now() - t0) / 1000, fade = el < .35 ? 1 - el / .35 : (v.duration && v.duration - v.currentTime < .3 ? 1 - (v.duration - v.currentTime) / .3 : 0);
-      mtDraw(x, o, L, bgImg, v, k.caption || '', Math.max(0, Math.min(1, fade)));
+      const el = (performance.now() - t0) / 1000, left = v.duration ? v.duration - v.currentTime : 1;
+      const fade = el < .35 ? 1 - el / .35 : left < .3 ? 1 - left / .3 : 0;
+      paint(v, k.caption || '', Math.max(0, Math.min(1, fade)), v.currentTime);
       onProgress(Math.min(1, (done + v.currentTime) / total));
       await mtFrame();
     }
     v.pause(); node.disconnect(); done += k.dur || v.duration || 0;
   }
-  for (const ti = performance.now(); performance.now() - ti < 2000 && !cancel.on;) { mtDraw(x, o, L, bgImg, null, '', 0); await mtFrame(); }
-  rec.stop(); await stopped; ac.close().catch(() => {});
+  for (const ti = performance.now(); performance.now() - ti < 2000 && !cancel.on;) { paint(null, '', 0, 0); await mtFrame(); }
+  rec.stop(); await stopped; vtrack.stop(); keep.stop(); ac.close().catch(() => {});
   return cancel.on ? null : new Blob(chunks, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] });
 }
 $('#gVideoBook').onclick = async () => {
   const ev = EVENTS.find(e => e.id === galEvent); if (!ev) return;
   const list = galPhotos.filter(p => p.kind === 'video' && p.media_path).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   if (!list.length) return toast('No video messages for this event yet. Turn on Video guestbook in Capture & media.', 6000);
-  const o = { ...S.videoBook.montage }; if (!o.names) o.names = ev.name || ''; o.date = ev.event_date || '';
+  const o = { ...MT_ANIM_DEFAULT, ...S.videoBook.montage }; if (!o.names) o.names = ev.name || ''; o.date = ev.event_date || '';
   const caps = {}, chosen = new Set(list.map(p => p.id));
+  const animSel = (id, label) => `<label class="field" style="width:150px">${label}<select class="in" id="${id}">${Object.entries(MT_ANIMS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></label>`;
   const m = modal(`<div class="row" style="justify-content:space-between"><b>🎬 Video guestbook · ${esc(ev.name)}</b><button class="ico" data-close aria-label="Close">✕</button></div>
     <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
-      <div style="flex:none;display:flex;flex-direction:column;gap:8px;align-items:center"><canvas id="mtPrev" style="border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:100%"></canvas></div>
+      <div style="flex:none;display:flex;flex-direction:column;gap:8px;align-items:center"><canvas id="mtPrev" style="border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:100%"></canvas><span class="lbl" style="font-size:12px">Live preview of the movements</span></div>
       <div style="flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:10px">
         <div class="row" style="gap:8px;flex-wrap:wrap"><button class="pill" data-fmt="portrait">Portrait 1080×1920 (TikTok / Reels)</button><button class="pill" data-fmt="landscape">Landscape 1920×1080</button></div>
         <div><div class="lbl" style="margin-bottom:6px">Background</div><div class="row" id="mtBgs" style="gap:6px;flex-wrap:wrap"></div>
-          <div class="row" style="gap:8px;margin-top:6px"><label class="btn sm" for="mtBgFile" style="cursor:pointer">Upload background</label><input type="file" id="mtBgFile" accept="image/jpeg,image/png,image/webp" hidden><span class="lbl" style="font-size:12px">Best: ${'1080 × 1920'} (portrait)</span></div></div>
+          <div class="row" style="gap:8px;margin-top:6px"><label class="btn sm" for="mtBgFile" style="cursor:pointer">Upload background</label><input type="file" id="mtBgFile" accept="image/jpeg,image/png,image/webp" hidden><span class="lbl" style="font-size:12px">Best: 1080 × 1920 (portrait)</span></div></div>
         <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><label class="field" style="flex:1;min-width:150px">Title<input class="in" id="mtTitle" maxlength="30"></label><label class="field" style="flex:1;min-width:150px">Names<input class="in" id="mtNames" maxlength="40"></label></div>
         <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><label class="field" style="width:190px">Names font<select class="in" id="mtFont">${SMILE_FONTS.map(f => `<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('')}</select></label><label class="field" style="width:90px">Text colour<input type="color" id="mtColor" style="width:100%;height:42px;border:0;background:none;padding:0"></label></div>
+        <div><div class="lbl" style="margin-bottom:6px">Movement of the words</div><div class="row" style="gap:8px;flex-wrap:wrap">${animSel('mtTitleAnim', 'Title')}${animSel('mtNamesAnim', 'Names')}${animSel('mtDateAnim', 'Date')}${animSel('mtCapAnim', 'Captions')}</div></div>
         <div class="lbl">Messages (${list.length}) — untick to leave out, use ↑ ↓ to change the order, and add a caption if you like</div>
-        <div id="mtClips" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto"></div>
+        <div id="mtClips" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto"></div>
         <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap"><button class="btn pri" id="mtMake">Make video</button><button class="btn" id="mtCancel" hidden>Stop</button><span class="lbl" id="mtInfo"></span></div>
         <div style="height:8px;border-radius:4px;background:#2a2a2e" id="mtBarWrap" hidden><div id="mtBar" style="height:8px;border-radius:4px;background:var(--accent);width:0"></div></div>
         <div class="lbl" style="font-size:12px">The video is made in real time on this laptop (about as long as all the messages together). Keep this tab open in front while it works.</div>
       </div>
-    </div>`, 980);
+    </div>`, 1020);
   let order = list.slice();
   const prev = m.querySelector('#mtPrev'), px = prev.getContext('2d');
-  let firstPoster = null; loadImg(fileUrl(list[0].path)).then(i => { firstPoster = i; draw(); });
-  let bgImg = null;
-  async function draw() {
-    const L = mtLayout(o); prev.width = L.W; prev.height = L.H; prev.style.width = (L.port ? 270 : 420) + 'px';
-    if (o.bg === 'image' && o.bgSrc) bgImg = await loadImg(o.bgSrc); else bgImg = null;
-    await document.fonts.load(`40px "${o.font}"`).catch(() => {});
-    mtDraw(px, o, L, bgImg, firstPoster, caps[order[0].id] || '', 0);
-  }
+  let firstPoster = null, stat = null, statKey = '';
+  loadImg(fileUrl(list[0].path)).then(i => { firstPoster = i; });
+  // the preview keeps playing so the movements can be seen
+  const tStart = performance.now();
+  (async function loop() {
+    while (document.body.contains(prev)) {
+      const L = mtLayout(o), key = o.format + o.bg + o.bgSrc;
+      if (prev.width !== L.W) { prev.width = L.W; prev.height = L.H; prev.style.width = (L.port ? 270 : 420) + 'px'; }
+      if (key !== statKey) { statKey = key; stat = mtStatic(o, L, o.bg === 'image' && o.bgSrc ? await loadImg(o.bgSrc) : null); }
+      const t = (performance.now() - tStart) / 1000;
+      mtDraw(px, o, L, stat, firstPoster, caps[order[0].id] || (o.capAnim !== 'none' ? 'Your caption here' : ''), 0, t % 6, t % 4);
+      await mtFrame();
+    }
+  })();
   function renderOpts() {
     m.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('on', b.dataset.fmt === (o.format || 'portrait')));
     m.querySelector('#mtBgs').innerHTML = Object.entries(MT_BGS).map(([k, [n, c]]) => `<button class="pill ${o.bg === k ? 'on' : ''}" data-bg="${k}"><span style="display:inline-block;width:12px;height:12px;border-radius:6px;background:${c};vertical-align:-1px;margin-right:6px;border:1px solid #fff4"></span>${n}</button>`).join('') + (o.bgSrc ? `<button class="pill ${o.bg === 'image' ? 'on' : ''}" data-bg="image">Your picture</button>` : '');
     m.querySelector('#mtTitle').value = o.title || ''; m.querySelector('#mtNames').value = o.names || ''; m.querySelector('#mtFont').value = o.font || 'Great Vibes'; m.querySelector('#mtColor').value = o.color || '#ffffff';
+    [['mtTitleAnim', 'titleAnim'], ['mtNamesAnim', 'namesAnim'], ['mtDateAnim', 'dateAnim'], ['mtCapAnim', 'capAnim']].forEach(([id, k]) => { m.querySelector('#' + id).value = o[k] || 'none'; });
     m.querySelector('#mtClips').innerHTML = order.map((p, i) => `<div class="row" style="gap:8px;align-items:center;background:#1a1a1c;border:1px solid var(--line);border-radius:10px;padding:6px">
       <input type="checkbox" data-pick="${p.id}" ${chosen.has(p.id) ? 'checked' : ''} aria-label="Include message ${i + 1}">
       <img src="${fileUrl(p.thumb_path || p.path)}" alt="" style="width:64px;height:40px;object-fit:cover;border-radius:6px">
       <span class="mono lbl" style="width:58px">${timeOf(p.created_at)}</span>
       <input class="in" data-cap="${p.id}" placeholder="Caption (optional)" value="${esc(caps[p.id] || '')}" style="flex:1;min-width:80px;height:34px">
       <button class="btn sm" data-up="${i}" aria-label="Move up">↑</button><button class="btn sm" data-down="${i}" aria-label="Move down">↓</button></div>`).join('');
-    draw();
   }
   m.addEventListener('click', e => {
     const f = e.target.closest('[data-fmt]'); if (f) { o.format = f.dataset.fmt; return renderOpts(); }
@@ -2575,13 +2635,14 @@ $('#gVideoBook').onclick = async () => {
     const u = e.target.closest('[data-up]'), d = e.target.closest('[data-down]');
     if (u || d) { const i = +(u || d).dataset[u ? 'up' : 'down'], j = u ? i - 1 : i + 1; if (j < 0 || j >= order.length) return; [order[i], order[j]] = [order[j], order[i]]; renderOpts(); }
   });
-  m.addEventListener('change', e => { const c = e.target.closest('[data-pick]'); if (c) c.checked ? chosen.add(c.dataset.pick) : chosen.delete(c.dataset.pick); });
-  m.addEventListener('input', e => {
-    const c = e.target.closest('[data-cap]'); if (c) { caps[c.dataset.cap] = c.value.trim(); if (c.dataset.cap === order[0].id) draw(); return; }
-    if (e.target.id === 'mtTitle') o.title = e.target.value; if (e.target.id === 'mtNames') o.names = e.target.value; if (e.target.id === 'mtColor') o.color = e.target.value;
-    if (['mtTitle', 'mtNames', 'mtColor'].includes(e.target.id)) draw();
+  m.addEventListener('change', e => {
+    const c = e.target.closest('[data-pick]'); if (c) { c.checked ? chosen.add(c.dataset.pick) : chosen.delete(c.dataset.pick); return; }
+    const a = { mtTitleAnim: 'titleAnim', mtNamesAnim: 'namesAnim', mtDateAnim: 'dateAnim', mtCapAnim: 'capAnim', mtFont: 'font' }[e.target.id]; if (a) o[a] = e.target.value;
   });
-  m.querySelector('#mtFont').onchange = e => { o.font = e.target.value; draw(); };
+  m.addEventListener('input', e => {
+    const c = e.target.closest('[data-cap]'); if (c) { caps[c.dataset.cap] = c.value.trim(); return; }
+    if (e.target.id === 'mtTitle') o.title = e.target.value; if (e.target.id === 'mtNames') o.names = e.target.value; if (e.target.id === 'mtColor') o.color = e.target.value;
+  });
   m.querySelector('#mtBgFile').addEventListener('change', async e => {
     const f = e.target.files[0]; e.target.value = ''; if (!f) return;
     try { const u = await gbUpload(f, 'mtbg'); if (u) { o.bgSrc = u; o.bg = 'image'; renderOpts(); } } catch (err) { toast(err.message, 4000); }
@@ -2594,10 +2655,14 @@ $('#gVideoBook').onclick = async () => {
     if (!clips.length) return toast('Tick at least one message');
     const mk = m.querySelector('#mtMake'); mk.disabled = true; m.querySelector('#mtCancel').hidden = false; m.querySelector('#mtBarWrap').hidden = false; cancel.on = false;
     // remember the look for next time (not the names, which belong to this event)
-    S.videoBook.montage = { format: o.format, bg: o.bg, bgSrc: o.bgSrc, title: o.title, font: o.font, color: o.color, names: '' }; saveStudio().catch(() => {});
+    S.videoBook.montage = { format: o.format, bg: o.bg, bgSrc: o.bgSrc, title: o.title, font: o.font, color: o.color, names: '', titleAnim: o.titleAnim, namesAnim: o.namesAnim, dateAnim: o.dateAnim, capAnim: o.capAnim }; saveStudio().catch(() => {});
+    const urls = [];
     try {
-      m.querySelector('#mtInfo').textContent = 'Getting the videos…';
-      for (const k of clips) { try { const v = await mtVideo(k.url); k.dur = isFinite(v.duration) ? v.duration : 10; v.removeAttribute('src'); v.load(); } catch (e) { k.dur = 10; } }
+      // Download every message first, so nothing stops to buffer while the montage is being made
+      for (const [i, k] of clips.entries()) {
+        m.querySelector('#mtInfo').textContent = `Getting the videos… ${i + 1}/${clips.length}`;
+        try { const b = await (await fetch(k.url)).blob(); k.src = URL.createObjectURL(b); urls.push(k.src); const v = await mtVideo(k.src); k.dur = isFinite(v.duration) ? v.duration : 10; v.removeAttribute('src'); v.load(); } catch (e) { k.dur = 10; }
+      }
       const t0 = Date.now();
       const blob = await renderMontage(clips, o, f => {
         m.querySelector('#mtBar').style.width = Math.round(f * 100) + '%';
@@ -2611,6 +2676,7 @@ $('#gVideoBook').onclick = async () => {
         m.querySelector('#mtInfo').textContent = `Done · ${(blob.size / 1048576).toFixed(1)} MB downloaded (${ext.toUpperCase()})`;
       }
     } catch (e) { m.querySelector('#mtInfo').textContent = 'Could not make the video: ' + e.message; }
+    urls.forEach(u => URL.revokeObjectURL(u));
     mk.disabled = false; m.querySelector('#mtCancel').hidden = true;
   };
 };

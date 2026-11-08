@@ -71,6 +71,8 @@ final class CanonService {
                     case "disconnect": doDisconnect(); res = ok(""); break;
                     case "liveOn": res = doLiveOn(); break;
                     case "liveOff": liveWanted = false; res = ok(""); break;
+                    case "liveFast": liveGapMs = 0; res = ok(""); break;     // video recording: as many pictures as the Canon gives
+                    case "liveNormal": liveGapMs = 66; res = ok(""); break;  // about 15 a second: gentle on camera and cable
                     case "capture": res = doCapture(); break;
                     case "ping": res = doPing(); break;
                     default: res = fail("unknown command " + op);
@@ -160,12 +162,13 @@ final class CanonService {
     }
 
     private long lastAsk = 0;
+    private volatile long liveGapMs = 66;
 
     private void pumpFrame() throws IOException {
         if (!cam.liveStarted) { cam.startLive(); notReadySince = 0; triedInitiate = false; }
         // About 15 pictures a second: smooth on screen, and gentle on the camera and the USB cable
         long gap = System.currentTimeMillis() - lastAsk;
-        if (gap < 66) CanonEos.sleep(66 - gap);
+        if (gap < liveGapMs) CanonEos.sleep(liveGapMs - gap);
         lastAsk = System.currentTimeMillis();
         byte[] jpg = cam.liveFrame();
         long now = System.currentTimeMillis();
