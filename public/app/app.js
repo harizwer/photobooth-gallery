@@ -2070,7 +2070,12 @@ $('#thumbs').addEventListener('click', e => {
   // "Duplicate to 4R": the photo four times (2 × 2, each 2R size) on one 4×6 sheet. Toggles back to the normal print.
   let as4r = false, sheet4r = null, sheet4rPath = '';
   const d4 = m.querySelector('#dup4r'), img = m.querySelector('#gPhotoImg'), origSrc = img && img.src;
+  // Only for 2R-shaped photos (about 2:3). A 2x6 strip is long and thin: it already prints 2 per 4R sheet.
+  const isStrip = () => { const w = img.naturalWidth, h = img.naturalHeight; return w && h && Math.max(w, h) / Math.min(w, h) > 2.2; };
+  const stripNote = () => { if (d4 && isStrip()) { d4.disabled = true; d4.textContent = '⊞ Duplicate to 4R'; m.querySelector('#dup4rInfo').textContent = 'Not for strips: a 2×6 strip already prints 2 per 4R sheet (cut in the middle). Use this for 2R (2×3) designs.'; } };
+  if (img) { if (img.complete) stripNote(); else img.addEventListener('load', stripNote, { once: true }); }
   if (d4) d4.onclick = async () => {
+    if (isStrip()) return stripNote();
     as4r = !as4r; d4.setAttribute('aria-pressed', as4r); d4.textContent = as4r ? '↩ Back to 2R' : '⊞ Duplicate to 4R';
     m.querySelector('#dup4rInfo').textContent = as4r ? 'Print again and download now use the 4R sheet (4 copies).' : 'Print this photo small, 4 times on one 4×6 (4R) sheet.';
     if (m.querySelector('#dlOrig')) m.querySelector('#dlOrig').textContent = as4r ? 'Download 4R sheet' : 'Download original';
