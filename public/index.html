@@ -24,6 +24,10 @@ h1{font-family:var(--script);font-style:italic;font-weight:600;font-size:clamp(3
 main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
 .media{max-width:100%;max-height:62vh;border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.6);background:#111;display:block}
 .actions{width:min(390px,100%);display:flex;flex-direction:column;gap:10px}
+.hd{width:min(390px,100%);margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;gap:10px}
+.hdt{font-weight:600}.hdt span{display:block;font-weight:400;font-size:13px;opacity:.65;margin-top:2px}
+.hdrow{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.hdrow .btn{white-space:nowrap;padding:0 10px;font-size:14px;gap:6px}
 .btn{font:inherit;cursor:pointer;height:50px;border-radius:14px;border:1px solid var(--line);background:linear-gradient(180deg,#2b2b2f,#1c1c1f);color:var(--fg);font-size:15px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;padding:0 18px}
 .btn.pri{background:linear-gradient(180deg,var(--accent),var(--accent-deep));border-color:#ff6a3a;color:var(--on-accent);font-weight:700;font-size:16px;height:54px}
 .btn:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -128,6 +132,11 @@ async function showOne(tok) {
     $('#main .seg').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; $$('#main .seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); $('#pv').innerHTML = b.dataset.v === 'gif' ? (extraVid ? `<video class="media" src="${esc(fileUrl(d.media_path))}" autoplay loop muted playsinline></video>` : `<img class="media" src="${esc(fileUrl(d.media_path))}" alt="Your photobooth GIF">`) : mediaHtml(item); };
   }
   if ($('#share')) $('#share').onclick = () => navigator.share({ title: d.event || 'Photo', url: location.href }).catch(() => {});
+  const hd = Array.isArray(d.originals) ? d.originals : [];
+  if (hd.length) {
+    $('#main').insertAdjacentHTML('beforeend', `<div class="hd"><div class="hdt">Your photos in HD <span>full quality from the camera</span></div><div class="hdrow">${hd.map((p, i) => `<button class="btn" data-hd="${i}">${dl}Photo ${i + 1}</button>`).join('')}</div></div>`);
+    $('#main .hd').onclick = e => { const b = e.target.closest('[data-hd]'); if (b) save({ path: hd[+b.dataset.hd] }, 'photo'); };
+  }
 }
 async function showAlbum(tok, pin = '') {
   const d = await rpc('get_album', { tok, pin });

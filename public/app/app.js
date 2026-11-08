@@ -44,7 +44,7 @@ const toBlob = (c, type = 'image/jpeg', q = .92) => new Promise(r => c.toBlob(r,
 function scaled(src, max) {
   const w0 = src.width || src.videoWidth, h0 = src.height || src.videoHeight;
   const s = Math.min(1, max / Math.max(w0, h0)); const o = document.createElement('canvas');
-  o.width = Math.round(w0 * s); o.height = Math.round(h0 * s); o.getContext('2d').drawImage(src, 0, 0, o.width, o.height); return o;
+  o.width = Math.round(w0 * s); o.height = Math.round(h0 * s); const ox = o.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(src, 0, 0, o.width, o.height); return o;
 }
 async function copyText(text, input) { try { await navigator.clipboard.writeText(text); toast('Link copied'); } catch (e) { if (input) input.select(); toast('Select the link and copy it'); } }
 function download(blobOrUrl, name) { const a = document.createElement('a'); a.href = typeof blobOrUrl === 'string' ? blobOrUrl : URL.createObjectURL(blobOrUrl); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
@@ -61,7 +61,7 @@ const STUDIO_DEFAULT = {
   smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
   modes: { photo: true, gif: true, boom: true, video: false },
-  capture: { res: '4k', camera: 'dslr', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true, canonLive: true },
+  capture: { res: '4k', camera: 'dslr', mirror: true, quality: 95, countdown: 3, gap: 2, videoSec: 10, maxCopies: 3, photoGif: true, canonLive: true, originals: true },
   types: [],
 };
 let S = structuredClone(STUDIO_DEFAULT);
@@ -188,7 +188,7 @@ const BEAUTY_K = [0, .35, .6, .85];
 function beautify(src, k, maxSide = 2400) {
   const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight, sc = Math.min(1, maxSide / Math.max(w0, h0));
   const w = Math.round(w0 * sc), h = Math.round(h0 * sc);
-  const out = document.createElement('canvas'); out.width = w; out.height = h; const o = out.getContext('2d', { willReadFrequently: true });
+  const out = document.createElement('canvas'); out.width = w; out.height = h; const o = out.getContext('2d', { willReadFrequently: true }); o.imageSmoothingQuality = 'high';
   const r = Math.max(2, Math.round(Math.min(w, h) * .006 * (.6 + k)));
   o.filter = `blur(${r}px)`; o.drawImage(src, 0, 0, w, h); o.filter = 'none';
   const B = o.getImageData(0, 0, w, h).data; o.drawImage(src, 0, 0, w, h);
@@ -216,7 +216,7 @@ function designSize(d) { const long = Math.min(4000, d.output_long || 3600), s =
 // Compose the finished photo: guest shots in the areas, the PNG frame on top, optional small QR.
 async function compose(d, shots, filter = 'none', opts = {}) {
   const [W, H] = designSize(d); const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';   // big camera photos shrink into the spots without losing detail
   x.fillStyle = d.builtin ? '#f4efe6' : '#ffffff'; x.fillRect(0, 0, W, H);
   const f = (FILTERS.find(z => z[0] === filter) || FILTERS[0]);
   const adjs = opts.adjust || [], fills = adjs.some(a => !noAdj(a)) ? await areaFills(d) : [];
@@ -778,7 +778,8 @@ const DSLR_SHOT_HELP = 'The Canon did not take the photo in time. Usually it cou
 // Canon photo (high resolution). Never waits more than 20 s: if the Canon hangs, the live view frame is used instead.
 async function dslrFullPhoto(d) {
   const t0 = performance.now(); let f;
-  try { f = await withTimeout(d.cam.captureImageAsFile(), NATIVE ? 45000 : 20000, DSLR_SHOT_HELP); }
+  B.lastOriginal = null;
+  try { f = await withTimeout(d.cam.captureImageAsFile(), NATIVE ? 45000 : 20000, DSLR_SHOT_HELP); B.lastOriginal = f; }
   catch (e) { if (/I\/O/i.test(e.message)) await usbClearHalts('photo'); LV.captures.push(`photo FAILED after ${((performance.now() - t0) / 1000).toFixed(1)} s: ${e.message.slice(0, 60)}`); camLog('Canon photo failed: ' + e.message.slice(0, 80)); throw e; }
   LV.captures.push(`photo ${(f.size / 1048576).toFixed(1)} MB in ${((performance.now() - t0) / 1000).toFixed(1)} s`); if (LV.captures.length > 10) LV.captures.shift();
   let bmp;
@@ -891,7 +892,7 @@ async function startSession(design) {
         const label = `Photo ${i + 1} of ${n}` + (wantBoom ? ' · keep moving for the boomerang!' : '');
         if (!(await countdown(me, label, wantBoom ? () => { burst = recordBurst(me, boomSec); } : null, boomSec, wantBoom ? boomSec : 0))) return;
         if (burst) burst.stop();
-        flash(); const c = await capturePhoto(); me.shots.push(c);
+        B.lastOriginal = null; flash(); const c = await capturePhoto(); me.shots.push(c); (me.originals = me.originals || []).push(B.lastOriginal);
         me.bursts.push(burst ? burst.frames : []);
         if (B.session !== me) return;
         $('#b-count').textContent = '';
@@ -1232,6 +1233,17 @@ function startSave(s) {
       if (qrOn) { sheet = document.createElement('canvas'); sheet.width = full.width; sheet.height = full.height; const x = sheet.getContext('2d'); x.drawImage(full, 0, 0); drawPrintQr(x, full.width, full.height, s.design, `${SITE}?q=${row.print_token}`); }
       const printBlob = await jpeg(printCanvas(s.design, sheet), q);
       work.push(retry(() => upload(row.print_path, printBlob, 'image/jpeg')));
+      if (S.capture.originals !== false && s.shots) {
+        // Each camera photo in HD for the guest: the Canon's own JPEG when it is a sensible size, otherwise 4000 px at 92%.
+        // With the beauty filter on, the smoothed photo is used so it matches the strip.
+        const lv = +s.beauty || 0, src = lv ? await reviewShots(s) : s.shots;
+        row.originals = src.map((_, i) => `${ev}/${id}-o${i + 1}.jpg`);
+        src.forEach((shot, i) => {
+          const cam = !lv && s.originals && s.originals[i], useCam = cam && cam.size <= 6e6 && /jpe?g/i.test(cam.type || 'image/jpeg');
+          work.push((useCam ? Promise.resolve(cam) : jpeg(shot, .92)).then(b => retry(() => upload(row.originals[i], b, 'image/jpeg'))));
+        });
+        s.originals = null;
+      }
       if (photoGifOn && s.bursts && s.bursts.length > 1) {
         try {
           const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust, s.stickers, BEAUTY_K[+s.beauty || 0]);
@@ -1647,8 +1659,8 @@ function openEventModal(ev) {
     if (EVENTS.length <= 1) return toast('You need at least one event.');
     if (!confirm(`Delete “${ev.name}” and all of its photos? This cannot be undone.`)) return;
     try {
-      const photos = check(await sb.from('photos').select('path,thumb_path,media_path,print_path,message_path').eq('event_id', ev.id));
-      const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]).filter(Boolean);
+      const photos = check(await sb.from('photos').select('path,thumb_path,media_path,print_path,message_path,originals').eq('event_id', ev.id));
+      const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, ...(p.originals || []), p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]).filter(Boolean);
       await removeFiles(paths);
       check(await sb.from('events').delete().eq('id', ev.id));
       await loadEvents(); if (!EVENTS.some(x => x.is_active)) await setActive(EVENTS[0].id);
@@ -1882,7 +1894,7 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive !== false; $('#capPhotoGif').checked = c.photoGif !== false; $('#capBoomSec').value = c.boomSec || 5; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive !== false; $('#capPhotoGif').checked = c.photoGif !== false; $('#capOriginals').checked = c.originals !== false; $('#capBoomSec').value = c.boomSec || 5; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState();
 }
@@ -1917,7 +1929,7 @@ $('#smPlay').onclick = smilePreview;
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
   const liveBefore = S.capture.canonLive !== false;
-  Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, canonLive: $('#capCanonLive').checked, photoGif: $('#capPhotoGif').checked, boomSec: n('#capBoomSec', 1, 5, 5), quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
+  Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, canonLive: $('#capCanonLive').checked, photoGif: $('#capPhotoGif').checked, originals: $('#capOriginals').checked, boomSec: n('#capBoomSec', 1, 5, 5), quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
   if (dslr && liveBefore !== (S.capture.canonLive !== false)) {   // apply the Canon live view choice now
     camTestOff(); try { sessionStorage.removeItem('pb.liveBroken'); } catch (e) {}
@@ -2036,7 +2048,7 @@ $('#thumbs').addEventListener('click', e => {
         ${S.printQr.on && kind === 'photo' && exp ? `<div class="lbl">The QR printed on this photo ${exp > new Date() ? 'works until ' + exp.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'has expired'}. Guest links (this QR too) work for 12 hours after the photo; after that, share the event album.</div>` : ''}
         <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm" id="copyPhoto">Copy link</button><button class="btn sm" id="showTab">Show on tablet</button></div>
         ${kind === 'photo' ? '<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px"><button class="btn sm" id="dup4r" aria-pressed="false">⊞ Duplicate to 4R</button><span class="lbl" id="dup4rInfo" style="font-size:12px">Print this photo small, 4 times on one 4×6 (4R) sheet.</span></div>' : ''}
-        <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">${kind === 'photo' ? '<label class="field" style="width:80px" for="rpC">Copies<input class="in mono" id="rpC" type="number" min="1" max="10" value="1"></label><button class="btn pri" id="reprint" style="align-self:flex-end">Print again</button>' : ''}<button class="btn" id="dlOrig" style="align-self:flex-end">Download original</button>${kind === 'photo' && p.media_path ? `<button class="btn" id="dlGif" style="align-self:flex-end">Download ${/\.gif$/.test(p.media_path) ? 'GIF' : 'boomerang'}</button>` : ''}<button class="btn" id="delPhoto" style="align-self:flex-end;color:#ff8a80">Delete</button></div>
+        <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">${kind === 'photo' ? '<label class="field" style="width:80px" for="rpC">Copies<input class="in mono" id="rpC" type="number" min="1" max="10" value="1"></label><button class="btn pri" id="reprint" style="align-self:flex-end">Print again</button>' : ''}<button class="btn" id="dlOrig" style="align-self:flex-end">Download original</button>${(p.originals || []).length ? `<button class="btn" id="dlHd" style="align-self:flex-end">Download HD photos (${p.originals.length})</button>` : ''}${kind === 'photo' && p.media_path ? `<button class="btn" id="dlGif" style="align-self:flex-end">Download ${/\.gif$/.test(p.media_path) ? 'GIF' : 'boomerang'}</button>` : ''}<button class="btn" id="delPhoto" style="align-self:flex-end;color:#ff8a80">Delete</button></div>
       </div>
     </div>`, 780);
   qr(m.querySelector('#photoQr'), link, 112);
@@ -2070,10 +2082,18 @@ $('#thumbs').addEventListener('click', e => {
   };
   const dlPath = async path => { try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
   if (m.querySelector('#dlGif')) m.querySelector('#dlGif').onclick = () => dlPath(p.media_path);
+  if (m.querySelector('#dlHd')) m.querySelector('#dlHd').onclick = async () => {
+    const b = m.querySelector('#dlHd'); b.disabled = true; b.textContent = 'Preparing…';
+    try {
+      if (p.originals.length === 1) await dlPath(p.originals[0]);
+      else { const zip = new JSZip(); for (const [i, path] of p.originals.entries()) zip.file(`photo-${i + 1}.jpg`, await (await fetch(fileUrl(path))).blob()); download(await zip.generateAsync({ type: 'blob' }), `${p.id}-HD-photos.zip`); }
+    } catch (err) { toast(err.message, 4000); }
+    b.disabled = false; b.textContent = `Download HD photos (${p.originals.length})`;
+  };
   m.querySelector('#dlOrig').onclick = async () => { if (as4r && sheet4r) return download(await jpeg(sheet4r, .95), p.path.split('/').pop().replace(/\.jpg$/, '') + '-4R.jpg'); const path = kind === 'photo' ? p.path : (p.media_path || p.path); try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
   m.querySelector('#delPhoto').onclick = async () => {
     if (!confirm('Delete this from the gallery? The guest link stops working.')) return;
-    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
+    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, ...(p.originals || []), p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
   };
 });
 $('#copyAlbum').onclick = () => copyText($('#albumLink').value, $('#albumLink'));
