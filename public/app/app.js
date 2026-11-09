@@ -59,7 +59,7 @@ const STUDIO_DEFAULT = {
   beauty: 0,
   aiBg: { on: true, builtin: ['white', 'grey', 'gold', 'rose', 'night'], blur: true, list: [] },
   voice: { on: false, lang: 'ms-MY', volume: 1, lines: {}, clips: {} },
-  music: { on: false, volume: .35, tracks: [] },
+  music: { on: false, volume: .35, tracks: [], repeat: 'one' },
   videoBook: { on: false, sec: 20, prompt: 'Say something to the couple! 🎥', montage: { format: 'portrait', bg: 'leather', bgSrc: '', title: 'Video Guestbook', names: '', font: 'Great Vibes', color: '#ffffff' } },
   smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
@@ -333,15 +333,31 @@ function say(key) {
 }
 function hush() { if (voiceAudio) { voiceAudio.pause(); voiceAudio = null; } if (window.speechSynthesis) speechSynthesis.cancel(); if (NATIVE && NATIVE.stopSpeak) try { NATIVE.stopSpeak(); } catch (e) { } }
 // Theme music: the track picked for this event's type (or for all types), looping quietly
-function musicTrack() {
-  const M = S.music || {}; if (!M.on) return null;
-  const type = evType(ACTIVE), list = (M.tracks || []).filter(t => !t.types || !t.types.length || t.types.includes(type));
-  return list.length ? list[0] : null;
+// The tracks for this event's type, in the order they were added
+function musicList() {
+  const M = S.music || {}; if (!M.on) return [];
+  const type = evType(ACTIVE); return (M.tracks || []).filter(t => !t.types || !t.types.length || t.types.includes(type));
 }
+let musicIdx = 0, musicDone = false;
+// Repeat modes: 'one' = this song over and over, 'all' = every song in turn then from the start, 'once' = every song once, then quiet
 function musicPlay() {
   musicWanted = true; if (ROLE !== 'booth') return;
-  const t = musicTrack(); if (!t) { musicStop(); return; }
-  if (!music || music._src !== t.url) { musicStop(); music = new Audio(t.url); music._src = t.url; music.loop = true; }
+  const list = musicList(); if (!list.length) { musicStop(); return; }
+  if (musicDone) return;
+  const mode = S.music.repeat || 'one';
+  if (musicIdx >= list.length) musicIdx = 0;
+  const t = list[musicIdx];
+  if (!music || music._src !== t.url) {
+    musicStop(); music = new Audio(t.url); music._src = t.url;
+    music.onended = () => {
+      if ((S.music.repeat || 'one') === 'one') return;
+      musicIdx++;
+      if (musicIdx >= musicList().length) { if (S.music.repeat === 'once') { musicDone = true; musicStop(); return; } musicIdx = 0; }
+      if (music) music._src = '';
+      musicPlay();
+    };
+  }
+  music.loop = mode === 'one';
   duck(false); music.play().catch(() => {});
 }
 function musicPause() { if (music) music.pause(); }
@@ -588,7 +604,7 @@ async function boothLoad() {
     dslrDisconnect().then(() => dslrConnect(false)).then(() => startCamera()).catch(() => startCamera());
   }
   $('#bTitle').textContent = ACTIVE ? ACTIVE.name : '';
-  if (musicWanted || (S.music && S.music.on)) musicPlay();
+  if (!B.session && (musicWanted || (S.music && S.music.on))) musicPlay();   // music only while nobody is using the booth
   $('#bSub').textContent = S.bg.sub || 'Tap to make memories';
   paintBg($('#boothBgLayer'), $('#boothShade'), S.bg);
   const modes = enabledModes(); const list = modes.length ? modes : ['photo'];
@@ -962,6 +978,7 @@ function endRecVideo() {
 
 /* ---------- Session flow ---------- */
 function goHome() {
+  if (S.music && S.music.on) musicPlay();   // the guest is done: music back on
   B.session = null; clearInterval(B.reviewT); clearInterval(B.doneT);
   $('#b-count').textContent = ''; $('#busy').hidden = true; $('#bErr').hidden = true;
   bscreen('b-attract');
@@ -969,7 +986,7 @@ function goHome() {
   if (B.pendingReload) { B.pendingReload = false; boothLoad(); }
 }
 function startFlow(mode) {
-  ac(); keepAwake(); musicPlay(); say(mode === 'video' ? 'video' : 'welcome');
+  ac(); keepAwake(); musicPause(); say(mode === 'video' ? 'video' : 'welcome');
   if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
   B.mode = mode || 'photo';
   if (B.mode !== 'photo') return startSession(null);
@@ -1071,7 +1088,7 @@ async function startSession(design) {
         if (!(await countdown(me, VB.prompt || 'Say something nice! 🎥'))) return;
         $('#b-count').textContent = ''; $('#recStop').hidden = false; hush(); musicPause();
         me.blob = await recordStream(recVideoStream(mic), sec * 1000, me, s => { $('#shotInfo').innerHTML = `<span class="recdot"></span>Recording · ${s}s left`; $('#b-count').textContent = s; }, 4e6);
-      } finally { $('#recStop').hidden = true; endRecVideo(); if (mic) mic.getTracks().forEach(t => t.stop()); if (musicWanted) musicPlay(); }
+      } finally { $('#recStop').hidden = true; endRecVideo(); if (mic) mic.getTracks().forEach(t => t.stop()); }
       if (B.session !== me) return;
       me.poster = grabFrame(1920);
     }
@@ -2878,6 +2895,7 @@ function renderVoiceSettings() {
     <button class="btn sm" data-vup="${k}" title="MP3, or a video/audio file (it becomes MP3)">⬆ Upload</button>
     ${V.clips && V.clips[k] ? `<button class="btn sm" data-vdel="${k}" title="Use the computer voice again" style="color:#ff8a80">✕</button>` : ''}</div>`).join('');
   $('#muOn').checked = !!M.on; $('#muVol').value = Math.round((M.volume ?? .35) * 100);
+  $$('#muRepeat [data-rep]').forEach(b => b.classList.toggle('on', b.dataset.rep === (M.repeat || 'one')));
   $('#muList').innerHTML = (M.tracks || []).map((t, i) => `<div class="voline"><span style="flex:1;min-width:120px">🎵 ${esc(t.name || 'Track')}</span>
     <span class="row" style="gap:4px;flex-wrap:wrap">${allTypes().map(ty => `<button class="pill ${(t.types || []).includes(ty) ? 'on' : ''}" data-mut="${i}" data-ty="${esc(ty)}">${esc(ty)}</button>`).join('')}</span>
     <button class="btn sm" data-mup="${i}">▶</button><button class="btn sm" data-murm="${i}" style="color:#ff8a80">Remove</button></div>`).join('') || '<span class="lbl">No music yet</span>';
@@ -2902,6 +2920,7 @@ $('#voOn').onchange = () => { S.voice.on = $('#voOn').checked; };
 $('#voLang').onchange = () => { S.voice.lang = $('#voLang').value; };
 $('#voVol').oninput = () => { S.voice.volume = +$('#voVol').value / 100; };
 $('#muOn').onchange = () => { S.music.on = $('#muOn').checked; };
+$('#muRepeat').addEventListener('click', e => { const b = e.target.closest('[data-rep]'); if (!b) return; S.music.repeat = b.dataset.rep; renderVoiceSettings(); });
 $('#muVol').oninput = () => { S.music.volume = +$('#muVol').value / 100; if (adminAudio) adminAudio.volume = S.music.volume; };
 $('#voLines').addEventListener('input', e => { const k = e.target.dataset.vl; if (k) S.voice.lines = { ...(S.voice.lines || {}), [k]: e.target.value }; });
 $('#voLines').addEventListener('click', async e => {
