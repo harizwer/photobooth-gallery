@@ -256,9 +256,38 @@ async function personMask(src, kind) {
   if (kind === 'photo') { maskCache.set(src, job); job.catch(() => maskCache.delete(src)); }
   return job;
 }
+// The AI runs in a background worker (seg-worker.js), so the screen never freezes while it works.
+// It loads while the start screen shows, and each photo is analysed as soon as it is taken.
+let segW = null, segWBroken = false, segN = 0; const segWait = new Map();
+function segWorker() {
+  if (segW || segWBroken || !window.Worker) return segW;
+  try {
+    segW = new Worker('seg-worker.js');
+    segW.onmessage = e => { const f = segWait.get(e.data.id); if (f) { segWait.delete(e.data.id); f(e.data); } };
+    segW.onerror = () => { segWBroken = true; segW = null; segWait.forEach(f => f({ ok: false, error: 'worker stopped' })); segWait.clear(); };
+  } catch (e) { segWBroken = true; segW = null; }
+  return segW;
+}
+function segAsk(msg, transfer) { const w = segWorker(); if (!w) return Promise.resolve({ ok: false, error: 'no worker' }); const id = ++segN; return new Promise(res => { segWait.set(id, res); w.postMessage({ ...msg, id }, transfer || []); }); }
+const aiOn = () => ROLE === 'booth' && S.aiBg && S.aiBg.on !== false;
+function aiWarm() { if (aiOn()) segAsk({ kind: 'photo', warm: true }); }
 async function personMaskNow(src, kind) {
+  if (!segWBroken && window.Worker && window.createImageBitmap) {
+    const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight, k = Math.min(1, (kind === 'photo' ? 768 : 512) / Math.max(w0, h0));
+    const bmp = await createImageBitmap(src, { resizeWidth: Math.round(w0 * k), resizeHeight: Math.round(h0 * k), resizeQuality: 'medium' });
+    const r = await segAsk({ kind, bmp }, [bmp]);
+    if (r.ok) {
+      const out = document.createElement('canvas'); out.width = r.w; out.height = r.h; const ox = out.getContext('2d'), img = ox.createImageData(r.w, r.h);
+      for (let i = 0; i < r.a.length; i++) img.data[i * 4 + 3] = r.a[i];
+      ox.putImageData(img, 0, 0); return out;
+    }
+    if (r.error !== 'worker stopped' && r.error !== 'no worker') throw new Error(r.error);
+  }
+  return personMaskHere(src, kind);
+}
+async function personMaskHere(src, kind) {   // fallback: on the page itself (only if the worker cannot run)
   const seg = await segmenter(kind);
-  const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight, k = Math.min(1, 1024 / Math.max(w0, h0));
+  const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight, k = Math.min(1, (kind === 'photo' ? 768 : 512) / Math.max(w0, h0));
   const small = document.createElement('canvas'); small.width = Math.round(w0 * k); small.height = Math.round(h0 * k);
   small.getContext('2d').drawImage(src, 0, 0, small.width, small.height);
   const res = seg.segment(small), masks = res.confidenceMasks;
@@ -611,6 +640,7 @@ async function startBooth() {
   await boothLoad();
   await startCamera();
   await restoreSessions().catch(() => {});
+  setTimeout(aiWarm, 3000);   // load the AI in the background while the start screen shows
 }
 function bgMarkup(bg) {
   if (bg.kind === 'color' || !bg.src) return { html: '', css: `radial-gradient(70% 70% at 50% 45%,${bg.color || '#ff5a26'}59 0%,rgba(0,0,0,0) 70%),linear-gradient(160deg,#2a2a2e,#0e0e10)` };
@@ -1277,6 +1307,7 @@ async function startSession(design) {
         if (!(await countdown(me, label, wantBoom ? () => { burst = recordBurst(me, boomSec); } : null, boomSec, wantBoom ? boomSec : 0))) return;
         if (burst) burst.stop();
         B.lastOriginal = null; flash(); const c = await capturePhoto(); me.shots.push(c); (me.originals = me.originals || []).push(B.lastOriginal);
+        if (aiOn()) personMask(c, 'photo').catch(() => {});   // ready before the guest picks a background
         me.bursts.push(burst ? burst.frames : []);
         if (B.session !== me) return;
         $('#b-count').textContent = '';
