@@ -528,7 +528,7 @@ async function loadAll() { await Promise.all([loadEvents(), loadStudio(), loadTe
 const printerOn = () => ROLE === 'admin' && store.get('printer', false);
 function track() {
   if (!chan) return;
-  chan.track({ role: ROLE || 'home', printer: printerOn(), label: ROLE === 'booth' ? 'Tablet (Booth)' : ROLE === 'admin' ? 'Laptop (Admin board)' : 'Device', at: Date.now() }).catch(() => {});
+  chan.track({ role: ROLE || 'home', printer: printerOn(), away: document.hidden, label: ROLE === 'booth' ? 'Tablet (Booth)' : ROLE === 'admin' ? 'Laptop (Admin board)' : 'Device', at: Date.now() }).catch(() => {});
 }
 function connectLive() {
   if (chan) return;
@@ -2659,9 +2659,10 @@ let printBusy = false;
 function printerUi() {
   const on = printerOn();
   $('#prnState').textContent = on ? 'On — jobs from the tablet print here' : 'Off — jobs wait in the queue';
+  $('#prnTip').hidden = !on; printAlertUi();
   renderDevices();
 }
-$('#prnOn').onchange = () => { store.set('printer', $('#prnOn').checked); printerUi(); track(); runPrinter(); };
+$('#prnOn').onchange = () => { store.set('printer', $('#prnOn').checked); printerUi(); track(); runPrinter(); if ($('#prnOn').checked && window.Notification && Notification.permission === 'default') askPrintAlerts(); };
 function renderPaper() {
   if (!STATION) return;
   const cap = STATION.media_capacity || 700, left = Math.max(0, cap - (STATION.printed_since_reset || 0)), pct = Math.max(0, Math.min(100, left / cap * 100));
@@ -2754,44 +2755,93 @@ function withBleed(img, f) {
   return c;
 }
 let printRun = 0;
-async function printImage(src, copies) {
+/* ---- Printing when the printer page is not on screen ----
+   Chrome slows a tab that is behind other windows to one timer a minute, may pause it, and holds back printing from it.
+   So: waits use a worker (it keeps time in the background), and when a job arrives while the page is hidden the laptop
+   shows an alert; printing starts the moment the page is on screen again. */
+const wsleep = (() => {
+  let w = null, n = 0; const cb = new Map();
+  try {
+    w = new Worker(URL.createObjectURL(new Blob(['onmessage=e=>setTimeout(()=>postMessage(e.data[0]),e.data[1])'], { type: 'text/javascript' })));
+    w.onmessage = e => { const f = cb.get(e.data); cb.delete(e.data); if (f) f(); };
+  } catch (e) { w = null; }
+  return ms => w ? new Promise(r => { const k = ++n; cb.set(k, r); w.postMessage([k, ms]); }) : sleep(ms);
+})();
+let printAlert = null;
+function untilShown(label) {
+  if (!document.hidden) return Promise.resolve();
+  try {
+    if (window.Notification && Notification.permission === 'granted') {
+      if (printAlert) printAlert.close();
+      printAlert = new Notification('📸 Photo waiting to print', { body: (label ? label + '\n' : '') + 'Click here to print it. Keep the Printer page on screen so prints start by themselves.', requireInteraction: true, tag: 'pb-print' });
+      printAlert.onclick = () => { window.focus(); printAlert && printAlert.close(); };
+    }
+  } catch (e) { }
+  document.title = '🖨 Print waiting · ' + document.title.replace(/^🖨 Print waiting · /, '');
+  return new Promise(res => {
+    const on = () => { if (document.hidden) return; document.removeEventListener('visibilitychange', on); document.title = document.title.replace(/^🖨 Print waiting · /, ''); if (printAlert) { printAlert.close(); printAlert = null; } res(); };
+    document.addEventListener('visibilitychange', on);
+  });
+}
+async function printImage(src, copies, label) {
   const run = ++printRun;
-  const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('Could not download the photo to print')); i.src = src; });
+  const img = await withTimeout(new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('Could not download the photo to print')); i.src = src; }), 90000, 'The photo took too long to download. Check the laptop\'s internet.');
   const cfg = printCfg(), landPage = cfg.orient === 'landscape', landImg = img.naturalWidth > img.naturalHeight;
   let pic = img;
   if (landImg !== landPage) pic = rotatedCanvas(img, !landPage);   // turn the picture to match the paper
-  const f = Math.max(0, cfg.bleed || 0) / 200, url = withBleed(pic, f).toDataURL('image/jpeg', .95);
+  const f = Math.max(0, cfg.bleed || 0) / 200, url = URL.createObjectURL(await toBlobQ(withBleed(pic, f), .95));
   const [pw, ph] = landPage ? ['6in', '4in'] : ['4in', '6in'];
   $('#pageStyle').textContent = `@page{size:${pw} ${ph};margin:0}`;
   const area = $('#printArea'); area.innerHTML = '';
   area.style.cssText = `--pw:${pw};--ph:${ph};--dx:${cfg.dx}mm;--dy:${cfg.dy}mm;--sc:${(cfg.scale / 100) * (1 + 2 * f)}`;
   for (let i = 0; i < Math.max(1, copies); i++) { const pg = document.createElement('div'), im = new Image(); pg.className = 'pg'; im.src = url; im.alt = ''; pg.appendChild(im); area.appendChild(pg); }
   await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
-  await sleep(150); if (run !== printRun) return; window.print(); await sleep(400); if (run === printRun) area.innerHTML = '';
+  await untilShown(label);   // a hidden page cannot print: wait until someone opens it (the alert says so)
+  await wsleep(150); if (run !== printRun) return; window.print(); await wsleep(400); if (run === printRun) area.innerHTML = '';
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 async function runPrinter() {
   if (!printerOn() || printBusy || !USER) return;
   printBusy = true;
   try {
+    // A job still on "printing" from an earlier page (closed, reloaded or frozen) would block the queue: print it again
+    const stale = new Date(Date.now() - 3 * 60e3).toISOString();
+    await sb.from('print_jobs').update({ status: 'waiting', updated_at: new Date().toISOString() }).eq('owner', USER.id).eq('status', 'printing').lt('created_at', stale).not('id', 'in', `(${[...myJobs].join(',') || '00000000-0000-0000-0000-000000000000'})`);
     for (;;) {
       const next = check(await sb.from('print_jobs').select('*').eq('owner', USER.id).eq('status', 'waiting').order('created_at', { ascending: true }).limit(1));
       if (!next.length || !printerOn()) break;
       const job = next[0];
       const claimed = check(await sb.from('print_jobs').update({ status: 'printing', updated_at: new Date().toISOString() }).eq('id', job.id).eq('status', 'waiting').select());
       if (!claimed.length) continue;
+      myJobs.add(job.id);
       try {
-        await printImage(fileUrl(job.path), job.copies);
+        await printImage(fileUrl(job.path), job.copies, job.label);
         check(await sb.from('print_jobs').update({ status: 'done', error: '', updated_at: new Date().toISOString() }).eq('id', job.id));
         if (job.photo_id) { const p = (await sb.from('photos').select('printed').eq('id', job.photo_id).maybeSingle()).data; if (p) await sb.from('photos').update({ printed: (p.printed || 0) + job.copies }).eq('id', job.photo_id); }
         await loadStation(); await sb.from('station_settings').update({ printed_since_reset: (STATION.printed_since_reset || 0) + job.copies }).eq('owner', USER.id);
         STATION.printed_since_reset = (STATION.printed_since_reset || 0) + job.copies;
       } catch (e) { await sb.from('print_jobs').update({ status: 'failed', error: e.message, updated_at: new Date().toISOString() }).eq('id', job.id); }
+      myJobs.delete(job.id);
     }
   } catch (e) { /* offline: try again on the next tick */ }
   printBusy = false; renderPaper(); queueBadge();
   if (secOn('printer')) renderQueue();
 }
+const myJobs = new Set();   // jobs this page is printing right now
 setInterval(() => { if (ROLE === 'admin') runPrinter(); }, 10000);
+document.addEventListener('visibilitychange', () => { track(); if (!document.hidden && ROLE === 'admin') runPrinter(); });
+// Alerts for prints that arrive while the Printer page is hidden
+async function askPrintAlerts() {
+  if (!window.Notification) return toast('This browser cannot show alerts.');
+  const p = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+  printAlertUi(); toast(p === 'granted' ? 'Alerts on: you will be told when a print is waiting.' : 'Alerts are blocked. Allow notifications for this site in the browser settings.', 5000);
+}
+function printAlertUi() {
+  const b = $('#prnAlerts'); if (!b) return;
+  const p = window.Notification ? Notification.permission : 'denied';
+  b.textContent = p === 'granted' ? '🔔 Print alerts on' : '🔔 Turn on print alerts'; b.disabled = p === 'granted';
+}
+$('#prnAlerts').onclick = askPrintAlerts;
 
 /* ---- Studio settings ---- */
 let pendingBg = null;
