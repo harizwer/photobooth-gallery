@@ -612,9 +612,12 @@ async function boothLoad() {
   $('#bModes').innerHTML = list.length === 1
     ? `<button class="bmode first" data-mode="${list[0]}">Touch to start</button>`
     : list.map((m, i) => `<button class="bmode ${i === 0 ? 'first' : ''}" data-mode="${m}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m][1]}</svg>${MODE_INFO[m][0]}</button>`).join('');
-  $('#live').classList.toggle('mirror', !!S.capture.mirror); $('#dslrView').classList.toggle('mirror', false);
+  applyMirror();
   boothStatus();
 }
+// Mirror the live picture on screen (tablet camera and Canon), like looking in a mirror.
+// Canon photos are saved the right way round, so writing in the background reads normally.
+function applyMirror() { const m = !!(S.capture && S.capture.mirror); $('#live').classList.toggle('mirror', m); $('#dslrView').classList.toggle('mirror', m); }
 function boothStatus() {
   $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR ready · preview: tablet camera' : 'Canon DSLR · live view') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
 }
@@ -1710,7 +1713,7 @@ $('#bCamSel').onchange = async () => {
   if ($('#bCamSel').value === 'dslr' && dslrCrashed) { try { sessionStorage.removeItem('pb.dslrReloads'); } catch (e) {} S.capture.camera = 'dslr'; await saveStudio().catch(() => {}); return dslrRecover(true); }
   if ($('#bCamSel').value === 'dslr') { $('#bCamInfo').textContent = 'Connecting…'; try { await dslrConnect(true); toast('Canon DSLR connected'); } catch (e) { $('#bCamInfo').textContent = e.message; return; } boothStatus(); return fillCamMenu(); }
   store.set('camDevice', $('#bCamSel').value); await dslrDisconnect(); S.capture.camera = /^(user|environment)$/.test($('#bCamSel').value) ? $('#bCamSel').value : 'user'; saveStudio().catch(() => {}); startCamera().then(fillCamMenu); };
-$('#bMirror').onchange = () => { S.capture.mirror = $('#bMirror').checked; $('#live').classList.toggle('mirror', S.capture.mirror); saveStudio().catch(() => {}); };
+$('#bMirror').onchange = () => { S.capture.mirror = $('#bMirror').checked; applyMirror(); saveStudio().catch(() => {}); };
 $('#bDslr').onclick = async () => { if (dslrCrashed) { try { sessionStorage.removeItem('pb.dslrReloads'); } catch (e) {} S.capture.camera = 'dslr'; await saveStudio().catch(() => {}); return dslrRecover(true); } const b = $('#bDslr'); b.disabled = true; $('#bCamInfo').textContent = 'Connecting…'; try { await dslrConnect(true); toast('Canon DSLR connected'); fillCamMenu(); } catch (e) { $('#bCamInfo').textContent = e.message; } b.disabled = false; };
 $('#pinCancel').onclick = goHome; $('#mBack').onclick = goHome;
 $('#mAdmin').onclick = () => { dslrDisconnect(); stopCamera(); store.set('role', 'admin'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); startAdmin(); };
