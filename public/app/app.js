@@ -61,7 +61,7 @@ const STUDIO_DEFAULT = {
   voice: { on: false, lang: 'ms-MY', volume: 1, lines: {}, clips: {} },
   music: { on: false, volume: .35, tracks: [], repeat: 'one' },
   videoBook: { on: false, sec: 20, prompt: 'Say something to the couple! 🎥', montage: { format: 'portrait', bg: 'leather', bgSrc: '', title: 'Video Guestbook', names: '', font: 'Great Vibes', color: '#ffffff' } },
-  countdown: { frame: 'none', frameSrc: '', prevBorder: '#ffffff', tick: 'beep', tickSrc: '', last: 'beep', lastSrc: '', shutter: 'click', shutterSrc: '', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', size: 100, anim: 'pop', volume: 1 },
+  countdown: { frame: 'none', frameSrc: '', prevBorder: '#ffffff', prevStyle: 'classic', prevSrc: '', prevAnim: 'pop', prevSize: 100, tick: 'beep', tickSrc: '', last: 'beep', lastSrc: '', shutter: 'click', shutterSrc: '', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', size: 100, anim: 'pop', volume: 1 },
   smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
   modes: { photo: true, gif: true, boom: true, video: false },
@@ -1047,7 +1047,17 @@ const CD_FRAMES = { none: 'None', white: 'White', gold: 'Gold', film: 'Film stri
 const CD_SOUNDS = { beep: 'Beep', soft: 'Soft tick', bell: 'Bell', pop: 'Pop', drum: 'Drum', none: 'None' };
 const CD_SHUTTERS = { click: 'Camera click', soft: 'Soft click', retro: 'Retro', none: 'None' };
 const CD_ANIMS = { pop: 'Pop', zoom: 'Zoom', fade: 'Fade', spin: 'Spin', none: 'None' };
-const cdOpt = () => ({ frame: 'none', frameSrc: '', prevBorder: '#ffffff', tick: 'beep', tickSrc: '', last: 'beep', lastSrc: '', shutter: 'click', shutterSrc: '', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', size: 100, anim: 'pop', volume: 1, ...(S.countdown || {}) });
+const CD_PREV_STYLES = { classic: 'Classic', polaroid: 'Polaroid', tilt: 'Tilted Polaroid', rounded: 'Rounded', gold: 'Gold', film: 'Film', none: 'None', image: 'Your PNG' };
+const CD_PREV_ANIMS = { pop: 'Pop', drop: 'Drop', slide: 'Slide', fade: 'Fade' };
+// The photo just taken, shown between shots, in the chosen frame style
+function styleShotPrev(box, o = cdOpt()) {
+  const st = o.prevStyle === 'image' && !o.prevSrc ? 'classic' : (o.prevStyle || 'classic');
+  box.className = `spbox sps-${st} spa-${o.prevAnim || 'pop'}`;
+  box.style.setProperty('--sp-border', o.prevBorder || '#fff');
+  box.style.setProperty('--sp-size', ((o.prevSize || 100) / 100).toFixed(2));
+  const fr = box.querySelector('.spframe'); fr.hidden = st !== 'image'; if (st === 'image') fr.src = o.prevSrc;
+}
+const cdOpt = () => ({ frame: 'none', frameSrc: '', prevBorder: '#ffffff', prevStyle: 'classic', prevSrc: '', prevAnim: 'pop', prevSize: 100, tick: 'beep', tickSrc: '', last: 'beep', lastSrc: '', shutter: 'click', shutterSrc: '', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', size: 100, anim: 'pop', volume: 1, ...(S.countdown || {}) });
 // Painted sounds (no files needed). last = the final second, a little higher.
 function cdTone(kind, last, vol) {
   try {
@@ -1096,7 +1106,7 @@ async function startSession(design) {
   clearInterval(B.reviewT); clearInterval(B.doneT);
   const me = B.session = { mode: B.mode, design, shots: [], filter: 'none', copies: 1, saved: null, printed: false, jobId: null };
   if (dslr && !dslrHealthy()) { await dslrFallback(); await sleep(800); }
-  paintCdFrame($('#cdFrame')); $('#shotPrev').style.borderColor = cdOpt().prevBorder || '#fff';
+  paintCdFrame($('#cdFrame')); styleShotPrev($('#shotPrevBox'));
   bscreen('b-shoot');
   try {
     if (me.mode === 'photo') {
@@ -1116,7 +1126,7 @@ async function startSession(design) {
         $('#b-count').textContent = '';
         if (i < n - 1) {   // pause between photos, showing the one just taken
           const g = +S.capture.gap, gap = (Number.isFinite(g) ? Math.max(0, g) : 1) * 1000;
-          if (gap) { $('#shotPrev').src = scaled(c, 900).toDataURL('image/jpeg', .8); $('#shotPrev').hidden = false; $('#shotInfo').textContent = `Next photo in a moment…`; await sleep(gap); $('#shotPrev').hidden = true; }
+          if (gap) { $('#shotPrev').src = scaled(c, 900).toDataURL('image/jpeg', .8); styleShotPrev($('#shotPrevBox')); $('#shotPrevBox').hidden = false; $('#shotInfo').textContent = `Next photo in a moment…`; await sleep(gap); $('#shotPrevBox').hidden = true; }
           if (B.session !== me) return;
         }
       }
@@ -2169,6 +2179,10 @@ function renderCountdownSettings() {
   const o = cdOpt();
   $('#cdFrames').innerHTML = Object.entries(CD_FRAMES).map(([k, n]) => `<button class="pill ${o.frame === k ? 'on' : ''}" data-cdf="${k}">${n}</button>`).join('');
   $('#cdPrevBorder').value = o.prevBorder || '#ffffff';
+  $('#cdPrevStyles').innerHTML = Object.entries(CD_PREV_STYLES).map(([k, n]) => `<button class="pill ${o.prevStyle === k ? 'on' : ''}" data-cps="${k}">${n}</button>`).join('');
+  $('#cdPrevAnims').innerHTML = Object.entries(CD_PREV_ANIMS).map(([k, n]) => `<button class="pill ${o.prevAnim === k ? 'on' : ''}" data-cpa="${k}">${n}</button>`).join('');
+  $('#cdPrevSize').value = o.prevSize || 100; $('#cdPrevSizeV').textContent = (o.prevSize || 100) + '%';
+  cdShowPrev();
   const soundSel = (id, list, key) => { $(id).innerHTML = Object.entries(list).map(([k, n]) => `<option value="${k}">${n}</option>`).join('') + (o[key + 'Src'] ? '<option value="file">Your sound</option>' : ''); $(id).value = o[key] === 'file' && !o[key + 'Src'] ? Object.keys(list)[0] : o[key]; };
   soundSel('#cdTick', CD_SOUNDS, 'tick'); soundSel('#cdLast', CD_SOUNDS, 'last'); soundSel('#cdShutter', CD_SHUTTERS, 'shutter');
   if (!$('#cdFont').options.length) $('#cdFont').innerHTML = SMILE_FONTS.map(f => `<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('');
@@ -2180,7 +2194,24 @@ function renderCountdownSettings() {
 const cdSet = (k, v) => { S.countdown = { ...cdOpt(), [k]: v }; renderCountdownSettings(); };
 $('#cdFrames').addEventListener('click', e => { const b = e.target.closest('[data-cdf]'); if (!b) return; if (b.dataset.cdf === 'image' && !cdOpt().frameSrc) return $('#cdFrameFile').click(); cdSet('frame', b.dataset.cdf); });
 $('#cdAnims').addEventListener('click', e => { const b = e.target.closest('[data-cda]'); if (b) cdSet('anim', b.dataset.cda); });
-$('#cdPrevBorder').oninput = () => { S.countdown = { ...cdOpt(), prevBorder: $('#cdPrevBorder').value }; };
+$('#cdPrevBorder').oninput = () => { S.countdown = { ...cdOpt(), prevBorder: $('#cdPrevBorder').value }; cdShowPrev(true); };
+$('#cdPrevStyles').addEventListener('click', e => { const b = e.target.closest('[data-cps]'); if (!b) return; if (b.dataset.cps === 'image' && !cdOpt().prevSrc) return $('#cdPrevFile').click(); cdSet('prevStyle', b.dataset.cps); });
+$('#cdPrevAnims').addEventListener('click', e => { const b = e.target.closest('[data-cpa]'); if (b) cdSet('prevAnim', b.dataset.cpa); });
+$('#cdPrevSize').oninput = () => { S.countdown = { ...cdOpt(), prevSize: +$('#cdPrevSize').value }; $('#cdPrevSizeV').textContent = $('#cdPrevSize').value + '%'; cdShowPrev(true); };
+$('#cdPrevFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (!/^image\/(png|webp)$/.test(f.type)) return toast('Use a PNG with a see-through middle.');
+  try { const u = await gbUpload(f, 'spframe'); if (u) { S.countdown = { ...cdOpt(), prevStyle: 'image', prevSrc: u }; renderCountdownSettings(); toast('Uploaded. Press Save to send to the tablet.'); } } catch (err) { toast(err.message, 4000); }
+});
+// Preview of the photo shown between shots (a sample strip photo)
+let cdSampleShot = null;
+async function cdShowPrev(still) {
+  const box = $('#cdShotBox'); if (!box) return;
+  if (!cdSampleShot) cdSampleShot = samplePhoto(1).toDataURL('image/jpeg', .8);
+  box.querySelector('#cdShotImg').src = cdSampleShot; styleShotPrev(box);
+  if (!still) { box.hidden = true; void box.offsetWidth; box.hidden = false; }
+}
+$('#cdShotPlay').onclick = () => cdShowPrev();
 ['tick', 'last', 'shutter'].forEach(k => {
   const id = '#cd' + k[0].toUpperCase() + k.slice(1);
   $(id).onchange = () => { cdSet(k, $(id).value); cdSound(k); };

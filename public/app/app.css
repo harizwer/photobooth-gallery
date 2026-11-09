@@ -278,9 +278,34 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .anum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .anum label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted)}
 .anum .in{height:32px;padding:0 8px;font-size:12px}
-#shotPrev{position:absolute;inset:0;margin:auto;max-width:86%;max-height:78%;object-fit:contain;border:8px solid #fff;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.7);z-index:2;animation:pop .25s ease-out}
+/* Photo shown between shots, in a frame style */
+.spbox{position:absolute;inset:0;margin:auto;width:fit-content;height:fit-content;z-index:2;line-height:0}
+.spbox[hidden]{display:none}
+.spbox>img:first-child{display:block;max-width:calc(86vw * var(--sp-size,1));max-height:calc(72vh * var(--sp-size,1));object-fit:contain;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+.cdshot .spbox>img:first-child{max-width:calc(260px * var(--sp-size,1));max-height:calc(150px * var(--sp-size,1))}
+.sps-classic>img:first-child{border:8px solid var(--sp-border);border-radius:6px}
+.sps-polaroid>img:first-child,.sps-tilt>img:first-child{border:16px solid var(--sp-border);border-bottom-width:60px;border-radius:3px}
+.cdshot .sps-polaroid>img:first-child,.cdshot .sps-tilt>img:first-child{border-width:7px 7px 24px}
+.sps-tilt>img:first-child{transform:rotate(-4deg)}
+.sps-rounded>img:first-child{border-radius:26px;box-shadow:0 0 0 3px rgba(255,255,255,.35),0 24px 70px rgba(0,0,0,.75)}
+.sps-gold>img:first-child{border:14px solid;border-image:linear-gradient(135deg,#f9e29c,#b8860b,#fff3c4,#a0700a,#f9e29c) 1}
+.sps-film>img:first-child{border:34px solid #111;border-left-width:14px;border-right-width:14px;background:#111}
+.sps-film::after{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 10px,#eee 10px 22px,transparent 22px 34px) 0 9px/100% 14px no-repeat,repeating-linear-gradient(90deg,transparent 0 10px,#eee 10px 22px,transparent 22px 34px) 0 calc(100% - 9px)/100% 14px no-repeat}
+.cdshot .sps-film>img:first-child{border-width:16px 6px}
+.cdshot .sps-film::after{background-size:100% 6px;background-position:0 5px,0 calc(100% - 5px)}
+.sps-none>img:first-child{box-shadow:0 14px 40px rgba(0,0,0,.6)}
+.sps-image{padding:7%}
+.sps-image>img:first-child{box-shadow:none}
+.spframe{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none}
+.spa-pop{animation:pop .25s ease-out}
+.spa-drop{animation:spdrop .55s cubic-bezier(.2,1.4,.4,1)}
+.spa-slide{animation:spslide .45s cubic-bezier(.2,1,.3,1)}
+.spa-fade{animation:cdfade .5s ease-out}
+@keyframes spdrop{from{transform:translateY(-70vh)}to{transform:none}}
+@keyframes spslide{from{transform:translateX(80vw)}to{transform:none}}
+.cdshot{aspect-ratio:16/9}
 @keyframes pop{from{transform:scale(.92);opacity:0}to{transform:none;opacity:1}}
-@media (prefers-reduced-motion:reduce){#shotPrev{animation:none}}
+@media (prefers-reduced-motion:reduce){.spbox{animation:none}}
 
 /* Review: zoom & move each photo */
 #rvWrap{position:relative;display:inline-block;touch-action:none;line-height:0}
