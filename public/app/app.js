@@ -58,7 +58,7 @@ const STUDIO_DEFAULT = {
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   stickers: { on: true, packs: ['props', 'love', 'party', 'raya', 'fun'], custom: [], texts: [{ t: 'Selamat Pengantin Baru', font: 'Great Vibes', color: '#ffffff' }] },
   guestbook: { on: false, prompt: 'Write a message for the couple ✍️', auto: false, paper: 'cream', paperSrc: '', screen: '#141416', screenSrc: '', pdfBg: true },
-  beauty: 0, bright: 0, beautyLive: true,
+  beautyStep: true, lookStart: { smooth: 30, bright: 30 },
   aiBg: { on: true, builtin: ['white', 'grey', 'gold', 'rose', 'night'], blur: true, list: [] },
   voice: { on: false, lang: 'ms-MY', volume: 1, lines: {}, clips: {} },
   music: { on: false, volume: .35, tracks: [], repeat: 'one' },
@@ -190,7 +190,9 @@ async function drawSticker(x, st, W, H) {
   x.restore();
 }
 /* ---------- Beauty: smoother skin (edge-preserving, skin tones only) and a slightly brighter look ---------- */
-const BEAUTY_K = [0, .35, .6, .85];
+// The guest's look, chosen on the beauty screen after picking the strip: smooth 0-100 and brighten 0-100
+const lookK = v => Math.max(0, Math.min(100, +v || 0)) / 100 * .9;   // how much beautify() smooths
+const lookB = v => Math.max(0, Math.min(100, +v || 0)) / 100 * 3;    // how much beautify() brightens
 // k = how much to smooth the skin (0..1), br = how much to brighten (0..3)
 function beautify(src, k, maxSide = 2400, br = 0) {
   const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight, sc = Math.min(1, maxSide / Math.max(w0, h0));
@@ -217,13 +219,13 @@ const VIEW_PX = 1600;
 async function reviewShots(s, full) {
   if (!s.shots) return s.shots;
   const base = full ? s.shots : (s._view || (s._view = s.shots.map(c => Math.max(c.width, c.height) > VIEW_PX ? scaled(c, VIEW_PX) : c)));
-  const lv = +s.beauty || 0, br = +s.bright || 0, bg = s.bg || ''; if (!lv && !br && !bg) return base;
+  const lv = +s.smooth || 0, br = +s.bright || 0, bg = s.bg || ''; if (!lv && !br && !bg) return base;
   const cache = full ? (s._beauty = s._beauty || {}) : (s._viewFx = s._viewFx || {}), lk = lv + '.' + br, key = lk + '|' + bg;
   if (!cache[key]) {
     if (!full) { busy(bg ? 'Changing the background…' : 'Applying beauty…'); await sleep(30); }
     try {
       let src = base;
-      if (lv || br) { if (!cache[lk + '|']) { const out = []; for (const c of base) { out.push(beautify(c, BEAUTY_K[lv], 2400, br)); await sleep(0); } cache[lk + '|'] = out; } src = cache[lk + '|']; }
+      if (lv || br) { if (!cache[lk + '|']) { const out = []; for (const c of base) { out.push(beautify(c, lookK(lv), 2400, lookB(br))); await sleep(0); } cache[lk + '|'] = out; } src = cache[lk + '|']; }
       if (bg) { const out = []; for (const [i, c] of src.entries()) { out.push(await withBackground(c, bg, 'photo', s.shots[i])); await sleep(0); } src = out; }
       cache[key] = src;
     } catch (e) { if (!full) { busy(false); toast('Could not change the background: ' + e.message, 6000); s.bg = ''; } return (lv || br) ? cache[lk + '|'] || base : base; }
@@ -629,19 +631,51 @@ async function boothLoad() {
   $('#bModes').innerHTML = list.length === 1
     ? `<button class="bmode first" data-mode="${list[0]}">Touch to start</button>`
     : list.map((m, i) => `<button class="bmode ${i === 0 ? 'first' : ''}" data-mode="${m}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m][1]}</svg>${MODE_INFO[m][0]}</button>`).join('');
-  applyMirror(); applyLiveBeauty();
+  applyMirror(); liveLook(null);
   boothStatus();
 }
 // Mirror the live picture on screen (tablet camera and Canon), like looking in a mirror.
 // Canon photos are saved the right way round, so writing in the background reads normally.
 // Beauty on the live camera, so guests see the look before the photo: a soft-focus layer (smooth) and a brighter picture.
 // The photo itself gets the real skin-only smoothing and brightening on the review screen.
-function applyLiveBeauty() {
-  const on = S.beautyLive !== false, k = on ? +S.beauty || 0 : 0, br = on ? +S.bright || 0 : 0, cam = $('.cam');
-  cam.style.setProperty('--lb-filter', br || k ? `brightness(${(1 + .06 * br + .02 * k).toFixed(2)}) saturate(${(1 + .03 * br).toFixed(2)}) contrast(${(1 - .02 * k).toFixed(2)})` : 'none');
-  cam.style.setProperty('--lb-blur', [0, 2, 3, 4][k] + 'px'); cam.style.setProperty('--lb-soft', [0, .35, .5, .62][k]);
-  $('#liveSoft').hidden = !k;
+// The guest's look on the live camera. Kept light for the tablet: brightness is a CSS filter, and the smoothing is a
+// tiny copy of each camera picture stretched over it (stretching blurs it for free), mixed in a little.
+// look = { smooth, bright } (0-100) or null for off. The photos themselves get the real skin-only smoothing.
+let LOOK = null, softRaf = 0;
+function liveLook(look) {
+  LOOK = look && (look.smooth || look.bright) ? look : null;
+  const cam = $('.cam'), k = LOOK ? LOOK.smooth / 100 : 0, b = LOOK ? LOOK.bright / 100 : 0;
+  cam.style.setProperty('--lb-filter', LOOK ? `brightness(${(1 + .18 * b + .06 * k).toFixed(3)}) saturate(${(1 + .06 * b).toFixed(3)}) contrast(${(1 - .05 * k).toFixed(3)})` : 'none');
+  cam.style.setProperty('--lb-soft', (k * .6).toFixed(3));
+  const soft = $('#liveSoft'); soft.hidden = !k; soft.classList.toggle('mirror', !!(S.capture && S.capture.mirror));
+  cancelAnimationFrame(softRaf); softRaf = 0;
+  if (k && !(dslr && !dslr.noLive)) {   // tablet camera: copy its picture each screen frame (the Canon copies in its own loop)
+    const step = () => { if (!LOOK || !LOOK.smooth) return; const v = $('#live'); if (v.videoWidth) softDraw(v); softRaf = requestAnimationFrame(step); };
+    softRaf = requestAnimationFrame(step);
+  }
 }
+function softDraw(src) {
+  const cv = $('#liveSoft'), w = src.videoWidth || src.width, h = src.videoHeight || src.height; if (!w || !h) return;
+  const sw = 160, sh = Math.round(160 * h / w); if (cv.width !== sw || cv.height !== sh) { cv.width = sw; cv.height = sh; }
+  const x = cv.getContext('2d'); x.imageSmoothingQuality = 'low'; x.drawImage(src, 0, 0, sw, sh);
+}
+/* ---------- Beauty screen: after picking the strip, the guest sets smooth and brighten (0-100), seen live ---------- */
+// The app sends the Canon picture about 15 times a second normally; while a guest is in front of the camera, as fast as it can
+function liveSpeed(fast) { if (NATIVE && dslr && !dslr.noLive && liveSpeed.now !== fast) { liveSpeed.now = fast; nativeCall(fast ? 'liveFast' : 'liveNormal').catch(() => {}); } }
+function openLook(design) {
+  liveSpeed(true);
+  const st = S.lookStart || {}, look = B.look || (B.look = { smooth: +st.smooth || 0, bright: +st.bright || 0 });
+  B.lookDesign = design;
+  $('#lkSmooth').value = look.smooth; $('#lkBright').value = look.bright; lookLabels();
+  liveLook(look); bscreen('b-look');
+}
+function lookLabels() { $('#lkSmoothV').textContent = $('#lkSmooth').value; $('#lkBrightV').textContent = $('#lkBright').value; }
+['#lkSmooth', '#lkBright'].forEach(id => $(id).addEventListener('input', () => {
+  B.look = { smooth: +$('#lkSmooth').value, bright: +$('#lkBright').value }; lookLabels(); liveLook(B.look);
+}));
+$('#lkGo').onclick = () => startSession(B.lookDesign);
+$('#lkBack').onclick = () => { if (designsFor(ACTIVE).length > 1) { liveLook(null); startFlow('photo', true); } else goHome(); };
+$('#lkOff').onclick = () => { $('#lkSmooth').value = 0; $('#lkBright').value = 0; B.look = { smooth: 0, bright: 0 }; lookLabels(); liveLook(B.look); };
 function applyMirror() { const m = !!(S.capture && S.capture.mirror); $('#live').classList.toggle('mirror', m); $('#dslrView').classList.toggle('mirror', m); }
 function boothStatus() {
   $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR ready · preview: tablet camera' : 'Canon DSLR · live view') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
@@ -867,20 +901,25 @@ const LV = { frames: 0, since: 0, slowest: 0, lastMs: 0, errors: 0, lastErr: '',
 async function dslrLoop(d) {
   const x = d.canvas.getContext('2d'); let fails = 0, lastEvents = Date.now();
   Object.assign(LV, { frames: 0, since: Date.now(), slowest: 0, errors: 0, lastErr: '', events: 0 });
+  let next = null;   // the next picture is asked for while this one is decoded and drawn (smoother live view)
+  const ask = () => { const p = withTimeout(d.cam.capturePreviewAsBlob(), 15000, 'The Canon live view stopped answering'); p.catch(() => {}); return p; };
   while (d.running && dslr === d) {
-    if (d.pause) { await sleep(60); continue; }
+    if (d.pause) { next = null; await sleep(60); continue; }
     try {
       const t0 = performance.now();
-      const blob = await withTimeout(d.cam.capturePreviewAsBlob(), 15000, 'The Canon live view stopped answering');
+      const blob = await (next || ask()); next = null;
+      const watched = !document.hidden && !(ROLE === 'booth' && $('#b-attract').classList.contains('on'));
+      if (watched && NATIVE && !d.pause && !d.recTrack) next = ask();   // only the app can fetch the next picture side by side
       const bmp = await createImageBitmap(blob); fails = 0; d.lastFrame = Date.now();
       LV.frames++; LV.lastMs = Math.round(performance.now() - t0); LV.slowest = Math.max(LV.slowest, LV.lastMs);
       if (d.canvas.width !== bmp.width) { d.canvas.width = bmp.width; d.canvas.height = bmp.height; }
       x.drawImage(bmp, 0, 0); bmp.close && bmp.close();
+      if (LOOK && LOOK.smooth) softDraw(d.canvas);
       if (d.recTrack) { d.recTrack.requestFrame(); continue; }   // recording a video message: next picture straight away
       // Full speed while guests look at the camera; a gentle keep-alive while the start screen covers it
-      await sleep(document.hidden ? 600 : (ROLE === 'booth' && $('#b-attract').classList.contains('on')) ? 400 : 15);   // as fast as the Canon allows while guests look at it
+      await sleep(!watched ? (document.hidden ? 600 : 400) : NATIVE ? 0 : 15);   // gentle keep-alive while the start screen covers it; otherwise straight on
     } catch (e) {
-      LV.errors++; LV.lastErr = e.message; camLog('live view problem: ' + e.message);
+      next = null; LV.errors++; LV.lastErr = e.message; camLog('live view problem: ' + e.message);
       if (/stopped answering|did not answer/.test(e.message)) { markLiveBroken(); if (dslr === d) dslrFallback(); return; }   // the library is stuck: recover (photos only next time)
       const msg = dslrHelp(e);
       if (dslrCrashed || ++fails > (NATIVE ? 40 : 12)) { markLiveBroken(); if (dslr === d) dslrFallback(msg); return; }   // camera lost: keep the booth working
@@ -1005,12 +1044,12 @@ function recVideoStream(mic) {
   let vt;
   if (dslr && !dslr.noLive) {
     vt = dslr.canvas.captureStream(0).getVideoTracks()[0]; dslr.recTrack = vt;
-    if (NATIVE) nativeCall('liveFast').catch(() => {});
+    liveSpeed(true);
   } else vt = B.stream.getVideoTracks()[0];
   return new MediaStream([vt, ...(mic ? mic.getAudioTracks() : [])]);
 }
 function endRecVideo() {
-  if (dslr && dslr.recTrack) { dslr.recTrack.stop(); dslr.recTrack = null; if (NATIVE) nativeCall('liveNormal').catch(() => {}); }
+  if (dslr && dslr.recTrack) { dslr.recTrack.stop(); dslr.recTrack = null; }
 }
 
 /* ---------- Session flow ---------- */
@@ -1039,7 +1078,7 @@ async function keepSession(s) {
 function keepEdits(s, now) {
   if (!s || !s.kept || s.keepDone) return;
   clearTimeout(s.keepT);
-  const write = () => { if (!s.keepDone) keepPut('e:' + s.sid, { at: Date.now(), status: s.row ? 'saving' : 'review', row: s.row || null, filter: s.filter, adjust: s.adjust, adjSel: s.adjSel, stickers: s.stickers, beauty: s.beauty, bright: s.bright, bg: s.bg, printCopies: s.printCopies || 0 }); };
+  const write = () => { if (!s.keepDone) keepPut('e:' + s.sid, { at: Date.now(), status: s.row ? 'saving' : 'review', row: s.row || null, filter: s.filter, adjust: s.adjust, adjSel: s.adjSel, stickers: s.stickers, smooth: s.smooth, bright: s.bright, bg: s.bg, printCopies: s.printCopies || 0 }); };
   if (now) return write(); s.keepT = setTimeout(write, 600);
 }
 async function keptSessions() {
@@ -1054,7 +1093,7 @@ async function keptToSession(sid, e) {
   const shots = [];
   for (const b of k.shots) { const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); bm.close && bm.close(); shots.push(c); }
   return { mode: 'photo', design: k.design, shots, originals: k.originals, bursts: k.bursts, filter: e.filter || 'none', copies: 1, saved: null, printed: false, jobId: null,
-    adjust: e.adjust, adjSel: e.adjSel || 0, stickers: e.stickers || [], stkSel: -1, beauty: e.beauty || 0, bright: e.bright || 0, bg: e.bg || '', sid, kept: true, printCopies: e.printCopies || 0 };
+    adjust: e.adjust, adjSel: e.adjSel || 0, stickers: e.stickers || [], stkSel: -1, smooth: e.smooth || 0, bright: e.bright || 0, bg: e.bg || '', sid, kept: true, printCopies: e.printCopies || 0 };
 }
 // On start: finish saving photos that were still uploading, and bring back a guest who was in the middle of editing
 async function restoreSessions() {
@@ -1093,24 +1132,25 @@ try { new PerformanceObserver(l => { for (const t of l.getEntries()) if (t.durat
 function goHome() {
   if (B.session && !B.session.row) keepDone(B.session);   // left without saving: nothing to keep
   if (S.music && S.music.on) musicPlay();   // the guest is done: music back on
-  B.session = null; clearInterval(B.reviewT); clearInterval(B.doneT);
+  B.session = null; B.look = null; liveLook(null); liveSpeed(false); clearInterval(B.reviewT); clearInterval(B.doneT);
   $('#b-count').textContent = ''; $('#busy').hidden = true; $('#bErr').hidden = true;
   bscreen('b-attract');
   if (B.recoverDslr) dslrRecover();
   if (B.pendingReload) { B.pendingReload = false; boothLoad(); }
 }
-function startFlow(mode) {
-  ac(); keepAwake(); musicPause(); say(mode === 'video' ? 'video' : 'welcome');
+const pickDesign = d => S.beautyStep !== false ? openLook(d) : startSession(d);
+function startFlow(mode, again) {
+  if (!again) { ac(); keepAwake(); musicPause(); say(mode === 'video' ? 'video' : 'welcome'); B.look = null; }
   if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
   B.mode = mode || 'photo';
   if (B.mode !== 'photo') return startSession(null);
   const ds = designsFor(ACTIVE);
-  if (ds.length === 1) return startSession(ds[0]);
+  if (ds.length === 1) return pickDesign(ds[0]);
   $('#pickList').innerHTML = '';
   ds.forEach(async (d, i) => {
     const b = document.createElement('button'); b.className = 'role'; b.style.cssText = 'align-items:center;padding:16px;gap:8px;width:200px';
     b.innerHTML = `<img alt="" style="height:200px;max-width:170px;object-fit:contain;border-radius:3px;background:#2a2a2e"><b style="font-size:15px">${esc(d.name)}</b>`;
-    b.onclick = () => startSession(d); $('#pickList').appendChild(b);
+    b.onclick = () => pickDesign(d); $('#pickList').appendChild(b);
     const c = await compose({ ...d, output_long: 600 }, samples(d.areas.length), 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
     b.querySelector('img').src = c.toDataURL('image/jpeg', .7);
   });
@@ -1217,7 +1257,9 @@ function styleCount(el, o = cdOpt(), preview) {
 function flash() { cdSound('shutter'); const f = $('#flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }
 async function startSession(design) {
   clearInterval(B.reviewT); clearInterval(B.doneT);
-  const me = B.session = { mode: B.mode, design, shots: [], filter: 'none', copies: 1, saved: null, printed: false, jobId: null };
+  const look = B.mode === 'photo' && S.beautyStep !== false && B.look ? B.look : { smooth: 0, bright: 0 };
+  const me = B.session = { mode: B.mode, design, shots: [], filter: 'none', copies: 1, saved: null, printed: false, jobId: null, smooth: look.smooth, bright: look.bright };
+  liveLook(look); liveSpeed(true);
   if (dslr && !dslrHealthy()) { await dslrFallback(); await sleep(800); }
   paintCdFrame($('#cdFrame')); styleShotPrev($('#shotPrevBox'));
   bscreen('b-shoot');
@@ -1384,7 +1426,7 @@ async function renderSessionNow() {
 }
 async function openReview() {
   const s = B.session;
-  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; s.stickers = []; s.stkSel = -1; s.beauty = +S.beauty || 0; s.bright = +S.bright || 0; s.bg = ''; }
+  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; s.stickers = []; s.stkSel = -1; s.bg = ''; }
   try { await renderSession(); } catch (e) { return showErr('Something went wrong', e.message, () => openReview(), goHome); }
   const isPhoto = s.mode === 'photo';
   $('#rvTabs').hidden = !isPhoto;
@@ -1393,7 +1435,7 @@ async function openReview() {
   if (isPhoto) { renderAiBgPanel(); say('review'); }
   // (The AI background runs only when the guest picks one: preparing it in advance froze the tablet's screen.)
   showReviewTab(isPhoto ? 'adj' : '');
-  if (isPhoto) { renderAdjButtons(); renderStickerPanel(); $$('#bBeauty [data-bt]').forEach(b => b.classList.toggle('on', +b.dataset.bt === (+s.beauty || 0))); }
+  if (isPhoto) { renderAdjButtons(); renderStickerPanel(); }
   $('#bFilters').innerHTML = FILTERS.map(f => `<button class="${f[0] === s.filter ? 'on' : ''}" data-fl="${f[0]}">${f[1]}</button>`).join('');
   const maxC = Math.max(1, S.capture.maxCopies || 1);
   s.copies = 1; $('#cNum').textContent = 1; $('#copiesWrap').hidden = !isPhoto || maxC <= 1;
@@ -1455,10 +1497,6 @@ function showReviewTab(t) {
   $$('#b-review [data-panel]').forEach(p => { p.hidden = p.dataset.panel !== t; });
 }
 $('#rvTabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showReviewTab(b.dataset.tab); });
-$('#bBeauty').addEventListener('click', async e => {
-  const b = e.target.closest('[data-bt]'); if (!b || !B.session) return;
-  B.session.beauty = +b.dataset.bt; $$('#bBeauty button').forEach(x => x.classList.toggle('on', x === b)); await renderSession();
-});
 // Sticker panel: the packs the studio turned on, plus the studio's own pictures and text stickers
 let stkPack = '';
 function stickerPacks() {
@@ -1607,7 +1645,7 @@ function startSave(s, reuse) {
       if (S.capture.originals !== false && s.shots) {
         // Each camera photo in HD for the guest: the Canon's own JPEG when it is a sensible size, otherwise 4000 px at 92%.
         // With the beauty filter on, the smoothed photo is used so it matches the strip.
-        const lv = (+s.beauty || 0) || (+s.bright || 0) || (s.bg ? 1 : 0), src = lv ? await reviewShots(s, true) : s.shots;
+        const lv = (+s.smooth || 0) || (+s.bright || 0) || (s.bg ? 1 : 0), src = lv ? await reviewShots(s, true) : s.shots;
         row.originals = src.map((_, i) => `${ev}/${id}-o${i + 1}.jpg`);
         src.forEach((shot, i) => {
           const cam = !lv && s.originals && s.originals[i], useCam = cam && cam.size <= 6e6 && /jpe?g/i.test(cam.type || 'image/jpeg');
@@ -1617,7 +1655,7 @@ function startSave(s, reuse) {
       }
       if (photoGifOn && s.bursts && s.bursts.length > 1) {
         try {
-          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust, s.stickers, BEAUTY_K[+s.beauty || 0], s.bg, +s.bright || 0);
+          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust, s.stickers, lookK(s.smooth), s.bg, lookB(s.bright));
           if (g) { const ext = g.type === 'image/gif' ? 'gif' : g.type === 'video/mp4' ? 'mp4' : 'webm'; row.media_path = `${ev}/${id}.${ext}`; work.push(retry(() => upload(row.media_path, g, g.type))); }
         } catch (e) { /* the photo still saves without the boomerang */ }
         s.bursts = null;
@@ -2850,7 +2888,7 @@ function renderStickerSettings() {
   $('#stTexts').innerHTML = (st.texts || []).map((t, i) => `<button class="pill" data-rmt="${i}" title="Remove" style="font-family:'${esc(t.font || 'Geist')}';color:${esc(t.color || '#fff')}">${esc(t.t)} <span style="color:#ff8a80">✕</span></button>`).join('') || '<span class="lbl">None yet</span>';
   if (!$('#stTextFont').options.length) $('#stTextFont').innerHTML = SMILE_FONTS.map(f => `<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('');
   const g = S.guestbook;
-  $('#gbOn').checked = !!g.on; $('#gbPromptIn').value = g.prompt || ''; $('#gbAuto').checked = !!g.auto; $('#beautyDef').value = String(+S.beauty || 0); $('#brightDef').value = String(+S.bright || 0); $('#beautyLive').checked = S.beautyLive !== false; beautyPrev();
+  $('#gbOn').checked = !!g.on; $('#gbPromptIn').value = g.prompt || ''; $('#gbAuto').checked = !!g.auto; $('#lookOn').checked = S.beautyStep !== false; const ls = S.lookStart || {}; $('#lookSm').value = +ls.smooth || 0; $('#lookBr').value = +ls.bright || 0; lookAdminLabels(); beautyPrev();
 }
 $('#stOn').onchange = () => { S.stickers.on = $('#stOn').checked; };
 $('#stPacksAdmin').addEventListener('click', e => {
@@ -2877,9 +2915,9 @@ $('#stFile').addEventListener('change', async e => {
 $('#gbOn').onchange = () => { S.guestbook.on = $('#gbOn').checked; };
 $('#gbPromptIn').addEventListener('input', () => { S.guestbook.prompt = $('#gbPromptIn').value.trim(); });
 $('#gbAuto').onchange = () => { S.guestbook.auto = $('#gbAuto').checked; };
-$('#beautyDef').onchange = () => { S.beauty = +$('#beautyDef').value; beautyPrev(); };
-$('#brightDef').onchange = () => { S.bright = +$('#brightDef').value; beautyPrev(); };
-$('#beautyLive').onchange = () => { S.beautyLive = $('#beautyLive').checked; };
+$('#lookOn').onchange = () => { S.beautyStep = $('#lookOn').checked; };
+function lookAdminLabels() { $('#lookSmV').textContent = $('#lookSm').value; $('#lookBrV').textContent = $('#lookBr').value; }
+['#lookSm', '#lookBr'].forEach(id => $(id).addEventListener('input', () => { S.lookStart = { smooth: +$('#lookSm').value, bright: +$('#lookBr').value }; lookAdminLabels(); beautyPrev(); }));
 // Before / after on a sample face
 let beautySample = null;
 function beautyPrev() {
@@ -2894,7 +2932,7 @@ function beautyPrev() {
     x.fillStyle = '#1f1a17'; x.beginPath(); x.ellipse(240, 70, 92, 46, 0, Math.PI, 0); x.fill();
     beautySample = c;
   }
-  const x = cv.getContext('2d'), out = beautify(beautySample, BEAUTY_K[+S.beauty || 0], 2400, +S.bright || 0);
+  const x = cv.getContext('2d'), ls = S.lookStart || {}, out = beautify(beautySample, lookK(ls.smooth), 2400, lookB(ls.bright));
   x.imageSmoothingQuality = 'high'; x.drawImage(beautySample, 0, 0, 600, 800, 0, 0, 240, 320); x.drawImage(out, 600, 0, 600, 800, 240, 0, 240, 320);
   x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, 290, 480, 30); x.fillStyle = '#fff'; x.font = '600 15px system-ui'; x.textAlign = 'center'; x.fillText('Before', 120, 310); x.fillText('After', 360, 310);
 }

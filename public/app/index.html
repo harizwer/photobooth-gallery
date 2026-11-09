@@ -466,13 +466,10 @@
           <div class="gbprev" id="gbPrev"><div class="gbprevtitle">Write a message ✍️</div><div class="gbprevpad" id="gbPrevPad"><span style="font-family:'Dancing Script',cursive;font-size:22px;color:#1d1d1f">Selamat pengantin baru!</span></div></div>
           <label class="tog" style="justify-content:flex-start;gap:10px">Use the card look for the guestbook PDF pages<input type="checkbox" id="gbPdfBg"></label>
           <div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px">
-            <b style="font-size:15px">✨ Beauty filter</b>
-            <div class="lbl" style="margin-top:-4px">Smoother and brighter skin. Guests can still change it on the review screen.</div>
-            <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
-              <label class="field" for="beautyDef" style="width:160px">Smooth skin<select class="in" id="beautyDef"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Strong</option></select></label>
-              <label class="field" for="brightDef" style="width:160px">Brighten skin<select class="in" id="brightDef"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Strong</option></select></label>
-            </div>
-            <label class="tog" style="justify-content:flex-start;gap:10px">Show it on the live camera before the photo is taken<input type="checkbox" id="beautyLive"></label>
+            <label class="tog" style="justify-content:flex-start;gap:10px"><span><b style="font-size:15px">✨ Beauty screen</b><br><span class="lbl" style="font-size:12.5px">After picking the strip, guests set Smooth skin and Brighten skin (0–100), seen live on the camera, for all their photos.</span></span><input type="checkbox" id="lookOn"></label>
+            <div class="lbl">Where the sliders start</div>
+            <label class="field" for="lookSm">Smooth skin <span class="mono" id="lookSmV"></span><input type="range" id="lookSm" min="0" max="100" style="accent-color:var(--accent)"></label>
+            <label class="field" for="lookBr">Brighten skin <span class="mono" id="lookBrV"></span><input type="range" id="lookBr" min="0" max="100" style="accent-color:var(--accent)"></label>
             <canvas id="beautyPrevCv" width="480" height="320" style="width:100%;max-width:360px;border-radius:12px;border:1px solid var(--line2)"></canvas>
           </div>
         </div>
@@ -525,7 +522,7 @@
 
 <!-- ================= TABLET BOOTH ================= -->
 <section id="v-booth" aria-label="Tablet booth">
-  <div class="cam" aria-hidden="true"><video id="live" muted playsinline autoplay></video><canvas id="dslrView" hidden></canvas><div id="liveSoft" hidden></div></div>
+  <div class="cam" aria-hidden="true"><video id="live" muted playsinline autoplay></video><canvas id="dslrView" hidden></canvas><canvas id="liveSoft" hidden></canvas></div>
   <div class="bs on" id="b-attract">
     <div class="boothbg" aria-hidden="true"><div class="bglayer" id="boothBgLayer"></div><div class="bgshade" id="boothShade"></div></div>
     <div class="boothbrand"><span class="logo" data-logo data-size="18"></span><span data-brand>Photobooth Studio</span></div>
@@ -534,6 +531,16 @@
     <div style="font-size:18px;color:#d4d4d8" id="bSub">Tap to make memories</div>
     <div class="bmodes" id="bModes"></div>
     <span class="bstatus" id="bStatus"><span class="dot warn"></span>Connecting…</span>
+  </div>
+  <div class="bs" id="b-look">
+    <div class="lookpanel">
+      <h2 style="margin:0;font-size:26px">✨ Your look</h2>
+      <div class="lbl" style="font-size:14px;margin-top:-6px">Move the sliders and see it on the camera. It stays on for all your photos.</div>
+      <label class="lkrow" for="lkSmooth"><span>Smooth skin</span><b id="lkSmoothV">0</b><input type="range" id="lkSmooth" min="0" max="100" step="1"></label>
+      <label class="lkrow" for="lkBright"><span>Brighten skin</span><b id="lkBrightV">0</b><input type="range" id="lkBright" min="0" max="100" step="1"></label>
+      <button class="btn rbtn pri" id="lkGo" style="height:58px;font-size:19px">Start ▶</button>
+      <div class="row" style="justify-content:space-between"><button class="btn rbtn" id="lkBack">← Back</button><button class="btn rbtn" id="lkOff">No filter</button></div>
+    </div>
   </div>
   <div class="bs" id="b-pick">
     <div style="position:absolute;inset:0;background:rgba(0,0,0,.75)"></div>
@@ -548,7 +555,7 @@
     <div id="reviewMedia"></div>
     <div class="rp">
       <h2 style="margin:0;font-size:30px">Looking good!</h2>
-      <div class="rvtabs" id="rvTabs" role="tablist"><button data-tab="adj" class="on">🔍 Zoom</button><button data-tab="stk">⭐ Stickers</button><button data-tab="aibg">🖼 Background</button><button data-tab="beauty">✨ Beauty</button><button data-tab="filter">🎨 Filter</button></div>
+      <div class="rvtabs" id="rvTabs" role="tablist"><button data-tab="adj" class="on">🔍 Zoom</button><button data-tab="stk">⭐ Stickers</button><button data-tab="aibg">🖼 Background</button><button data-tab="filter">🎨 Filter</button></div>
       <div id="adjWrap" data-panel="adj"><div class="lbl" style="font-size:14px;margin-bottom:8px">Zoom &amp; move: tap a photo, drag to move, pinch or use − / +</div>
         <div class="adjpick" id="adjPick"></div>
         <div class="adjrow"><button id="adjMinus" aria-label="Zoom out">−</button><input type="range" id="adjZoom" min="50" max="300" step="1" value="100" aria-label="Zoom"><button id="adjPlus" aria-label="Zoom in">+</button><button class="btn sm" id="adjReset">Reset</button></div>
@@ -557,7 +564,6 @@
         <div class="stkpacks" id="stkPacks"></div><div class="stkgrid" id="stkGrid"></div>
         <div class="adjrow" id="stkSelRow" hidden><span class="lbl">Selected:</span><button id="stkSmaller" aria-label="Smaller">−</button><button id="stkBigger" aria-label="Bigger">+</button><button id="stkTurn" aria-label="Turn">⟳</button><button class="btn sm" id="stkDel" style="color:#ff8a80">Remove</button></div></div>
       <div id="aibgWrap" data-panel="aibg" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Swap the background (AI, no green screen)</div><div class="aibggrid" id="bAiBg"></div></div>
-      <div id="beautyWrap" data-panel="beauty" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Smoother skin and a brighter look</div><div class="filters" id="bBeauty"><button data-bt="0" class="on">Off</button><button data-bt="1">Light</button><button data-bt="2">Medium</button><button data-bt="3">Strong</button></div></div>
       <div id="filterWrap" data-panel="filter" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Choose a filter</div><div class="filters" id="bFilters"></div></div>
       <div class="copies" id="copiesWrap"><span>Copies</span><button id="cMinus" aria-label="Fewer copies">−</button><b class="mono" id="cNum">1</b><button id="cPlus" aria-label="More copies">+</button></div>
       <button class="btn pri rbtn" id="printBtn">Print</button>
