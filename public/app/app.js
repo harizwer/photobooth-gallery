@@ -58,7 +58,7 @@ const STUDIO_DEFAULT = {
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   stickers: { on: true, packs: ['props', 'love', 'party', 'raya', 'fun'], custom: [], texts: [{ t: 'Selamat Pengantin Baru', font: 'Great Vibes', color: '#ffffff' }] },
   guestbook: { on: false, prompt: 'Write a message for the couple ✍️', auto: false, paper: 'cream', paperSrc: '', screen: '#141416', screenSrc: '', pdfBg: true },
-  beauty: 0,
+  beauty: 0, bright: 0, beautyLive: true,
   aiBg: { on: true, builtin: ['white', 'grey', 'gold', 'rose', 'night'], blur: true, list: [] },
   voice: { on: false, lang: 'ms-MY', volume: 1, lines: {}, clips: {} },
   music: { on: false, volume: .35, tracks: [], repeat: 'one' },
@@ -191,20 +191,21 @@ async function drawSticker(x, st, W, H) {
 }
 /* ---------- Beauty: smoother skin (edge-preserving, skin tones only) and a slightly brighter look ---------- */
 const BEAUTY_K = [0, .35, .6, .85];
-function beautify(src, k, maxSide = 2400) {
+// k = how much to smooth the skin (0..1), br = how much to brighten (0..3)
+function beautify(src, k, maxSide = 2400, br = 0) {
   const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight, sc = Math.min(1, maxSide / Math.max(w0, h0));
   const w = Math.round(w0 * sc), h = Math.round(h0 * sc);
   const out = document.createElement('canvas'); out.width = w; out.height = h; const o = out.getContext('2d', { willReadFrequently: true }); o.imageSmoothingQuality = 'high';
   const r = Math.max(2, Math.round(Math.min(w, h) * .006 * (.6 + k)));
   o.filter = `blur(${r}px)`; o.drawImage(src, 0, 0, w, h); o.filter = 'none';
   const B = o.getImageData(0, 0, w, h).data; o.drawImage(src, 0, 0, w, h);
-  const A = o.getImageData(0, 0, w, h), a = A.data, thr = 14 + 26 * k, inv = 1 / (thr * thr), lift = 1 + .07 * k;
+  const A = o.getImageData(0, 0, w, h), a = A.data, thr = 14 + 26 * k, inv = 1 / (thr * thr), lift = 1 + .07 * k + .06 * br, warm = 2 * k + 2 * br;
   for (let i = 0; i < a.length; i += 4) {
     const R = a[i], G = a[i + 1], Bl = a[i + 2];
     const cb = 128 - .168736 * R - .331264 * G + .5 * Bl, cr = 128 + .5 * R - .418688 * G - .081312 * Bl;
     const skin = cb > 77 && cb < 130 && cr > 132 && cr < 175 ? 1 : .2;
     const dd = (Math.abs(R - B[i]) + Math.abs(G - B[i + 1]) + Math.abs(Bl - B[i + 2])) / 3, wgt = k * skin * Math.exp(-dd * dd * inv);
-    a[i] = Math.min(255, (R + (B[i] - R) * wgt) * lift + 2 * k);
+    a[i] = Math.min(255, (R + (B[i] - R) * wgt) * lift + warm * (skin === 1 ? 1 : .4));
     a[i + 1] = Math.min(255, (G + (B[i + 1] - G) * wgt) * lift);
     a[i + 2] = Math.min(255, (Bl + (B[i + 2] - Bl) * wgt) * lift);
   }
@@ -216,16 +217,16 @@ const VIEW_PX = 1600;
 async function reviewShots(s, full) {
   if (!s.shots) return s.shots;
   const base = full ? s.shots : (s._view || (s._view = s.shots.map(c => Math.max(c.width, c.height) > VIEW_PX ? scaled(c, VIEW_PX) : c)));
-  const lv = +s.beauty || 0, bg = s.bg || ''; if (!lv && !bg) return base;
-  const cache = full ? (s._beauty = s._beauty || {}) : (s._viewFx = s._viewFx || {}), key = lv + '|' + bg;
+  const lv = +s.beauty || 0, br = +s.bright || 0, bg = s.bg || ''; if (!lv && !br && !bg) return base;
+  const cache = full ? (s._beauty = s._beauty || {}) : (s._viewFx = s._viewFx || {}), lk = lv + '.' + br, key = lk + '|' + bg;
   if (!cache[key]) {
     if (!full) { busy(bg ? 'Changing the background…' : 'Applying beauty…'); await sleep(30); }
     try {
       let src = base;
-      if (lv) { if (!cache[lv + '|']) { const out = []; for (const c of base) { out.push(beautify(c, BEAUTY_K[lv])); await sleep(0); } cache[lv + '|'] = out; } src = cache[lv + '|']; }
+      if (lv || br) { if (!cache[lk + '|']) { const out = []; for (const c of base) { out.push(beautify(c, BEAUTY_K[lv], 2400, br)); await sleep(0); } cache[lk + '|'] = out; } src = cache[lk + '|']; }
       if (bg) { const out = []; for (const [i, c] of src.entries()) { out.push(await withBackground(c, bg, 'photo', s.shots[i])); await sleep(0); } src = out; }
       cache[key] = src;
-    } catch (e) { if (!full) { busy(false); toast('Could not change the background: ' + e.message, 6000); s.bg = ''; } return lv ? cache[lv + '|'] || base : base; }
+    } catch (e) { if (!full) { busy(false); toast('Could not change the background: ' + e.message, 6000); s.bg = ''; } return (lv || br) ? cache[lk + '|'] || base : base; }
     finally { if (!full) busy(false); }
   }
   return cache[key];
@@ -406,13 +407,22 @@ async function compose(d, shots, filter = 'none', opts = {}) {
   if (opts.qrText) drawPrintQr(x, W, H, d, opts.qrText);
   return c;
 }
-// Small QR in a corner. Each QR square is a whole number of pixels so the printer prints it crisp and phones read it easily.
+// Where the small QR goes on a template: its centre (x, y as parts of the width and height) and its size (part of the short side).
+// Each template can have its own (set by dragging it in the template editor); otherwise a bottom corner.
+function qrPlace(d) {
+  const own = d.qrPlace || ((S.printQr && S.printQr.place) || {})[d.id];
+  if (own) return own;
+  const W = d.w || d.width || 600, H = d.h || d.height || 1800, mn = Math.min(W, H), s = d.paper === 'strip' ? .16 : .09;
+  const side = s * mn, m = Math.max(side * .2, mn * .06), cx = S.printQr.pos === 'bl' ? m + side / 2 : W - m - side / 2;
+  return { x: cx / W, y: (H - m - side / 2) / H, s };
+}
+// Small QR. Each QR square is a whole number of pixels so the printer prints it crisp and phones read it easily.
 function drawPrintQr(x, W, H, d, text) {
-  const target = Math.min(W, H) * (d.paper === 'strip' ? .16 : .09);
+  const pl = qrPlace(d), target = Math.min(W, H) * pl.s;
   const holder = document.createElement('div'), qrc = new QRCode(holder, { text, width: 64, height: 64, correctLevel: QRCode.CorrectLevel.L });
   const mat = qrc._oQRCode, n = mat.getModuleCount(), px = Math.max(2, Math.round(target / n)), side = n * px;
-  const pad = 2 * px, m = Math.round(Math.max(side * .2, Math.min(W, H) * .06));   // clear of the edge bleed
-  const qx = S.printQr.pos === 'bl' ? m : W - side - m, qy = H - side - m;
+  const pad = 2 * px;
+  const qx = Math.round(Math.min(W - side - pad, Math.max(pad, pl.x * W - side / 2))), qy = Math.round(Math.min(H - side - pad, Math.max(pad, pl.y * H - side / 2)));
   x.fillStyle = '#fff'; x.fillRect(qx - pad, qy - pad, side + pad * 2, side + pad * 2);
   x.fillStyle = '#000';
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (mat.isDark(r, c)) x.fillRect(qx + c * px, qy + r * px, px, px);
@@ -619,11 +629,19 @@ async function boothLoad() {
   $('#bModes').innerHTML = list.length === 1
     ? `<button class="bmode first" data-mode="${list[0]}">Touch to start</button>`
     : list.map((m, i) => `<button class="bmode ${i === 0 ? 'first' : ''}" data-mode="${m}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m][1]}</svg>${MODE_INFO[m][0]}</button>`).join('');
-  applyMirror();
+  applyMirror(); applyLiveBeauty();
   boothStatus();
 }
 // Mirror the live picture on screen (tablet camera and Canon), like looking in a mirror.
 // Canon photos are saved the right way round, so writing in the background reads normally.
+// Beauty on the live camera, so guests see the look before the photo: a soft-focus layer (smooth) and a brighter picture.
+// The photo itself gets the real skin-only smoothing and brightening on the review screen.
+function applyLiveBeauty() {
+  const on = S.beautyLive !== false, k = on ? +S.beauty || 0 : 0, br = on ? +S.bright || 0 : 0, cam = $('.cam');
+  cam.style.setProperty('--lb-filter', br || k ? `brightness(${(1 + .06 * br + .02 * k).toFixed(2)}) saturate(${(1 + .03 * br).toFixed(2)}) contrast(${(1 - .02 * k).toFixed(2)})` : 'none');
+  cam.style.setProperty('--lb-blur', [0, 2, 3, 4][k] + 'px'); cam.style.setProperty('--lb-soft', [0, .35, .5, .62][k]);
+  $('#liveSoft').hidden = !k;
+}
 function applyMirror() { const m = !!(S.capture && S.capture.mirror); $('#live').classList.toggle('mirror', m); $('#dslrView').classList.toggle('mirror', m); }
 function boothStatus() {
   $('#bStatus').innerHTML = (printerOnline() ? '<span class="dot"></span>Printer ready' : '<span class="dot warn"></span>Printer laptop not connected') + ` · ${dslr && dslr.running ? (dslr.noLive ? 'Canon DSLR ready · preview: tablet camera' : 'Canon DSLR · live view') : 'Tablet camera'}` + (UPLOADS.size ? ` · Uploading ${UPLOADS.size}…` : '');
@@ -1021,7 +1039,7 @@ async function keepSession(s) {
 function keepEdits(s, now) {
   if (!s || !s.kept || s.keepDone) return;
   clearTimeout(s.keepT);
-  const write = () => { if (!s.keepDone) keepPut('e:' + s.sid, { at: Date.now(), status: s.row ? 'saving' : 'review', row: s.row || null, filter: s.filter, adjust: s.adjust, adjSel: s.adjSel, stickers: s.stickers, beauty: s.beauty, bg: s.bg, printCopies: s.printCopies || 0 }); };
+  const write = () => { if (!s.keepDone) keepPut('e:' + s.sid, { at: Date.now(), status: s.row ? 'saving' : 'review', row: s.row || null, filter: s.filter, adjust: s.adjust, adjSel: s.adjSel, stickers: s.stickers, beauty: s.beauty, bright: s.bright, bg: s.bg, printCopies: s.printCopies || 0 }); };
   if (now) return write(); s.keepT = setTimeout(write, 600);
 }
 async function keptSessions() {
@@ -1036,7 +1054,7 @@ async function keptToSession(sid, e) {
   const shots = [];
   for (const b of k.shots) { const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); bm.close && bm.close(); shots.push(c); }
   return { mode: 'photo', design: k.design, shots, originals: k.originals, bursts: k.bursts, filter: e.filter || 'none', copies: 1, saved: null, printed: false, jobId: null,
-    adjust: e.adjust, adjSel: e.adjSel || 0, stickers: e.stickers || [], stkSel: -1, beauty: e.beauty || 0, bg: e.bg || '', sid, kept: true, printCopies: e.printCopies || 0 };
+    adjust: e.adjust, adjSel: e.adjSel || 0, stickers: e.stickers || [], stkSel: -1, beauty: e.beauty || 0, bright: e.bright || 0, bg: e.bg || '', sid, kept: true, printCopies: e.printCopies || 0 };
 }
 // On start: finish saving photos that were still uploading, and bring back a guest who was in the middle of editing
 async function restoreSessions() {
@@ -1318,13 +1336,13 @@ function recordBurst(me, secs = 1) {
 }
 // Strip boomerang: the chosen strip (same frame and background) with every photo moving at the same time,
 // forward and back. Shared by QR/link, never printed. Video where the browser can record, otherwise an animated GIF.
-async function stripBoomerang(design, bursts, filter, name, date, adjust, stickers, beauty, bgKey) {
+async function stripBoomerang(design, bursts, filter, name, date, adjust, stickers, beauty, bgKey, bright = 0) {
   const lists = await Promise.all(bursts.map(b => Promise.all(b).then(l => l.filter(Boolean))));
   const k = Math.min(...lists.map(l => l.length)); if (k < 4) return null;
   const d = { ...design, output_long: 1280 }, frames = [];
   for (let i = 0; i < k; i++) {   // one strip picture per moment, kept as a JPEG
     let imgs = await Promise.all(lists.map(l => createImageBitmap(l[i])));
-    if (beauty) { const bm = imgs; imgs = bm.map(b => beautify(b, beauty, 640)); bm.forEach(b => b.close && b.close()); }
+    if (beauty || bright) { const bm = imgs; imgs = bm.map(b => beautify(b, beauty, 640, bright)); bm.forEach(b => b.close && b.close()); }
     if (bgKey) { const out = []; for (const b of imgs) { try { out.push(await withBackground(b, bgKey, 'fast')); } catch (e) { out.push(b); } } imgs = out; }
     const c = await compose(d, imgs, filter, { name, date, adjust, stickers }); imgs.forEach(b => b.close && b.close());
     frames.push(await new Promise(res => c.toBlob(res, 'image/jpeg', .88))); await sleep(0);
@@ -1366,7 +1384,7 @@ async function renderSessionNow() {
 }
 async function openReview() {
   const s = B.session;
-  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; s.stickers = []; s.stkSel = -1; s.beauty = +S.beauty || 0; s.bg = ''; }
+  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; s.stickers = []; s.stkSel = -1; s.beauty = +S.beauty || 0; s.bright = +S.bright || 0; s.bg = ''; }
   try { await renderSession(); } catch (e) { return showErr('Something went wrong', e.message, () => openReview(), goHome); }
   const isPhoto = s.mode === 'photo';
   $('#rvTabs').hidden = !isPhoto;
@@ -1589,7 +1607,7 @@ function startSave(s, reuse) {
       if (S.capture.originals !== false && s.shots) {
         // Each camera photo in HD for the guest: the Canon's own JPEG when it is a sensible size, otherwise 4000 px at 92%.
         // With the beauty filter on, the smoothed photo is used so it matches the strip.
-        const lv = (+s.beauty || 0) || (s.bg ? 1 : 0), src = lv ? await reviewShots(s, true) : s.shots;
+        const lv = (+s.beauty || 0) || (+s.bright || 0) || (s.bg ? 1 : 0), src = lv ? await reviewShots(s, true) : s.shots;
         row.originals = src.map((_, i) => `${ev}/${id}-o${i + 1}.jpg`);
         src.forEach((shot, i) => {
           const cam = !lv && s.originals && s.originals[i], useCam = cam && cam.size <= 6e6 && /jpe?g/i.test(cam.type || 'image/jpeg');
@@ -1599,7 +1617,7 @@ function startSave(s, reuse) {
       }
       if (photoGifOn && s.bursts && s.bursts.length > 1) {
         try {
-          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust, s.stickers, BEAUTY_K[+s.beauty || 0], s.bg);
+          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust, s.stickers, BEAUTY_K[+s.beauty || 0], s.bg, +s.bright || 0);
           if (g) { const ext = g.type === 'image/gif' ? 'gif' : g.type === 'video/mp4' ? 'mp4' : 'webm'; row.media_path = `${ev}/${id}.${ext}`; work.push(retry(() => upload(row.media_path, g, g.type))); }
         } catch (e) { /* the photo still saves without the boomerang */ }
         s.bursts = null;
@@ -2045,13 +2063,40 @@ function loadDraft() {
   $('#tName').value = draft.name; $('#tPaper').value = draft.paper; $('#tRes').value = String(draft.output_long); $('#tFit').value = draft.fit; $('#tType').value = draft.event_type;
   $('#tDelete').hidden = !draft.id;
   $$('#tplList .tpl').forEach(b => b.classList.toggle('on', b.dataset.id === draft.id));
-  $('#tplQr').hidden = !S.printQr.on; $('#tplQr').classList.toggle('bl', S.printQr.pos === 'bl');
+  draft.qrPlace = draft.qrPlace || structuredClone(((S.printQr.place || {})[draft.id]) || null);
+  $('#tplQr').hidden = !S.printQr.on; $('#tplQrBox').hidden = !S.printQr.on;
   const img = $('#frameImg');
   const src = pendingFrame ? pendingFrame.url : draft.frame_url;
   $('#frameName').textContent = pendingFrame ? pendingFrame.file.name : draft.frame_url ? draft.frame_url.split('/').pop() : '';
   if (!src) { img.removeAttribute('src'); img.hidden = true; drawAreas(); $('#detectMsg').className = 'banner warn'; $('#detectMsg').innerHTML = '<span><b>Upload a PNG frame.</b> Make the photo areas fully transparent in Canva and export as PNG with “Transparent background”.</span>'; return; }
-  img.hidden = false; img.onload = () => { drawAreas(); areaMsg(); }; img.src = src;
+  img.hidden = false; img.onload = () => { drawAreas(); areaMsg(); showTplQr(); }; img.src = src; showTplQr();
 }
+// The QR in the template editor: drag it anywhere on the frame, size with the slider
+function tplQrDesign() { const [w, h] = areaSize(); return { ...draft, w, h, qrPlace: draft.qrPlace }; }
+function showTplQr() {
+  if (!draft) return;
+  const [w, h] = areaSize(), pl = qrPlace(tplQrDesign()), mn = Math.min(w, h), sw = pl.s * mn / w * 100, sh = pl.s * mn / h * 100;
+  $('#tplQr').style.cssText = `left:${pl.x * 100 - sw / 2}%;top:${pl.y * 100 - sh / 2}%;width:${sw}%;right:auto;bottom:auto`;
+  $('#tplQrSize').value = Math.round(pl.s * 100); $('#tplQrSizeV').textContent = Math.round(pl.s * 100) + '%';
+  $('#tplQrWarn').hidden = pl.s >= .12 || draft.paper !== 'strip';
+}
+{
+  const mark = $('#tplQr'); let grab = null;
+  mark.addEventListener('pointerdown', e => {
+    if (drawing) return; e.preventDefault(); e.stopPropagation(); mark.setPointerCapture(e.pointerId);
+    const r = $('#frameImg').getBoundingClientRect(), pl = qrPlace(tplQrDesign());
+    grab = { r, ox: (e.clientX - r.left) / r.width - pl.x, oy: (e.clientY - r.top) / r.height - pl.y, s: pl.s };
+  });
+  mark.addEventListener('pointermove', e => {
+    if (!grab) return; const { r } = grab;
+    draft.qrPlace = { x: Math.min(.98, Math.max(.02, (e.clientX - r.left) / r.width - grab.ox)), y: Math.min(.98, Math.max(.02, (e.clientY - r.top) / r.height - grab.oy)), s: grab.s };
+    showTplQr();
+  });
+  const end = () => { if (grab) { grab = null; toast('QR moved. Press Save template to keep it.', 2500); } };
+  mark.addEventListener('pointerup', end); mark.addEventListener('pointercancel', end);
+}
+$('#tplQrSize').oninput = () => { const pl = qrPlace(tplQrDesign()); draft.qrPlace = { ...pl, s: +$('#tplQrSize').value / 100 }; showTplQr(); };
+$('#tplQrReset').onclick = () => { draft.qrPlace = null; showTplQr(); };
 function areaSize() { const img = $('#frameImg'); return [img.naturalWidth || draft.width || 1, img.naturalHeight || draft.height || 1]; }
 function placeArea(el, a) { el.style.cssText = `left:${a.x * 100}%;top:${a.y * 100}%;width:${a.w * 100}%;height:${a.h * 100}%;transform:rotate(${a.r || 0}deg)`; }
 function drawAreas() {
@@ -2207,6 +2252,7 @@ $('#drawArea').onclick = () => { if (!$('#frameImg').naturalWidth) return toast(
     if (a.w > .03 && a.h > .03) { draft.areas.push(a); const img = $('#frameImg'); draft.width = img.naturalWidth; draft.height = img.naturalHeight; drawAreas(); areaMsg(); }
   });
 }
+$('#tPaper').addEventListener('change', () => { draft.paper = $('#tPaper').value; showTplQr(); });
 function readDraft() { draft.name = $('#tName').value.trim() || 'Template'; draft.paper = $('#tPaper').value; draft.output_long = +$('#tRes').value; draft.fit = $('#tFit').value; draft.event_type = $('#tType').value; }
 $('#tSave').onclick = async () => {
   readDraft();
@@ -2217,6 +2263,9 @@ $('#tSave').onclick = async () => {
     if (pendingFrame) { const path = `u-${USER.id}/tpl-${Date.now().toString(36)}.png`; await upload(path, pendingFrame.file, 'image/png'); draft.frame_url = fileUrl(path); URL.revokeObjectURL(pendingFrame.url); pendingFrame = null; }
     const row = { event_type: draft.event_type, name: draft.name, frame_url: draft.frame_url, width: draft.width, height: draft.height, areas: draft.areas, paper: draft.paper, output_long: draft.output_long, fit: draft.fit };
     const saved = draft.id ? check(await sb.from('templates').update(row).eq('id', draft.id).select().single()) : check(await sb.from('templates').insert(row).select().single());
+    const place = { ...(S.printQr.place || {}) };   // the QR's place for this template, kept with the studio settings
+    if (draft.qrPlace) place[saved.id] = draft.qrPlace; else delete place[saved.id];
+    if (JSON.stringify(place) !== JSON.stringify(S.printQr.place || {})) { S.printQr.place = place; await saveStudio(); }
     draft = structuredClone(saved); curType = draft.event_type;
     announce(); await renderTemplates(); toast(`Template saved. To offer it on the tablet, tick it in Events → Edit.`, 5000);
   } catch (e) { toast(e.message, 4000); }
@@ -2230,11 +2279,11 @@ $('#tDelete').onclick = async () => {
 $('#tPreview').onclick = async () => {
   readDraft(); const img = $('#frameImg');
   if (!img.naturalWidth || !draft.areas.length) return toast('Upload a frame with photo areas first');
-  const d = { ...tplToDesign({ ...draft, width: img.naturalWidth, height: img.naturalHeight }), frame_url: img.src, output_long: 1800 };
+  const d = { ...tplToDesign({ ...draft, width: img.naturalWidth, height: img.naturalHeight }), frame_url: img.src, output_long: 1800, qrPlace: draft.qrPlace };
   const c = await compose(d, samples(d.areas.length), 'none', { qrText: S.printQr.on ? SITE + '?q=preview' : '' });
   modal(`<div class="row" style="justify-content:space-between"><b>Preview · ${esc(draft.name)}</b><button class="ico" data-close aria-label="Close">✕</button></div><img alt="Template preview" src="${c.toDataURL('image/jpeg', .85)}" style="max-height:72vh;max-width:100%;align-self:center;border-radius:4px">`, 720);
 };
-$('#tplQrOn').onchange = async () => { S.printQr.on = $('#tplQrOn').checked; $('#tplQr').hidden = !S.printQr.on; try { await saveStudio(); toast(S.printQr.on ? 'Small QR will be printed on every print' : 'Small QR turned off'); } catch (e) { toast(e.message, 4000); } };
+$('#tplQrOn').onchange = async () => { S.printQr.on = $('#tplQrOn').checked; $('#tplQr').hidden = !S.printQr.on; $('#tplQrBox').hidden = !S.printQr.on; showTplQr(); try { await saveStudio(); toast(S.printQr.on ? 'Small QR will be printed on every print' : 'Small QR turned off'); } catch (e) { toast(e.message, 4000); } };
 
 /* ---- Capture & media ---- */
 const MODES = [
@@ -2638,25 +2687,47 @@ $('#pcTest').onclick = async () => {
   x.font = '34px system-ui'; ['Border 2 mm from', 'every edge', '', 'Strips are cut', 'on the red line'].forEach((t, i) => { x.fillText(t, 300, 820 + i * 48); x.fillText(t, 900, 820 + i * 48); });
   try { await printImage(c.toDataURL('image/jpeg', .95), 1); } catch (e) { toast(e.message, 4000); }
 };
-function rotated(img, cw) {   // rotate an image 90° (clockwise when cw)
+function rotatedCanvas(img, cw) {
   const c = document.createElement('canvas'); c.width = img.naturalHeight || img.height; c.height = img.naturalWidth || img.width;
   const x = c.getContext('2d');
   if (cw) { x.translate(c.width, 0); x.rotate(Math.PI / 2); } else { x.translate(0, c.height); x.rotate(-Math.PI / 2); }
-  x.drawImage(img, 0, 0); return c.toDataURL('image/jpeg', .95);
+  x.drawImage(img, 0, 0); return c;
+}
+// Edge bleed without losing any of the design: the picture is printed at its true size, and a thin band around it
+// (f of the size on each side) repeats the colour at its edge. The band falls off the paper, so a printer that is a
+// fraction out never shows a white line, and the strip's margins stay exactly as designed.
+function withBleed(img, f) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  const bx = Math.round(w * f), by = Math.round(h * f);
+  const c = document.createElement('canvas'); c.width = w + bx * 2; c.height = h + by * 2; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  x.drawImage(img, bx, by);
+  if (bx || by) {
+    x.imageSmoothingEnabled = false;
+    x.drawImage(img, 0, 0, w, 1, bx, 0, w, by);              // top: the first row of pixels, stretched up
+    x.drawImage(img, 0, h - 1, w, 1, bx, by + h, w, by);     // bottom
+    x.drawImage(img, 0, 0, 1, h, 0, by, bx, h);              // left
+    x.drawImage(img, w - 1, 0, 1, h, bx + w, by, bx, h);     // right
+    x.drawImage(img, 0, 0, 1, 1, 0, 0, bx, by);              // corners
+    x.drawImage(img, w - 1, 0, 1, 1, bx + w, 0, bx, by);
+    x.drawImage(img, 0, h - 1, 1, 1, 0, by + h, bx, by);
+    x.drawImage(img, w - 1, h - 1, 1, 1, bx + w, by + h, bx, by);
+  }
+  return c;
 }
 let printRun = 0;
 async function printImage(src, copies) {
   const run = ++printRun;
   const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('Could not download the photo to print')); i.src = src; });
   const cfg = printCfg(), landPage = cfg.orient === 'landscape', landImg = img.naturalWidth > img.naturalHeight;
-  let url = src;
-  if (landImg !== landPage) url = rotated(img, !landPage);   // turn the picture to match the paper
-  else if (!src.startsWith('data:')) { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); url = c.toDataURL('image/jpeg', .95); }
+  let pic = img;
+  if (landImg !== landPage) pic = rotatedCanvas(img, !landPage);   // turn the picture to match the paper
+  const f = Math.max(0, cfg.bleed || 0) / 200, url = withBleed(pic, f).toDataURL('image/jpeg', .95);
   const [pw, ph] = landPage ? ['6in', '4in'] : ['4in', '6in'];
   $('#pageStyle').textContent = `@page{size:${pw} ${ph};margin:0}`;
   const area = $('#printArea'); area.innerHTML = '';
-  area.style.cssText = `--pw:${pw};--ph:${ph};--dx:${cfg.dx}mm;--dy:${cfg.dy}mm;--sc:${(cfg.scale / 100) * (1 + (cfg.bleed || 0) / 100)}`;
-  for (let i = 0; i < Math.max(1, copies); i++) { const im = new Image(); im.src = url; im.alt = ''; area.appendChild(im); }
+  area.style.cssText = `--pw:${pw};--ph:${ph};--dx:${cfg.dx}mm;--dy:${cfg.dy}mm;--sc:${(cfg.scale / 100) * (1 + 2 * f)}`;
+  for (let i = 0; i < Math.max(1, copies); i++) { const pg = document.createElement('div'), im = new Image(); pg.className = 'pg'; im.src = url; im.alt = ''; pg.appendChild(im); area.appendChild(pg); }
   await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
   await sleep(150); if (run !== printRun) return; window.print(); await sleep(400); if (run === printRun) area.innerHTML = '';
 }
@@ -2779,7 +2850,7 @@ function renderStickerSettings() {
   $('#stTexts').innerHTML = (st.texts || []).map((t, i) => `<button class="pill" data-rmt="${i}" title="Remove" style="font-family:'${esc(t.font || 'Geist')}';color:${esc(t.color || '#fff')}">${esc(t.t)} <span style="color:#ff8a80">✕</span></button>`).join('') || '<span class="lbl">None yet</span>';
   if (!$('#stTextFont').options.length) $('#stTextFont').innerHTML = SMILE_FONTS.map(f => `<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('');
   const g = S.guestbook;
-  $('#gbOn').checked = !!g.on; $('#gbPromptIn').value = g.prompt || ''; $('#gbAuto').checked = !!g.auto; $('#beautyDef').value = String(+S.beauty || 0);
+  $('#gbOn').checked = !!g.on; $('#gbPromptIn').value = g.prompt || ''; $('#gbAuto').checked = !!g.auto; $('#beautyDef').value = String(+S.beauty || 0); $('#brightDef').value = String(+S.bright || 0); $('#beautyLive').checked = S.beautyLive !== false; beautyPrev();
 }
 $('#stOn').onchange = () => { S.stickers.on = $('#stOn').checked; };
 $('#stPacksAdmin').addEventListener('click', e => {
@@ -2806,7 +2877,27 @@ $('#stFile').addEventListener('change', async e => {
 $('#gbOn').onchange = () => { S.guestbook.on = $('#gbOn').checked; };
 $('#gbPromptIn').addEventListener('input', () => { S.guestbook.prompt = $('#gbPromptIn').value.trim(); });
 $('#gbAuto').onchange = () => { S.guestbook.auto = $('#gbAuto').checked; };
-$('#beautyDef').onchange = () => { S.beauty = +$('#beautyDef').value; };
+$('#beautyDef').onchange = () => { S.beauty = +$('#beautyDef').value; beautyPrev(); };
+$('#brightDef').onchange = () => { S.bright = +$('#brightDef').value; beautyPrev(); };
+$('#beautyLive').onchange = () => { S.beautyLive = $('#beautyLive').checked; };
+// Before / after on a sample face
+let beautySample = null;
+function beautyPrev() {
+  const cv = $('#beautyPrevCv'); if (!cv) return;
+  if (!beautySample) {
+    const c = document.createElement('canvas'); c.width = 1200; c.height = 800; const x = c.getContext('2d'); x.scale(2.5, 2.5);   // photo-sized, so it smooths like a real photo
+    x.fillStyle = '#6b7c8f'; x.fillRect(0, 0, 480, 320);
+    x.fillStyle = '#b98a6e'; x.beginPath(); x.ellipse(240, 150, 82, 104, 0, 0, 7); x.fill();
+    for (let i = 0; i < 1400; i++) { x.fillStyle = `rgba(${140 + Math.random() * 30},${85 + Math.random() * 25},${60 + Math.random() * 20},.2)`; const a = Math.random() * 7, r = Math.random(); x.beginPath(); x.arc(240 + Math.cos(a) * 75 * r, 150 + Math.sin(a) * 95 * r, 1 + Math.random() * 1.5, 0, 7); x.fill(); }
+    x.fillStyle = '#2b211c'; x.beginPath(); x.ellipse(210, 135, 9, 6, 0, 0, 7); x.ellipse(270, 135, 9, 6, 0, 0, 7); x.fill();
+    x.strokeStyle = '#8a4b45'; x.lineWidth = 5; x.beginPath(); x.arc(240, 185, 26, .2, Math.PI - .2); x.stroke();
+    x.fillStyle = '#1f1a17'; x.beginPath(); x.ellipse(240, 70, 92, 46, 0, Math.PI, 0); x.fill();
+    beautySample = c;
+  }
+  const x = cv.getContext('2d'), out = beautify(beautySample, BEAUTY_K[+S.beauty || 0], 2400, +S.bright || 0);
+  x.imageSmoothingQuality = 'high'; x.drawImage(beautySample, 0, 0, 600, 800, 0, 0, 240, 320); x.drawImage(out, 600, 0, 600, 800, 240, 0, 240, 320);
+  x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, 290, 480, 30); x.fillStyle = '#fff'; x.font = '600 15px system-ui'; x.textAlign = 'center'; x.fillText('Before', 120, 310); x.fillText('After', 360, 310);
+}
 
 /* ---- Guestbook look: the writing card and the screen behind it (also used for the PDF pages) ---- */
 const GB_PAPERS = {

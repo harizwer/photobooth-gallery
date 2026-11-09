@@ -167,7 +167,7 @@
             <span class="lbl" style="margin-left:auto" id="frameName"></span>
           </div>
           <div class="banner ok" id="detectMsg"></div>
-          <div class="stage"><div class="frame-wrap" id="frameWrap"><img id="frameImg" alt="Template frame" crossorigin="anonymous"><div class="qrmark" id="tplQr" hidden><i></i><span>QR · 12 h</span></div></div></div>
+          <div class="stage"><div class="frame-wrap" id="frameWrap"><img id="frameImg" alt="Template frame" crossorigin="anonymous"><div class="qrmark" id="tplQr" hidden title="Drag to move the QR"><i></i><span>QR · drag me</span></div></div></div>
         </div>
         <div class="card" style="flex:1 1 250px;max-width:300px;display:flex;flex-direction:column;gap:14px">
           <div class="cap">Output</div>
@@ -176,6 +176,12 @@
           <div class="cap">Photo areas</div>
           <div id="areaList" style="display:flex;flex-direction:column;gap:8px"></div>
           <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Small QR on the print<br><span class="lbl" style="font-size:12px">Link lasts 12 hours · applies to all prints</span></span><input type="checkbox" id="tplQrOn"></label>
+          <div id="tplQrBox" hidden style="display:flex;flex-direction:column;gap:8px;margin-top:-6px">
+            <div class="lbl" style="font-size:12.5px">Drag the QR on the frame to move it. Each template keeps its own place.</div>
+            <label class="field" for="tplQrSize">QR size <span class="mono" id="tplQrSizeV"></span><input type="range" id="tplQrSize" min="8" max="30" style="accent-color:var(--accent)"></label>
+            <div class="lbl" id="tplQrWarn" style="font-size:12px;color:#f5b041" hidden>Very small: some phones may not read it. 12% or more is safer on a strip.</div>
+            <button class="btn sm" id="tplQrReset" style="align-self:flex-start">Put it back in the corner</button>
+          </div>
           <label class="field" for="tFit">Photo fit<select class="in" id="tFit"><option value="cover">Fill the area (crop edges)</option><option value="contain">Fit inside (no crop)</option></select></label>
           <label class="field" for="tType">Event type<select class="in" id="tType"></select></label>
         </div>
@@ -348,7 +354,7 @@
             <label class="field" for="pcDx" style="width:110px">Move right (mm)<input class="in mono" id="pcDx" type="number" step="0.5" value="0"></label>
             <label class="field" for="pcDy" style="width:110px">Move down (mm)<input class="in mono" id="pcDy" type="number" step="0.5" value="0"></label>
             <label class="field" for="pcSc" style="width:100px">Size (%)<input class="in mono" id="pcSc" type="number" step="0.5" min="90" max="110" value="100"></label>
-            <label class="field" for="pcBleed" style="width:130px" title="Prints the photo a little bigger than the paper, so no white line appears at any edge">Edge bleed (%)<input class="in mono" id="pcBleed" type="number" step="0.5" min="0" max="8" value="3"></label>
+            <label class="field" for="pcBleed" style="width:130px" title="Adds a thin band of the edge colour around the photo, past the paper edge, so no white line appears. The design itself is not cut or enlarged.">Edge bleed (%)<input class="in mono" id="pcBleed" type="number" step="0.5" min="0" max="8" value="3"></label>
             <button class="btn sm" id="pcSave" style="height:42px">Save</button>
             <button class="btn sm" id="pcTest" style="height:42px">Alignment test print</button>
           </div>
@@ -459,7 +465,16 @@
           <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center"><span class="row" id="gbScreens" style="gap:6px"></span><label class="btn sm" for="gbScreenFile" style="cursor:pointer">Upload picture</label><input type="file" id="gbScreenFile" accept="image/jpeg,image/png,image/webp" hidden><span class="lbl" id="gbScreenFileName" style="font-size:12px"></span><button class="btn sm" id="gbScreenClear" hidden>Remove picture</button></div>
           <div class="gbprev" id="gbPrev"><div class="gbprevtitle">Write a message ✍️</div><div class="gbprevpad" id="gbPrevPad"><span style="font-family:'Dancing Script',cursive;font-size:22px;color:#1d1d1f">Selamat pengantin baru!</span></div></div>
           <label class="tog" style="justify-content:flex-start;gap:10px">Use the card look for the guestbook PDF pages<input type="checkbox" id="gbPdfBg"></label>
-          <label class="field" for="beautyDef" style="width:260px">Beauty filter to start with<select class="in" id="beautyDef"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Strong</option></select></label>
+          <div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px">
+            <b style="font-size:15px">✨ Beauty filter</b>
+            <div class="lbl" style="margin-top:-4px">Smoother and brighter skin. Guests can still change it on the review screen.</div>
+            <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+              <label class="field" for="beautyDef" style="width:160px">Smooth skin<select class="in" id="beautyDef"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Strong</option></select></label>
+              <label class="field" for="brightDef" style="width:160px">Brighten skin<select class="in" id="brightDef"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Strong</option></select></label>
+            </div>
+            <label class="tog" style="justify-content:flex-start;gap:10px">Show it on the live camera before the photo is taken<input type="checkbox" id="beautyLive"></label>
+            <canvas id="beautyPrevCv" width="480" height="320" style="width:100%;max-width:360px;border-radius:12px;border:1px solid var(--line2)"></canvas>
+          </div>
         </div>
         <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><b>Printing screen (while the photo prints)</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="psOn"></label></div>
@@ -510,7 +525,7 @@
 
 <!-- ================= TABLET BOOTH ================= -->
 <section id="v-booth" aria-label="Tablet booth">
-  <div class="cam" aria-hidden="true"><video id="live" muted playsinline autoplay></video><canvas id="dslrView" hidden></canvas></div>
+  <div class="cam" aria-hidden="true"><video id="live" muted playsinline autoplay></video><canvas id="dslrView" hidden></canvas><div id="liveSoft" hidden></div></div>
   <div class="bs on" id="b-attract">
     <div class="boothbg" aria-hidden="true"><div class="bglayer" id="boothBgLayer"></div><div class="bgshade" id="boothShade"></div></div>
     <div class="boothbrand"><span class="logo" data-logo data-size="18"></span><span data-brand>Photobooth Studio</span></div>

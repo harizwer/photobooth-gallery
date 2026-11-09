@@ -209,7 +209,9 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .evcard:hover,.mode:hover{transform:translateY(-2px);border-color:var(--line2)}
 .thumb{transition:transform .2s,border-color .2s}.thumb:hover{transform:translateY(-2px)}
 .btn{transition:filter .15s,transform .1s}.btn:active{transform:scale(.98)}
-.qrmark{position:absolute;right:3%;bottom:2%;width:13%;aspect-ratio:1;background:#fff;border-radius:4px;padding:3px;z-index:2;box-shadow:0 0 0 2px var(--accent)}
+.qrmark{position:absolute;right:3%;bottom:2%;width:13%;aspect-ratio:1;background:#fff;border-radius:4px;padding:3px;z-index:2;box-shadow:0 0 0 2px var(--accent);cursor:grab;touch-action:none;box-sizing:border-box}
+.qrmark:active{cursor:grabbing}
+#tplQrBox[hidden]{display:none!important}
 .qrmark.bl{left:3%;right:auto}
 .qrmark i{display:block;width:100%;height:100%;background:repeating-conic-gradient(#111 0 25%,#fff 0 50%) 0 0/34% 34%}
 .qrmark span{position:absolute;bottom:calc(100% + 6px);right:0;font-family:var(--mono);font-size:10.5px;font-weight:600;background:var(--accent);color:var(--on-accent);border-radius:5px;padding:2px 6px;white-space:nowrap}
@@ -228,6 +230,9 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 #live.mirror,#dslrView.mirror{transform:scaleX(-1)}
 .cam::before,.cam::after{display:none}
 .cam{background:#000}
+#live,#dslrView{filter:var(--lb-filter,none)}
+#liveSoft{position:absolute;inset:0;pointer-events:none;-webkit-backdrop-filter:blur(var(--lb-blur,0));backdrop-filter:blur(var(--lb-blur,0));opacity:var(--lb-soft,0)}
+#liveSoft[hidden]{display:none}
 #b-shoot{background:transparent}
 .recdot{display:inline-block;width:12px;height:12px;border-radius:6px;background:#ff3b30;margin-right:8px;animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.2}}
@@ -253,8 +258,10 @@ th{color:var(--dim);font-weight:500;font-size:12px}
   body>*:not(#printArea){display:none!important}
   html,body{margin:0!important;padding:0!important;background:#fff!important;height:auto!important;min-height:0!important;overflow:visible!important}
   #printArea{display:block!important;position:static!important;width:var(--pw,4in);margin:0;padding:0}
-  #printArea img{display:block;width:var(--pw,4in);height:var(--ph,6in);margin:0;object-fit:cover;transform:translate(var(--dx,0mm),var(--dy,0mm)) scale(var(--sc,1));transform-origin:center;break-after:page;page-break-after:always}
-  #printArea img:last-child{break-after:auto;page-break-after:auto}
+  /* each page is cut exactly at the paper edge: the bleed past it is hidden, so the browser never shrinks the page to fit it */
+  #printArea .pg{display:block;position:relative;width:var(--pw,4in);height:var(--ph,6in);margin:0;overflow:hidden;break-after:page;page-break-after:always}
+  #printArea .pg:last-child{break-after:auto;page-break-after:auto}
+  #printArea img{display:block;width:100%;height:100%;margin:0;object-fit:cover;transform:translate(var(--dx,0mm),var(--dy,0mm)) scale(var(--sc,1));transform-origin:center}
 }
 .kbdcode{font-family:var(--mono);font-size:12px;background:#111;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;word-break:break-all;user-select:all}
 .devrow{display:flex;align-items:center;gap:10px;font-size:13px;padding:4px 0}
