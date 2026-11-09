@@ -4,6 +4,8 @@
    ===================================================================== */
 const SUPABASE_URL = 'https://dqeyaimxfkursttbdmyp.supabase.co';
 const NATIVE = window.PBNative || null;   // set when the page runs inside the Photobooth Android app
+// Tell the app every few seconds that the page is still answering (the app restarts the page if it freezes)
+if (NATIVE && NATIVE.alive) setInterval(() => { try { NATIVE.alive(); } catch (e) { } }, 3000);
 const PUBLIC_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxZXlhaW14Zmt1cnN0dGJkbXlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODc2NTQsImV4cCI6MjEwODg2MzY1NH0.T5tHvHVpNzNHwxYFASy8WO6xr1bvfBko9gxHCoxVQSc';
 const SITE = location.origin + location.pathname.replace(/app\/?(index\.html)?$/, '');
 const APP_URL = SITE + 'app/';
@@ -208,21 +210,25 @@ function beautify(src, k, maxSide = 2400) {
   }
   o.putImageData(A, 0, 0); return out;
 }
-// The shots to use for this session: with the beauty level applied (made once per level, then kept)
-async function reviewShots(s) {
-  const lv = +s.beauty || 0, bg = s.bg || ''; if ((!lv && !bg) || !s.shots) return s.shots;
-  s._beauty = s._beauty || {}; const key = lv + '|' + bg;
-  if (!s._beauty[key]) {
-    busy(bg ? 'Changing the background…' : 'Applying beauty…'); await sleep(30);
+// The shots to use for this session, with the beauty level and background applied (made once each, then kept).
+// The review screen works on smaller copies so every change is quick on the tablet; full = the full-size photos, to save and print.
+const VIEW_PX = 1600;
+async function reviewShots(s, full) {
+  if (!s.shots) return s.shots;
+  const base = full ? s.shots : (s._view || (s._view = s.shots.map(c => Math.max(c.width, c.height) > VIEW_PX ? scaled(c, VIEW_PX) : c)));
+  const lv = +s.beauty || 0, bg = s.bg || ''; if (!lv && !bg) return base;
+  const cache = full ? (s._beauty = s._beauty || {}) : (s._viewFx = s._viewFx || {}), key = lv + '|' + bg;
+  if (!cache[key]) {
+    if (!full) { busy(bg ? 'Changing the background…' : 'Applying beauty…'); await sleep(30); }
     try {
-      let src = s.shots;
-      if (lv) src = s._beauty[lv + '|'] || (s._beauty[lv + '|'] = s.shots.map(c => beautify(c, BEAUTY_K[lv])));
-      if (bg) { const out = []; for (const [i, c] of src.entries()) out.push(await withBackground(c, bg, 'photo', s.shots[i])); src = out; }
-      s._beauty[key] = src;
-    } catch (e) { busy(false); toast('Could not change the background: ' + e.message, 6000); s.bg = ''; return lv ? s._beauty[lv + '|'] || s.shots : s.shots; }
-    finally { busy(false); }
+      let src = base;
+      if (lv) { if (!cache[lv + '|']) { const out = []; for (const c of base) { out.push(beautify(c, BEAUTY_K[lv])); await sleep(0); } cache[lv + '|'] = out; } src = cache[lv + '|']; }
+      if (bg) { const out = []; for (const [i, c] of src.entries()) { out.push(await withBackground(c, bg, 'photo', s.shots[i])); await sleep(0); } src = out; }
+      cache[key] = src;
+    } catch (e) { if (!full) { busy(false); toast('Could not change the background: ' + e.message, 6000); s.bg = ''; } return lv ? cache[lv + '|'] || base : base; }
+    finally { if (!full) busy(false); }
   }
-  return s._beauty[key];
+  return cache[key];
 }
 /* ---------- AI background: find the people in a photo (MediaPipe, runs on the device) and put a new background behind them ---------- */
 const MP_BASE = new URL('../vendor/mediapipe/', location.href).href;
@@ -591,6 +597,7 @@ async function startBooth() {
   ROLE = 'booth'; show('v-booth'); bscreen('b-attract'); track(); keepAwake();
   await boothLoad();
   await startCamera();
+  await restoreSessions().catch(() => {});
 }
 function bgMarkup(bg) {
   if (bg.kind === 'color' || !bg.src) return { html: '', css: `radial-gradient(70% 70% at 50% 45%,${bg.color || '#ff5a26'}59 0%,rgba(0,0,0,0) 70%),linear-gradient(160deg,#2a2a2e,#0e0e10)` };
@@ -654,7 +661,14 @@ function dslrSupported() { return !!NATIVE || (!!navigator.usb && window.crossOr
    NativeCamera looks exactly like the camera library, so the rest of the booth works unchanged. */
 const nativeWait = new Map(); let nativeId = 0;
 window.__pbNativeDone = (id, r) => { const f = nativeWait.get(id); if (f) { nativeWait.delete(id); f(r || { ok: false, error: 'No answer from the app' }); } };
-function nativeCall(op) { return new Promise(res => { const id = ++nativeId; nativeWait.set(id, res); NATIVE.call(op, id); }); }
+function nativeCall(op) {
+  return new Promise(res => {
+    const id = ++nativeId, ms = op === 'capture' ? 60000 : op === 'connect' ? 40000 : 20000;
+    const t = setTimeout(() => { if (nativeWait.has(id)) { nativeWait.delete(id); camLog('the app did not answer: ' + op); res({ ok: false, error: 'The camera did not answer. Switch the Canon off and on again.' }); } }, ms);
+    nativeWait.set(id, r => { clearTimeout(t); res(r); });
+    try { NATIVE.call(op, id); } catch (e) { clearTimeout(t); nativeWait.delete(id); res({ ok: false, error: e.message }); }
+  });
+}
 class NativeCamera {
   constructor() { this.seq = 0; }
   static async showPicker() {}
@@ -886,7 +900,8 @@ async function dslrRecover(force) {
   await camLog('reloading the page to reconnect the Canon');
   busy('Reconnecting the Canon…');
   if (dslrOld && !B.session) { try { await withTimeout(dslrOld.disconnect(), 3000, 'x'); } catch (e) {} } dslrOld = null;
-  await freeUsb(); setTimeout(() => location.reload(), 600);
+  setTimeout(() => location.reload(), 5000);   // even if freeing the USB hangs
+  await withTimeout(freeUsb(), 3000, 'usb').catch(() => {}); setTimeout(() => location.reload(), 600);
 }
 /* Keep the Canon connected without anyone touching it:
    - every few seconds while the booth is idle, reconnect it if it dropped
@@ -981,7 +996,84 @@ function endRecVideo() {
 }
 
 /* ---------- Session flow ---------- */
+/* ---------- Keep each guest's session on the tablet, so a refresh (or the app restarting) never loses it ----------
+   'p:<id>' = the photos (written once, when the review screen opens), 'e:<id>' = the guest's edits and how far they got. */
+const KEEP_DB = (() => { let p; return () => p || (p = new Promise((res, rej) => { const r = indexedDB.open('pb-booth', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); })();
+async function keepOp(mode, fn) { const db = await KEEP_DB(); return new Promise((res, rej) => { const t = db.transaction('kv', mode), st = t.objectStore('kv'), r = fn(st); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); }); }
+const keepPut = (k, v) => keepOp('readwrite', st => st.put(v, k)).catch(() => {});
+const keepGet = k => keepOp('readonly', st => st.get(k)).catch(() => null);
+const keepDel = sid => keepOp('readwrite', st => { st.delete('p:' + sid); st.delete('e:' + sid); }).catch(() => {});
+const keepDone = s => { if (s && s.sid) { clearTimeout(s.keepT); s.keepDone = true; keepDel(s.sid); } };
+const toBlobQ = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q));
+// Called when the review screen opens: the photos themselves
+async function keepSession(s) {
+  if (!window.indexedDB || s.mode !== 'photo' || !s.shots || s.sid) return;
+  s.sid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  try {
+    const shots = []; for (const c of s.shots) { shots.push(await toBlobQ(c, .95)); await sleep(0); }
+    const bursts = s.bursts ? await Promise.all(s.bursts.map(b => Promise.all(b).then(l => l.filter(Boolean)))) : null;
+    if (s.keepDone || !s.shots) return;
+    await keepPut('p:' + s.sid, { at: Date.now(), event: ACTIVE && ACTIVE.id, design: s.design, shots, originals: (s.originals || []).map(f => f || null), bursts });
+    s.kept = true; keepEdits(s, true);
+  } catch (e) { }
+}
+// The guest's edits, written a moment after each change
+function keepEdits(s, now) {
+  if (!s || !s.kept || s.keepDone) return;
+  clearTimeout(s.keepT);
+  const write = () => { if (!s.keepDone) keepPut('e:' + s.sid, { at: Date.now(), status: s.row ? 'saving' : 'review', row: s.row || null, filter: s.filter, adjust: s.adjust, adjSel: s.adjSel, stickers: s.stickers, beauty: s.beauty, bg: s.bg, printCopies: s.printCopies || 0 }); };
+  if (now) return write(); s.keepT = setTimeout(write, 600);
+}
+async function keptSessions() {
+  const keys = await keepOp('readonly', st => st.getAllKeys()).catch(() => []) || [];
+  const out = [];
+  for (const k of keys) if (String(k).startsWith('e:')) { const sid = String(k).slice(2), e = await keepGet(k); if (e) out.push({ sid, e }); }
+  for (const k of keys) if (String(k).startsWith('p:') && !keys.includes('e:' + String(k).slice(2))) keepDel(String(k).slice(2));   // photos without edits: never finished
+  return out.sort((a, b) => a.e.at - b.e.at);
+}
+async function keptToSession(sid, e) {
+  const k = await keepGet('p:' + sid); if (!k || !ACTIVE || k.event !== ACTIVE.id) return null;
+  const shots = [];
+  for (const b of k.shots) { const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); bm.close && bm.close(); shots.push(c); }
+  return { mode: 'photo', design: k.design, shots, originals: k.originals, bursts: k.bursts, filter: e.filter || 'none', copies: 1, saved: null, printed: false, jobId: null,
+    adjust: e.adjust, adjSel: e.adjSel || 0, stickers: e.stickers || [], stkSel: -1, beauty: e.beauty || 0, bg: e.bg || '', sid, kept: true, printCopies: e.printCopies || 0 };
+}
+// On start: finish saving photos that were still uploading, and bring back a guest who was in the middle of editing
+async function restoreSessions() {
+  if (!window.indexedDB || !ACTIVE) return false;
+  let reopened = false;
+  const list = await keptSessions();
+  for (const [i, { sid, e }] of list.entries()) {
+    const age = Date.now() - e.at;
+    try {
+      if (e.status === 'saving' && e.row && age < 3 * 24 * 3600e3) {
+        // The guest already left (and may have scanned the QR): save it again with the same link, then print if they asked
+        const s = await keptToSession(sid, e); if (!s) { keepDel(sid); continue; }
+        camLog('after a restart: finishing the save of an earlier photo');
+        startSave(s, e.row);
+        s.savePromise.then(async row => {
+          if (!s.printCopies) return keepDone(s);
+          const done = await sb.from('print_jobs').select('id').eq('photo_id', row.id).limit(1);
+          if (!(done.data && done.data.length)) await retry(async () => check(await sb.from('print_jobs').insert({ event_id: row.event_id, photo_id: row.id, path: row.print_path || row.path, copies: s.printCopies, label: `${ACTIVE.name} · ${s.design.name}` }).select().single()));
+          keepDone(s);
+        }).catch(() => {});
+        toast('Saving an earlier guest\'s photo…', 4000);
+      } else if (e.status === 'review' && age < 20 * 60e3 && i === list.length - 1 && !reopened) {
+        const s = await keptToSession(sid, e); if (!s) { keepDel(sid); continue; }
+        camLog('after a restart: back to the review screen');
+        B.mode = 'photo'; B.session = s; reopened = true;
+        if (S.music && S.music.on) musicPause();
+        await openReview();
+        toast('Welcome back — your photos are still here.', 4000);
+      } else keepDel(sid);
+    } catch (err) { keepDel(sid); }
+  }
+  return reopened;
+}
+// Note in the camera report whenever the screen was frozen for a while (to find the cause if it happens again)
+try { new PerformanceObserver(l => { for (const t of l.getEntries()) if (t.duration > 1500 && ROLE === 'booth') camLog(`screen busy for ${(t.duration / 1000).toFixed(1)} s on ${($('#v-booth .bs.on') || {}).id || '?'}`); }).observe({ type: 'longtask', buffered: false }); } catch (e) { }
 function goHome() {
+  if (B.session && !B.session.row) keepDone(B.session);   // left without saving: nothing to keep
   if (S.music && S.music.on) musicPlay();   // the guest is done: music back on
   B.session = null; clearInterval(B.reviewT); clearInterval(B.doneT);
   $('#b-count').textContent = ''; $('#busy').hidden = true; $('#bErr').hidden = true;
@@ -1243,7 +1335,13 @@ async function stripBoomerang(design, bursts, filter, name, date, adjust, sticke
   const cv = await Promise.all(pick.map(async b => { const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); bm.close && bm.close(); return scaled(c, 800); }));
   return makeGif(cv, 90, true);
 }
-async function renderSession() {
+let rsJob = null, rsAgain = false;
+function renderSession() {
+  if (rsJob) { rsAgain = true; return rsJob; }
+  rsJob = (async () => { try { do { rsAgain = false; if (!B.session) return; await renderSessionNow(); } while (rsAgain); } finally { rsJob = null; keepEdits(B.session); } })();
+  return rsJob;
+}
+async function renderSessionNow() {
   const s = B.session, box = $('#reviewMedia');
   if (s.mode === 'photo') {
     const prev = await compose({ ...s.design, output_long: s.dragging ? 800 : 1200 }, await reviewShots(s), s.filter, { name: ACTIVE.name, date: ACTIVE.event_date, adjust: s.adjust, stickers: s.stickers });
@@ -1275,8 +1373,7 @@ async function openReview() {
   $('#rvTabs [data-tab=stk]').hidden = !(S.stickers && S.stickers.on !== false);
   $('#rvTabs [data-tab=aibg]').hidden = !(S.aiBg && S.aiBg.on !== false);
   if (isPhoto) { renderAiBgPanel(); say('review'); }
-  // Get the AI ready while the guest looks at the strip, so a background choice shows quickly
-  if (isPhoto && S.aiBg && S.aiBg.on !== false) (async () => { await sleep(700); for (const c of s.shots || []) { if (B.session !== s || !s.shots) return; await personMask(c, 'photo'); await sleep(40); } })().catch(() => {});
+  // (The AI background runs only when the guest picks one: preparing it in advance froze the tablet's screen.)
   showReviewTab(isPhoto ? 'adj' : '');
   if (isPhoto) { renderAdjButtons(); renderStickerPanel(); $$('#bBeauty [data-bt]').forEach(b => b.classList.toggle('on', +b.dataset.bt === (+s.beauty || 0))); }
   $('#bFilters').innerHTML = FILTERS.map(f => `<button class="${f[0] === s.filter ? 'on' : ''}" data-fl="${f[0]}">${f[1]}</button>`).join('');
@@ -1284,7 +1381,7 @@ async function openReview() {
   s.copies = 1; $('#cNum').textContent = 1; $('#copiesWrap').hidden = !isPhoto || maxC <= 1;
   $('#printBtn').hidden = !isPhoto; $('#printBtn').disabled = false;
   $('#doneBtn').textContent = isPhoto ? 'Done' : 'Save & get QR';
-  bscreen('b-review');
+  bscreen('b-review'); keepSession(s);
   let left = 60; const tick = () => $('#reviewTimer').textContent = `Back to the start screen in ${left}s`;
   tick(); clearInterval(B.reviewT);
   B.reviewT = setInterval(() => { left--; tick(); if (left <= 0) { clearInterval(B.reviewT); finish(); } }, 1000);
@@ -1452,7 +1549,11 @@ function stickerAt(s, u, v, cv) {
 }
 $('#cMinus').onclick = () => { if (!B.session) return; B.session.copies = Math.max(1, B.session.copies - 1); $('#cNum').textContent = B.session.copies; };
 $('#cPlus').onclick = () => { if (!B.session) return; B.session.copies = Math.min(S.capture.maxCopies || 1, B.session.copies + 1); $('#cNum').textContent = B.session.copies; };
-function busy(msg) { $('#busy').hidden = !msg; if (msg) $('#busyMsg').textContent = msg; }
+function busy(msg) {
+  $('#busy').hidden = !msg; if (msg) $('#busyMsg').textContent = msg;
+  clearTimeout(B.busyT);
+  if (msg) B.busyT = setTimeout(() => { if ($('#busy').hidden) return; $('#busy').hidden = true; camLog('took too long, cover removed: ' + msg); toast('That took too long. Please try again.', 5000); }, 45000);
+}
 async function upload(path, blob, type) {
   const r = await fetch(fileUrl(path), { method: 'PUT', headers: { Authorization: await authHeader(), 'Content-Type': type || blob.type || 'application/octet-stream' }, body: blob });
   if (!r.ok) throw new Error((await r.text().catch(() => '')) || 'Upload failed (' + r.status + ')');
@@ -1469,17 +1570,18 @@ async function retry(fn, label) {
 }
 const jpeg = (c, q) => toBlob(c, 'image/jpeg', q);
 // Starts saving the session (once) and returns its row straight away; s.savePromise finishes when everything is uploaded.
-function startSave(s) {
+function startSave(s, reuse) {
   if (s.row) return s.row;
-  const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ev = ACTIVE.id, evName = ACTIVE.name, evDate = ACTIVE.event_date;
-  const row = s.row = { id, event_id: ev, kind: s.mode, share_token: token(), print_token: token(), path: `${ev}/${id}.jpg`, thumb_path: `${ev}/${id}-thumb.jpg`, layout: s.design ? s.design.name : s.mode };
+  const id = reuse ? reuse.id : 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ev = reuse ? reuse.event_id : ACTIVE.id, evName = ACTIVE.name, evDate = ACTIVE.event_date;
+  const row = s.row = reuse ? { ...reuse } : { id, event_id: ev, kind: s.mode, share_token: token(), print_token: token(), path: `${ev}/${id}.jpg`, thumb_path: `${ev}/${id}-thumb.jpg`, layout: s.design ? s.design.name : s.mode };
   if (s.mode === 'photo') row.print_path = `${ev}/${id}-print.jpg`;
+  keepEdits(s, true);   // a refresh from now on still finishes this save, with the same QR link
   const q = (S.capture.quality || 95) / 100, qrOn = !!S.printQr.on, photoGifOn = S.capture.photoGif !== false;
   const job = (async () => {
     await sleep(30);   // let the "Thank you" screen appear first
     let full; const work = [];
     if (s.mode === 'photo') {
-      full = await compose(s.design, await reviewShots(s), s.filter, { name: evName, date: evDate, adjust: s.adjust, stickers: s.stickers });
+      full = await compose(s.design, await reviewShots(s, true), s.filter, { name: evName, date: evDate, adjust: s.adjust, stickers: s.stickers });
       let sheet = full;
       if (qrOn) { sheet = document.createElement('canvas'); sheet.width = full.width; sheet.height = full.height; const x = sheet.getContext('2d'); x.drawImage(full, 0, 0); drawPrintQr(x, full.width, full.height, s.design, `${SITE}?q=${row.print_token}`); }
       const printBlob = await jpeg(printCanvas(s.design, sheet), q);
@@ -1487,7 +1589,7 @@ function startSave(s) {
       if (S.capture.originals !== false && s.shots) {
         // Each camera photo in HD for the guest: the Canon's own JPEG when it is a sensible size, otherwise 4000 px at 92%.
         // With the beauty filter on, the smoothed photo is used so it matches the strip.
-        const lv = (+s.beauty || 0) || (s.bg ? 1 : 0), src = lv ? await reviewShots(s) : s.shots;
+        const lv = (+s.beauty || 0) || (s.bg ? 1 : 0), src = lv ? await reviewShots(s, true) : s.shots;
         row.originals = src.map((_, i) => `${ev}/${id}-o${i + 1}.jpg`);
         src.forEach((shot, i) => {
           const cam = !lv && s.originals && s.originals[i], useCam = cam && cam.size <= 6e6 && /jpe?g/i.test(cam.type || 'image/jpeg');
@@ -1512,19 +1614,20 @@ function startSave(s) {
     work.push(retry(() => upload(row.path, fullBlob, 'image/jpeg')), retry(() => upload(row.thumb_path, thumbBlob, 'image/jpeg')));
     await Promise.all(work);                                   // uploads run side by side
     await retry(async () => { const r = await sb.from('photos').insert(row); if (r.error && !/duplicate/i.test(r.error.message)) throw new Error(r.error.message); });
-    s.shots = null;                                            // free memory
+    s.shots = null; s._view = s._viewFx = s._beauty = null; s.bursts = null;   // free memory
     return row;
   })();
   UPLOADS.add(job); uploadsChanged();
   s.savePromise = job.finally(() => { UPLOADS.delete(job); uploadsChanged(); });
   s.savePromise.catch(e => toast('A photo could not be saved: ' + e.message, 8000));
+  s.savePromise.then(() => { if (!s.printCopies) keepDone(s); }, () => {});
   return row;
 }
 function netMsg(e) { const m = String(e && e.message || e); return /fetch|network|Failed/i.test(m) ? 'The tablet has no internet connection. Check the WiFi, then tap Try again.' : m; }
 async function doPrint() {
   const s = B.session; if (!s || s.printed) return;
   s.printed = true; $('#printBtn').disabled = true; clearInterval(B.reviewT);
-  startSave(s);
+  s.printCopies = s.copies; startSave(s);
   s.printMsg = 'Getting your print ready…';
   const shot = $('#rvWrap canvas');
   if (S.printScreen && S.printScreen.on !== false && shot) showPrinting(s, shot); else openDone(s.printMsg, true);
@@ -1532,7 +1635,7 @@ async function doPrint() {
   try {
     const row = await s.savePromise;
     const job = await retry(async () => check(await sb.from('print_jobs').insert({ event_id: ev, photo_id: row.id, path: row.print_path || row.path, copies, label }).select().single()));
-    s.jobId = job.id;
+    s.jobId = job.id; keepDone(s);
     s.printMsg = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.';
     if (B.session === s && $('#b-done').classList.contains('on')) { $('#printMsg').textContent = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.'; $('#printBar').style.width = '30%'; }
   } catch (e) { if (B.session === s) { s.printMsg = 'Could not send the print. Please call the attendant.'; $('#printMsg').textContent = s.printMsg; } }

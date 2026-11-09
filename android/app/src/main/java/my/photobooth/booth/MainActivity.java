@@ -59,6 +59,33 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> pendingFiles;
     private boolean errorShown = false;
 
+    /* Frozen-screen guard: the booth page says "alive" every few seconds. If it goes quiet for 30 s while the
+       app is open, the page's browser part is stuck: it is restarted, and the page brings the guest back to their photos. */
+    private volatile long lastBeat = 0;
+    private volatile boolean beatSeen = false, resumed = false;
+    static final long FROZEN_MS = 30000;
+    private final Runnable watchdog = new Runnable() {
+        @Override public void run() {
+            if (resumed && beatSeen && web != null && android.os.SystemClock.elapsedRealtime() - lastBeat > FROZEN_MS) {
+                beatSeen = false;
+                android.util.Log.w("Photobooth", "page frozen for " + FROZEN_MS / 1000 + " s: restarting it");
+                restartPage(true);
+            }
+            ui.postDelayed(this, 5000);
+        }
+    };
+
+    /** Build a fresh browser part. kill = also end the stuck one (Android 10+), which a plain reload cannot reach. */
+    private void restartPage(boolean kill) {
+        if (kill && web != null && android.os.Build.VERSION.SDK_INT >= 29) {
+            try { android.webkit.WebViewRenderProcess r = web.getWebViewRenderProcess(); if (r != null && r.terminate()) return; } catch (Throwable t) { }
+            // terminate() refused: fall through and rebuild
+        }
+        if (web != null) { root.removeView(web); web.destroy(); web = null; }
+        createWebView();
+        web.loadUrl(HOME);
+    }
+
     private final BroadcastReceiver usbEvents = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
             UsbDevice d = i.getParcelableExtra(UsbManager.EXTRA_DEVICE);
@@ -155,9 +182,12 @@ public class MainActivity extends Activity {
         super.onResume();
         hideSystemBars();
         if (web != null) web.onResume();
+        resumed = true; lastBeat = android.os.SystemClock.elapsedRealtime();
+        ui.removeCallbacks(watchdog); ui.postDelayed(watchdog, 5000);
     }
 
     @Override protected void onPause() {
+        resumed = false; ui.removeCallbacks(watchdog);
         if (web != null) web.onPause();
         super.onPause();
     }
@@ -286,6 +316,7 @@ public class MainActivity extends Activity {
                 if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("Photobooth", text));
             });
         }
+        @JavascriptInterface public void alive() { lastBeat = android.os.SystemClock.elapsedRealtime(); beatSeen = true; }
         @JavascriptInterface public void reload() { ui.post(() -> { if (web != null) web.reload(); }); }
         // Voice guide: Android's text-to-speech (Malay when installed, else Indonesian, else the default voice)
         @JavascriptInterface public void speak(String text, String lang) { ui.post(() -> say(text, lang)); }
@@ -332,7 +363,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        @Override public void onPageStarted(WebView v, String url, Bitmap icon) { errorShown = false; }
+        @Override public void onPageStarted(WebView v, String url, Bitmap icon) { errorShown = false; beatSeen = false; }
 
         @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
             if (!req.isForMainFrame() || errorShown) return;
@@ -344,10 +375,9 @@ public class MainActivity extends Activity {
         }
 
         @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail d) {
-            // The browser part crashed: build a fresh one instead of closing the app
-            if (web != null) { root.removeView(web); web.destroy(); web = null; }
-            createWebView();
-            web.loadUrl(HOME);
+            // The browser part crashed or was stopped because it froze: build a fresh one instead of closing the app
+            beatSeen = false;
+            restartPage(false);
             return true;
         }
     }
