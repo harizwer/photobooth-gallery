@@ -445,6 +445,7 @@ function sheet4R(img) {
   return c;
 }
 // What goes on the 4x6 sheet: strips are printed twice side by side.
+const PRINT_LONG = 2400;   // the print file's long side: 4x6 in at 400 dpi
 function printCanvas(d, design) {
   if (d.paper !== 'strip') return design;
   const c = document.createElement('canvas'); c.width = design.width * 2; c.height = design.height;
@@ -1078,7 +1079,7 @@ async function keepSession(s) {
 function keepEdits(s, now) {
   if (!s || !s.kept || s.keepDone) return;
   clearTimeout(s.keepT);
-  const write = () => { if (!s.keepDone) keepPut('e:' + s.sid, { at: Date.now(), status: s.row ? 'saving' : 'review', row: s.row || null, filter: s.filter, adjust: s.adjust, adjSel: s.adjSel, stickers: s.stickers, smooth: s.smooth, bright: s.bright, bg: s.bg, printCopies: s.printCopies || 0 }); };
+  const write = () => { if (!s.keepDone) keepPut('e:' + s.sid, { at: Date.now(), status: s.row ? 'saving' : 'review', row: s.row || null, filter: s.filter, adjust: s.adjust, adjSel: s.adjSel, stickers: s.stickers, smooth: s.smooth, bright: s.bright, bg: s.bg, printCopies: s.printCopies || 0, jobId: s.jobId || null }); };
   if (now) return write(); s.keepT = setTimeout(write, 600);
 }
 async function keptSessions() {
@@ -1093,7 +1094,7 @@ async function keptToSession(sid, e) {
   const shots = [];
   for (const b of k.shots) { const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); bm.close && bm.close(); shots.push(c); }
   return { mode: 'photo', design: k.design, shots, originals: k.originals, bursts: k.bursts, filter: e.filter || 'none', copies: 1, saved: null, printed: false, jobId: null,
-    adjust: e.adjust, adjSel: e.adjSel || 0, stickers: e.stickers || [], stkSel: -1, smooth: e.smooth || 0, bright: e.bright || 0, bg: e.bg || '', sid, kept: true, printCopies: e.printCopies || 0 };
+    adjust: e.adjust, adjSel: e.adjSel || 0, stickers: e.stickers || [], stkSel: -1, smooth: e.smooth || 0, bright: e.bright || 0, bg: e.bg || '', sid, kept: true, printCopies: e.printCopies || 0, jobId: e.jobId || null };
 }
 // On start: finish saving photos that were still uploading, and bring back a guest who was in the middle of editing
 async function restoreSessions() {
@@ -1109,7 +1110,7 @@ async function restoreSessions() {
         camLog('after a restart: finishing the save of an earlier photo');
         startSave(s, e.row);
         s.savePromise.then(async row => {
-          if (!s.printCopies) return keepDone(s);
+          if (!s.printCopies || s.jobId) return keepDone(s);   // no print, or it was already sent (linked to the photo by startSave)
           const done = await sb.from('print_jobs').select('id').eq('photo_id', row.id).limit(1);
           if (!(done.data && done.data.length)) await retry(async () => check(await sb.from('print_jobs').insert({ event_id: row.event_id, photo_id: row.id, path: row.print_path || row.path, copies: s.printCopies, label: `${ACTIVE.name} · ${s.design.name}` }).select().single()));
           keepDone(s);
@@ -1633,15 +1634,19 @@ function startSave(s, reuse) {
   if (s.mode === 'photo') row.print_path = `${ev}/${id}-print.jpg`;
   keepEdits(s, true);   // a refresh from now on still finishes this save, with the same QR link
   const q = (S.capture.quality || 95) / 100, qrOn = !!S.printQr.on, photoGifOn = S.capture.photoGif !== false;
+  let printReady; s.printReady = new Promise((res, rej) => { printReady = { res, rej }; }); s.printReady.catch(() => {});
   const job = (async () => {
     await sleep(30);   // let the "Thank you" screen appear first
     let full; const work = [];
     if (s.mode === 'photo') {
       full = await compose(s.design, await reviewShots(s, true), s.filter, { name: evName, date: evDate, adjust: s.adjust, stickers: s.stickers });
-      let sheet = full;
-      if (qrOn) { sheet = document.createElement('canvas'); sheet.width = full.width; sheet.height = full.height; const x = sheet.getContext('2d'); x.drawImage(full, 0, 0); drawPrintQr(x, full.width, full.height, s.design, `${SITE}?q=${row.print_token}`); }
-      const printBlob = await jpeg(printCanvas(s.design, sheet), q);
-      work.push(retry(() => upload(row.print_path, printBlob, 'image/jpeg')));
+      // The print: made first and sent first, so the print job goes out before the HD photos and the boomerang.
+      // Sized for the printer (a 4x6 sheet at 400 dpi; the DNP prints at 300), which keeps it quick to send and print.
+      const sheet = scaled(full, PRINT_LONG);
+      if (qrOn) drawPrintQr(sheet.getContext('2d'), sheet.width, sheet.height, s.design, `${SITE}?q=${row.print_token}`);
+      const printBlob = await jpeg(printCanvas(s.design, sheet), .93);
+      const pu = retry(() => upload(row.print_path, printBlob, 'image/jpeg')); work.push(pu);
+      pu.then(() => printReady.res(row), e => printReady.rej(e));
       if (S.capture.originals !== false && s.shots) {
         // Each camera photo in HD for the guest: the Canon's own JPEG when it is a sensible size, otherwise 4000 px at 92%.
         // With the beauty filter on, the smoothed photo is used so it matches the strip.
@@ -1661,6 +1666,7 @@ function startSave(s, reuse) {
         s.bursts = null;
       }
     } else {
+      printReady.rej(new Error('Only photos are printed'));
       full = s.poster;
       const ext = s.media.type === 'image/gif' ? 'gif' : s.media.type === 'video/mp4' ? 'mp4' : 'webm';
       row.media_path = `${ev}/${id}.${ext}`;
@@ -1673,10 +1679,20 @@ function startSave(s, reuse) {
     s.shots = null; s._view = s._viewFx = s._beauty = null; s.bursts = null;   // free memory
     return row;
   })();
+  job.catch(e => printReady.rej(e));
   UPLOADS.add(job); uploadsChanged();
   s.savePromise = job.finally(() => { UPLOADS.delete(job); uploadsChanged(); });
   s.savePromise.catch(e => toast('A photo could not be saved: ' + e.message, 8000));
-  s.savePromise.then(() => { if (!s.printCopies) keepDone(s); }, () => {});
+  s.savePromise.then(async row => {
+    if (s.jobId) {   // the print went out before the photo was saved: link it now
+      try {
+        await sb.from('print_jobs').update({ photo_id: row.id }).eq('id', s.jobId);
+        const j = (await sb.from('print_jobs').select('status,copies').eq('id', s.jobId).maybeSingle()).data;
+        if (j && j.status === 'done') await sb.from('photos').update({ printed: j.copies }).eq('id', row.id);
+      } catch (e) { }
+    }
+    if (!s.printCopies || s.jobId) keepDone(s);
+  }, () => {});
   return row;
 }
 function netMsg(e) { const m = String(e && e.message || e); return /fetch|network|Failed/i.test(m) ? 'The tablet has no internet connection. Check the WiFi, then tap Try again.' : m; }
@@ -1689,9 +1705,9 @@ async function doPrint() {
   if (S.printScreen && S.printScreen.on !== false && shot) showPrinting(s, shot); else openDone(s.printMsg, true);
   const copies = s.copies, label = `${ACTIVE.name} · ${s.design.name}`, ev = ACTIVE.id;
   try {
-    const row = await s.savePromise;
-    const job = await retry(async () => check(await sb.from('print_jobs').insert({ event_id: ev, photo_id: row.id, path: row.print_path || row.path, copies, label }).select().single()));
-    s.jobId = job.id; keepDone(s);
+    const row = await s.printReady;
+    const job = await retry(async () => check(await sb.from('print_jobs').insert({ event_id: ev, photo_id: null, path: row.print_path || row.path, copies, label }).select().single()));
+    s.jobId = job.id; keepEdits(s, true);
     s.printMsg = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.';
     if (B.session === s && $('#b-done').classList.contains('on')) { $('#printMsg').textContent = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.'; $('#printBar').style.width = '30%'; }
   } catch (e) { if (B.session === s) { s.printMsg = 'Could not send the print. Please call the attendant.'; $('#printMsg').textContent = s.printMsg; } }
@@ -2820,6 +2836,8 @@ async function runPrinter() {
       try {
         await printImage(fileUrl(job.path), job.copies, job.label);
         check(await sb.from('print_jobs').update({ status: 'done', error: '', updated_at: new Date().toISOString() }).eq('id', job.id));
+        const pid = job.photo_id || ((await sb.from('print_jobs').select('photo_id').eq('id', job.id).maybeSingle()).data || {}).photo_id;
+        if (pid) job.photo_id = pid;
         if (job.photo_id) { const p = (await sb.from('photos').select('printed').eq('id', job.photo_id).maybeSingle()).data; if (p) await sb.from('photos').update({ printed: (p.printed || 0) + job.copies }).eq('id', job.photo_id); }
         await loadStation(); await sb.from('station_settings').update({ printed_since_reset: (STATION.printed_since_reset || 0) + job.copies }).eq('owner', USER.id);
         STATION.printed_since_reset = (STATION.printed_since_reset || 0) + job.copies;
