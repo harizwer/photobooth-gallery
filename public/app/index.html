@@ -382,6 +382,23 @@
           <div class="lbl">Photo: JPG or PNG. GIF: animated GIF. Video: MP4 or WebM (up to 50 MB), plays silently on loop. Best size: 1920 × 1080 or larger.</div>
         </div>
         <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><b>🖼 AI backgrounds (no green screen)</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="abOn"></label></div>
+          <div class="lbl" style="margin-top:-6px">Guests pick a new background on the review screen. The AI finds the people in each photo on the tablet itself. Works best with people standing clear of the backdrop and good light.</div>
+          <div><div class="lbl" style="margin-bottom:6px">Ready-made</div><div class="row" id="abBuiltin" style="gap:6px;flex-wrap:wrap"></div></div>
+          <div><div class="lbl" style="margin-bottom:6px">Your backgrounds (e.g. pelamin, Paris, beach). Landscape photos, 3:2 like the camera, look best. Use pictures you have the rights to.</div><div id="abList" style="display:flex;flex-direction:column;gap:6px"></div>
+            <div class="row" style="gap:10px;margin-top:8px"><label class="btn sm" for="abFile" style="cursor:pointer">Upload backgrounds</label><input type="file" id="abFile" accept="image/jpeg,image/png,image/webp" multiple hidden></div></div>
+        </div>
+        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><b>🗣 Voice guide</b><label class="tog" style="gap:8px">On<input type="checkbox" id="voOn"></label></div>
+          <div class="lbl" style="margin-top:-6px">The booth talks the guest through each step. Record your own voice for any line, or let the tablet's computer voice read it.</div>
+          <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="field" for="voLang" style="width:200px">Computer voice language<select class="in" id="voLang"><option value="ms-MY">Bahasa Melayu</option><option value="en-GB">English</option><option value="id-ID">Bahasa Indonesia</option><option value="zh-CN">中文</option></select></label><label class="field" for="voVol" style="flex:1;min-width:160px">Voice volume<input type="range" id="voVol" min="0" max="100" style="accent-color:var(--accent)"></label></div>
+          <div id="voLines" style="display:flex;flex-direction:column;gap:6px"></div>
+          <div class="row" style="justify-content:space-between;margin-top:6px"><b>🎵 Theme music</b><label class="tog" style="gap:8px">On<input type="checkbox" id="muOn"></label></div>
+          <div class="lbl" style="margin-top:-6px">Plays quietly on the tablet, softer while the booth talks, and stops while a video message is recorded. Tick which event types each track is for (none ticked = every event). Use music you have the rights to play.</div>
+          <div id="muList" style="display:flex;flex-direction:column;gap:6px"></div>
+          <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap"><label class="btn sm" for="muFile" style="cursor:pointer">Upload music (MP3)</label><input type="file" id="muFile" accept="audio/*" multiple hidden><label class="field" for="muVol" style="flex:1;min-width:160px">Music volume<input type="range" id="muVol" min="0" max="100" style="accent-color:var(--accent)"></label></div>
+        </div>
+        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><b>Stickers on the review screen</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="stOn"></label></div>
           <div class="lbl" style="margin-top:-6px">Guests add stickers on top of their strip. They are printed and saved with the photo.</div>
           <div><div class="lbl" style="margin-bottom:6px">Sticker packs guests can use</div><div class="row" id="stPacksAdmin" style="flex-wrap:wrap;gap:6px"></div></div>
@@ -476,7 +493,7 @@
     <div id="reviewMedia"></div>
     <div class="rp">
       <h2 style="margin:0;font-size:30px">Looking good!</h2>
-      <div class="rvtabs" id="rvTabs" role="tablist"><button data-tab="adj" class="on">🔍 Zoom</button><button data-tab="stk">⭐ Stickers</button><button data-tab="beauty">✨ Beauty</button><button data-tab="filter">🎨 Filter</button></div>
+      <div class="rvtabs" id="rvTabs" role="tablist"><button data-tab="adj" class="on">🔍 Zoom</button><button data-tab="stk">⭐ Stickers</button><button data-tab="aibg">🖼 Background</button><button data-tab="beauty">✨ Beauty</button><button data-tab="filter">🎨 Filter</button></div>
       <div id="adjWrap" data-panel="adj"><div class="lbl" style="font-size:14px;margin-bottom:8px">Zoom &amp; move: tap a photo, drag to move, pinch or use − / +</div>
         <div class="adjpick" id="adjPick"></div>
         <div class="adjrow"><button id="adjMinus" aria-label="Zoom out">−</button><input type="range" id="adjZoom" min="50" max="300" step="1" value="100" aria-label="Zoom"><button id="adjPlus" aria-label="Zoom in">+</button><button class="btn sm" id="adjReset">Reset</button></div>
@@ -484,6 +501,7 @@
       <div id="stkWrap" data-panel="stk" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Tap a sticker to add it. Drag to move, pinch to resize and turn.</div>
         <div class="stkpacks" id="stkPacks"></div><div class="stkgrid" id="stkGrid"></div>
         <div class="adjrow" id="stkSelRow" hidden><span class="lbl">Selected:</span><button id="stkSmaller" aria-label="Smaller">−</button><button id="stkBigger" aria-label="Bigger">+</button><button id="stkTurn" aria-label="Turn">⟳</button><button class="btn sm" id="stkDel" style="color:#ff8a80">Remove</button></div></div>
+      <div id="aibgWrap" data-panel="aibg" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Swap the background (AI, no green screen)</div><div class="aibggrid" id="bAiBg"></div></div>
       <div id="beautyWrap" data-panel="beauty" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Smoother skin and a brighter look</div><div class="filters" id="bBeauty"><button data-bt="0" class="on">Off</button><button data-bt="1">Light</button><button data-bt="2">Medium</button><button data-bt="3">Strong</button></div></div>
       <div id="filterWrap" data-panel="filter" hidden><div class="lbl" style="font-size:14px;margin-bottom:8px">Choose a filter</div><div class="filters" id="bFilters"></div></div>
       <div class="copies" id="copiesWrap"><span>Copies</span><button id="cMinus" aria-label="Fewer copies">−</button><b class="mono" id="cNum">1</b><button id="cPlus" aria-label="More copies">+</button></div>

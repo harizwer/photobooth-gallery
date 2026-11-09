@@ -57,6 +57,9 @@ const STUDIO_DEFAULT = {
   stickers: { on: true, packs: ['props', 'love', 'party', 'raya', 'fun'], custom: [], texts: [{ t: 'Selamat Pengantin Baru', font: 'Great Vibes', color: '#ffffff' }] },
   guestbook: { on: false, prompt: 'Write a message for the couple ✍️', auto: false, paper: 'cream', paperSrc: '', screen: '#141416', screenSrc: '', pdfBg: true },
   beauty: 0,
+  aiBg: { on: true, builtin: ['white', 'grey', 'gold', 'rose', 'night'], blur: true, list: [] },
+  voice: { on: false, lang: 'ms-MY', volume: 1, lines: {}, clips: {} },
+  music: { on: false, volume: .35, tracks: [] },
   videoBook: { on: false, sec: 20, prompt: 'Say something to the couple! 🎥', montage: { format: 'portrait', bg: 'leather', bgSrc: '', title: 'Video Guestbook', names: '', font: 'Great Vibes', color: '#ffffff' } },
   smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
@@ -206,11 +209,143 @@ function beautify(src, k, maxSide = 2400) {
 }
 // The shots to use for this session: with the beauty level applied (made once per level, then kept)
 async function reviewShots(s) {
-  const lv = +s.beauty || 0; if (!lv || !s.shots) return s.shots;
-  s._beauty = s._beauty || {};
-  if (!s._beauty[lv]) { busy('Applying beauty…'); await sleep(30); try { s._beauty[lv] = s.shots.map(c => beautify(c, BEAUTY_K[lv])); } finally { busy(false); } }
-  return s._beauty[lv];
+  const lv = +s.beauty || 0, bg = s.bg || ''; if ((!lv && !bg) || !s.shots) return s.shots;
+  s._beauty = s._beauty || {}; const key = lv + '|' + bg;
+  if (!s._beauty[key]) {
+    busy(bg ? 'Changing the background…' : 'Applying beauty…'); await sleep(30);
+    try {
+      let src = s.shots;
+      if (lv) src = s._beauty[lv + '|'] || (s._beauty[lv + '|'] = s.shots.map(c => beautify(c, BEAUTY_K[lv])));
+      if (bg) { const out = []; for (const [i, c] of src.entries()) out.push(await withBackground(c, bg, 'photo', s.shots[i])); src = out; }
+      s._beauty[key] = src;
+    } catch (e) { busy(false); toast('Could not change the background: ' + e.message, 6000); s.bg = ''; return lv ? s._beauty[lv + '|'] || s.shots : s.shots; }
+    finally { busy(false); }
+  }
+  return s._beauty[key];
 }
+/* ---------- AI background: find the people in a photo (MediaPipe, runs on the device) and put a new background behind them ---------- */
+const MP_BASE = new URL('../vendor/mediapipe/', location.href).href;
+const segmenters = {};
+async function segmenter(kind) {   // 'photo' = accurate model (hair, edges), 'fast' = small model for boomerang frames
+  if (segmenters[kind]) return segmenters[kind];
+  segmenters[kind] = (async () => {
+    const { ImageSegmenter } = await import(MP_BASE + 'vision_bundle.mjs');
+    const fileset = { wasmLoaderPath: MP_BASE + 'vision_wasm_internal.js', wasmBinaryPath: MP_BASE + 'vision_wasm_internal.wasm' };
+    const model = MP_BASE + (kind === 'photo' ? 'selfie_multiclass.tflite' : 'selfie_segmenter.tflite');
+    const make = delegate => ImageSegmenter.createFromOptions(fileset, { baseOptions: { modelAssetPath: model, delegate }, runningMode: 'IMAGE', outputCategoryMask: false, outputConfidenceMasks: true });
+    try { return await make('GPU'); } catch (e) { return make('CPU'); }
+  })();
+  segmenters[kind].catch(() => { delete segmenters[kind]; });
+  return segmenters[kind];
+}
+// How much each pixel belongs to a person (0..255) as a canvas the size of the model's mask
+const maskCache = new WeakMap();   // each photo is analysed once; changing the background only re-draws
+async function personMask(src, kind) {
+  if (kind === 'photo' && maskCache.has(src)) return maskCache.get(src);
+  const job = personMaskNow(src, kind);
+  if (kind === 'photo') { maskCache.set(src, job); job.catch(() => maskCache.delete(src)); }
+  return job;
+}
+async function personMaskNow(src, kind) {
+  const seg = await segmenter(kind);
+  const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight, k = Math.min(1, 1024 / Math.max(w0, h0));
+  const small = document.createElement('canvas'); small.width = Math.round(w0 * k); small.height = Math.round(h0 * k);
+  small.getContext('2d').drawImage(src, 0, 0, small.width, small.height);
+  const res = seg.segment(small), masks = res.confidenceMasks;
+  // multiclass model: mask 0 is the background; selfie model: mask 0 is the person
+  const m = masks[0], mw = m.width, mh = m.height, conf = m.getAsFloat32Array();
+  const out = document.createElement('canvas'); out.width = mw; out.height = mh; const ox = out.getContext('2d'), img = ox.createImageData(mw, mh);
+  const bgFirst = kind === 'photo';
+  for (let i = 0; i < conf.length; i++) {
+    let p = bgFirst ? 1 - conf[i] : conf[i];
+    p = Math.min(1, Math.max(0, (p - .35) / .3));   // firm up the edge a little
+    img.data[i * 4 + 3] = Math.round(p * 255);
+  }
+  ox.putImageData(img, 0, 0);
+  if (res.close) res.close(); masks.forEach(x => x.close && x.close());
+  return out;
+}
+// Built-in backgrounds, painted (no photos needed)
+const AIBG_BUILTIN = {
+  white: ['Studio white', (x, w, h) => { const g = x.createRadialGradient(w / 2, h * .45, h * .1, w / 2, h / 2, h); g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#d9d9de'); x.fillStyle = g; x.fillRect(0, 0, w, h); }],
+  grey: ['Studio grey', (x, w, h) => { const g = x.createRadialGradient(w / 2, h * .45, h * .1, w / 2, h / 2, h); g.addColorStop(0, '#8d9299'); g.addColorStop(1, '#2f3237'); x.fillStyle = g; x.fillRect(0, 0, w, h); }],
+  gold: ['Gold bokeh', (x, w, h) => bokeh(x, w, h, ['#3a2410', '#120a04'], ['255,200,110', '255,170,60', '255,230,160'])],
+  rose: ['Rose bokeh', (x, w, h) => bokeh(x, w, h, ['#5a2236', '#1d0a12'], ['255,160,190', '255,120,160', '255,210,225'])],
+  night: ['City lights', (x, w, h) => bokeh(x, w, h, ['#16203d', '#05070f'], ['120,170,255', '255,210,120', '200,120,255'])],
+};
+function bokeh(x, w, h, bg, cols) {
+  const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, bg[0]); g.addColorStop(1, bg[1]); x.fillStyle = g; x.fillRect(0, 0, w, h);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 70; i++) {
+    const r = (.02 + rnd() * .07) * Math.min(w, h), cx = rnd() * w, cy = rnd() * h, c = cols[i % cols.length], a = .12 + rnd() * .35;
+    const rg = x.createRadialGradient(cx, cy, 0, cx, cy, r); rg.addColorStop(0, `rgba(${c},${a})`); rg.addColorStop(.75, `rgba(${c},${a * .8})`); rg.addColorStop(1, `rgba(${c},0)`);
+    x.fillStyle = rg; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill();
+  }
+}
+// The guest's photo with the chosen background ('blur', a built-in key, or 'u:<index>' for the studio's own pictures)
+async function withBackground(src, key, kind = 'photo', maskFrom) {
+  const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
+  const mask = await personMask(maskFrom || src, kind);
+  const out = document.createElement('canvas'); out.width = w; out.height = h; const x = out.getContext('2d'); x.imageSmoothingQuality = 'high';
+  if (key === 'blur') { x.filter = `blur(${Math.round(Math.max(w, h) * .012)}px)`; x.drawImage(src, -w * .03, -h * .03, w * 1.06, h * 1.06); x.filter = 'none'; }
+  else if (AIBG_BUILTIN[key]) AIBG_BUILTIN[key][1](x, w, h);
+  else {
+    const u = key.startsWith('u:') && (S.aiBg.list || [])[+key.slice(2)], img = u && await loadImg(u.url);
+    if (img) { const k = Math.max(w / img.naturalWidth, h / img.naturalHeight); x.drawImage(img, (w - img.naturalWidth * k) / 2, (h - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k); }
+    else { x.fillStyle = '#ddd'; x.fillRect(0, 0, w, h); }
+  }
+  // the person: photo cut out by the (softened, enlarged) mask
+  const p = document.createElement('canvas'); p.width = w; p.height = h; const px = p.getContext('2d'); px.imageSmoothingQuality = 'high';
+  px.filter = `blur(${Math.max(1, Math.round(Math.max(w, h) / 900))}px)`; px.drawImage(mask, 0, 0, w, h); px.filter = 'none';
+  px.globalCompositeOperation = 'source-in'; px.drawImage(src, 0, 0, w, h);
+  x.drawImage(p, 0, 0);
+  return out;
+}
+/* ---------- Voice guide and theme music ---------- */
+const VOICE_LINES = {
+  welcome: ['When a guest starts', 'Selamat datang! Pilih design kegemaran anda.'],
+  ready: ['Before each photo', 'Sedia ya, pandang kamera!'],
+  smile: ['Just before the photo', 'Senyum!'],
+  review: ['After the photos', 'Cantiknya! Edit gambar anda, kemudian tekan Print.'],
+  printing: ['While printing', 'Gambar anda sedang dicetak.'],
+  thanks: ['Thank-you screen', 'Terima kasih! Imbas kod QR untuk gambar anda.'],
+  video: ['Before a video message', 'Sedia untuk rakam ucapan anda!'],
+};
+const voiceLine = k => ((S.voice && S.voice.lines && S.voice.lines[k]) ?? VOICE_LINES[k][1]) || '';
+let voiceAudio = null, music = null, musicWanted = false;
+function duck(on) { if (music) music.volume = Math.max(0, Math.min(1, (S.music.volume ?? .35) * (on ? .25 : 1))); }
+// Speak a line: the studio's own recording if there is one, otherwise the device's text-to-speech (Malay where available)
+function say(key) {
+  const V = S.voice || {}; if (!V.on || ROLE !== 'booth') return Promise.resolve();
+  const text = voiceLine(key), clip = V.clips && V.clips[key];
+  if (!text && !clip) return Promise.resolve();
+  hush(); duck(true);
+  return new Promise(res => {
+    const done = () => { duck(false); res(); };
+    if (clip) { voiceAudio = new Audio(clip); voiceAudio.volume = V.volume ?? 1; voiceAudio.onended = done; voiceAudio.onerror = done; voiceAudio.play().catch(done); return; }
+    if (NATIVE && NATIVE.speak) { try { NATIVE.speak(text, V.lang || 'ms-MY'); } catch (e) { } setTimeout(done, Math.min(6000, 600 + text.length * 70)); return; }
+    if (!window.speechSynthesis) return done();
+    const u = new SpeechSynthesisUtterance(text), voices = speechSynthesis.getVoices(), lang = (V.lang || 'ms-MY').toLowerCase();
+    u.voice = voices.find(v => v.lang.toLowerCase() === lang) || voices.find(v => v.lang.toLowerCase().startsWith(lang.slice(0, 2))) || voices.find(v => /^id/i.test(v.lang)) || null;
+    u.lang = u.voice ? u.voice.lang : (V.lang || 'ms-MY'); u.volume = V.volume ?? 1; u.rate = 1; u.onend = done; u.onerror = done;
+    speechSynthesis.speak(u); setTimeout(done, 8000);
+  });
+}
+function hush() { if (voiceAudio) { voiceAudio.pause(); voiceAudio = null; } if (window.speechSynthesis) speechSynthesis.cancel(); if (NATIVE && NATIVE.stopSpeak) try { NATIVE.stopSpeak(); } catch (e) { } }
+// Theme music: the track picked for this event's type (or for all types), looping quietly
+function musicTrack() {
+  const M = S.music || {}; if (!M.on) return null;
+  const type = evType(ACTIVE), list = (M.tracks || []).filter(t => !t.types || !t.types.length || t.types.includes(type));
+  return list.length ? list[0] : null;
+}
+function musicPlay() {
+  musicWanted = true; if (ROLE !== 'booth') return;
+  const t = musicTrack(); if (!t) { musicStop(); return; }
+  if (!music || music._src !== t.url) { musicStop(); music = new Audio(t.url); music._src = t.url; music.loop = true; }
+  duck(false); music.play().catch(() => {});
+}
+function musicPause() { if (music) music.pause(); }
+function musicStop() { if (music) { music.pause(); music = null; } }
 function fitText(x, text, maxW, size, font, weight = '') { do { x.font = `${weight} ${size}px ${font}`; size -= 2; } while (x.measureText(text).width > maxW && size > 10); }
 function designSize(d) { const long = Math.min(4000, d.output_long || 3600), s = long / Math.max(d.w, d.h); return [Math.round(d.w * s), Math.round(d.h * s)]; }
 // Compose the finished photo: guest shots in the areas, the PNG frame on top, optional small QR.
@@ -453,6 +588,7 @@ async function boothLoad() {
     dslrDisconnect().then(() => dslrConnect(false)).then(() => startCamera()).catch(() => startCamera());
   }
   $('#bTitle').textContent = ACTIVE ? ACTIVE.name : '';
+  if (musicWanted || (S.music && S.music.on)) musicPlay();
   $('#bSub').textContent = S.bg.sub || 'Tap to make memories';
   paintBg($('#boothBgLayer'), $('#boothShade'), S.bg);
   const modes = enabledModes(); const list = modes.length ? modes : ['photo'];
@@ -833,7 +969,7 @@ function goHome() {
   if (B.pendingReload) { B.pendingReload = false; boothLoad(); }
 }
 function startFlow(mode) {
-  ac(); keepAwake();
+  ac(); keepAwake(); musicPlay(); say(mode === 'video' ? 'video' : 'welcome');
   if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
   B.mode = mode || 'photo';
   if (B.mode !== 'photo') return startSession(null);
@@ -854,7 +990,7 @@ async function countdown(me, label, onAt, at = 1, minSecs = 0) {
   const el = $('#b-count'); $('#shotInfo').textContent = label;
   for (let n = Math.max(1, S.capture.countdown || 3, minSecs); n > 0; n--) { if (B.session !== me) return false; showCount(el, n); beep(n === 1 ? 1320 : 880); if (n === at && onAt) onAt(); await sleep(1000); }
   if (B.session !== me) return false;
-  showSmile(el); await sleep(250); return true;
+  showSmile(el); say('smile'); await sleep(250); return true;
 }
 /* ---------- The "Smile!" word: text, font, colour, outline, emoji and a pattern, all set in Capture & media ---------- */
 const SMILE_FONTS = ['Geist', 'Playfair Display', 'Pacifico', 'Lobster', 'Bebas Neue', 'Dancing Script', 'Fredoka', 'Bungee', 'Great Vibes', 'Baloo 2', 'Righteous', 'Permanent Marker'];
@@ -904,6 +1040,7 @@ async function startSession(design) {
         // For the strip boomerang: record the last few seconds of the countdown before each photo
         let burst = null;
         const label = `Photo ${i + 1} of ${n}` + (wantBoom ? ' · keep moving for the boomerang!' : '');
+        say('ready');
         if (!(await countdown(me, label, wantBoom ? () => { burst = recordBurst(me, boomSec); } : null, boomSec, wantBoom ? boomSec : 0))) return;
         if (burst) burst.stop();
         B.lastOriginal = null; flash(); const c = await capturePhoto(); me.shots.push(c); (me.originals = me.originals || []).push(B.lastOriginal);
@@ -932,9 +1069,9 @@ async function startSession(design) {
       catch (e) { toast('The microphone is not allowed, so this video has no sound. Allow the microphone for the app or website.', 7000); }
       try {
         if (!(await countdown(me, VB.prompt || 'Say something nice! 🎥'))) return;
-        $('#b-count').textContent = ''; $('#recStop').hidden = false;
+        $('#b-count').textContent = ''; $('#recStop').hidden = false; hush(); musicPause();
         me.blob = await recordStream(recVideoStream(mic), sec * 1000, me, s => { $('#shotInfo').innerHTML = `<span class="recdot"></span>Recording · ${s}s left`; $('#b-count').textContent = s; }, 4e6);
-      } finally { $('#recStop').hidden = true; endRecVideo(); if (mic) mic.getTracks().forEach(t => t.stop()); }
+      } finally { $('#recStop').hidden = true; endRecVideo(); if (mic) mic.getTracks().forEach(t => t.stop()); if (musicWanted) musicPlay(); }
       if (B.session !== me) return;
       me.poster = grabFrame(1920);
     }
@@ -1009,13 +1146,14 @@ function recordBurst(me, secs = 1) {
 }
 // Strip boomerang: the chosen strip (same frame and background) with every photo moving at the same time,
 // forward and back. Shared by QR/link, never printed. Video where the browser can record, otherwise an animated GIF.
-async function stripBoomerang(design, bursts, filter, name, date, adjust, stickers, beauty) {
+async function stripBoomerang(design, bursts, filter, name, date, adjust, stickers, beauty, bgKey) {
   const lists = await Promise.all(bursts.map(b => Promise.all(b).then(l => l.filter(Boolean))));
   const k = Math.min(...lists.map(l => l.length)); if (k < 4) return null;
   const d = { ...design, output_long: 1280 }, frames = [];
   for (let i = 0; i < k; i++) {   // one strip picture per moment, kept as a JPEG
     let imgs = await Promise.all(lists.map(l => createImageBitmap(l[i])));
     if (beauty) { const bm = imgs; imgs = bm.map(b => beautify(b, beauty, 640)); bm.forEach(b => b.close && b.close()); }
+    if (bgKey) { const out = []; for (const b of imgs) { try { out.push(await withBackground(b, bgKey, 'fast')); } catch (e) { out.push(b); } } imgs = out; }
     const c = await compose(d, imgs, filter, { name, date, adjust, stickers }); imgs.forEach(b => b.close && b.close());
     frames.push(await new Promise(res => c.toBlob(res, 'image/jpeg', .88))); await sleep(0);
   }
@@ -1050,11 +1188,15 @@ async function renderSession() {
 }
 async function openReview() {
   const s = B.session;
-  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; s.stickers = []; s.stkSel = -1; s.beauty = +S.beauty || 0; }
+  if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; s.stickers = []; s.stkSel = -1; s.beauty = +S.beauty || 0; s.bg = ''; }
   try { await renderSession(); } catch (e) { return showErr('Something went wrong', e.message, () => openReview(), goHome); }
   const isPhoto = s.mode === 'photo';
   $('#rvTabs').hidden = !isPhoto;
   $('#rvTabs [data-tab=stk]').hidden = !(S.stickers && S.stickers.on !== false);
+  $('#rvTabs [data-tab=aibg]').hidden = !(S.aiBg && S.aiBg.on !== false);
+  if (isPhoto) { renderAiBgPanel(); say('review'); }
+  // Get the AI ready while the guest looks at the strip, so a background choice shows quickly
+  if (isPhoto && S.aiBg && S.aiBg.on !== false) (async () => { await sleep(700); for (const c of s.shots || []) { if (B.session !== s || !s.shots) return; await personMask(c, 'photo'); await sleep(40); } })().catch(() => {});
   showReviewTab(isPhoto ? 'adj' : '');
   if (isPhoto) { renderAdjButtons(); renderStickerPanel(); $$('#bBeauty [data-bt]').forEach(b => b.classList.toggle('on', +b.dataset.bt === (+s.beauty || 0))); }
   $('#bFilters').innerHTML = FILTERS.map(f => `<button class="${f[0] === s.filter ? 'on' : ''}" data-fl="${f[0]}">${f[1]}</button>`).join('');
@@ -1097,6 +1239,22 @@ $('#adjMinus').onclick = () => B.session && setZoom((B.session.adjust[B.session.
 $('#adjPlus').onclick = () => B.session && setZoom((B.session.adjust[B.session.adjSel].z || 1) + .1);
 $('#adjZoom').oninput = () => B.session && setZoom(+$('#adjZoom').value / 100);
 $('#adjReset').onclick = () => { if (!B.session) return; B.session.adjust[B.session.adjSel] = { z: 1, dx: 0, dy: 0 }; adjChanged(); };
+// Background choices on the review screen
+let aibgThumbs = {};
+function aibgThumb(k) {
+  if (aibgThumbs[k]) return aibgThumbs[k];
+  const c = document.createElement('canvas'); c.width = 96; c.height = 64; AIBG_BUILTIN[k][1](c.getContext('2d'), 96, 64);
+  return (aibgThumbs[k] = c.toDataURL('image/jpeg', .8));
+}
+function renderAiBgPanel() {
+  const A = S.aiBg || {}, s = B.session, cur = (s && s.bg) || '';
+  const items = [['', 'Original', ''], ...(A.blur !== false ? [['blur', 'Blur', '']] : []), ...(A.builtin || []).filter(k => AIBG_BUILTIN[k]).map(k => [k, AIBG_BUILTIN[k][0], aibgThumb(k)]), ...(A.list || []).map((u, i) => ['u:' + i, u.name || 'Background ' + (i + 1), u.url])];
+  $('#bAiBg').innerHTML = items.map(([k, n, img]) => `<button class="aibg ${k === cur ? 'on' : ''}" data-bg="${esc(k)}">${img ? `<img src="${esc(img)}" alt="" crossorigin="anonymous">` : `<span class="aibgic">${k === 'blur' ? '◐' : '◻'}</span>`}<span>${esc(n)}</span></button>`).join('');
+}
+$('#bAiBg').addEventListener('click', async e => {
+  const b = e.target.closest('[data-bg]'); if (!b || !B.session) return;
+  B.session.bg = b.dataset.bg; renderAiBgPanel(); await renderSession(); renderAiBgPanel();
+});
 function showReviewTab(t) {
   $$('#rvTabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   $$('#b-review [data-panel]').forEach(p => { p.hidden = p.dataset.panel !== t; });
@@ -1249,7 +1407,7 @@ function startSave(s) {
       if (S.capture.originals !== false && s.shots) {
         // Each camera photo in HD for the guest: the Canon's own JPEG when it is a sensible size, otherwise 4000 px at 92%.
         // With the beauty filter on, the smoothed photo is used so it matches the strip.
-        const lv = +s.beauty || 0, src = lv ? await reviewShots(s) : s.shots;
+        const lv = (+s.beauty || 0) || (s.bg ? 1 : 0), src = lv ? await reviewShots(s) : s.shots;
         row.originals = src.map((_, i) => `${ev}/${id}-o${i + 1}.jpg`);
         src.forEach((shot, i) => {
           const cam = !lv && s.originals && s.originals[i], useCam = cam && cam.size <= 6e6 && /jpe?g/i.test(cam.type || 'image/jpeg');
@@ -1259,7 +1417,7 @@ function startSave(s) {
       }
       if (photoGifOn && s.bursts && s.bursts.length > 1) {
         try {
-          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust, s.stickers, BEAUTY_K[+s.beauty || 0]);
+          const g = await stripBoomerang(s.design, s.bursts, s.filter, evName, evDate, s.adjust, s.stickers, BEAUTY_K[+s.beauty || 0], s.bg);
           if (g) { const ext = g.type === 'image/gif' ? 'gif' : g.type === 'video/mp4' ? 'mp4' : 'webm'; row.media_path = `${ev}/${id}.${ext}`; work.push(retry(() => upload(row.media_path, g, g.type))); }
         } catch (e) { /* the photo still saves without the boomerang */ }
         s.bursts = null;
@@ -1325,7 +1483,7 @@ function playPs(root, sec) {
 function showPrinting(s, shot) {
   const P = S.printScreen || {}, root = $('#b-print');
   root.style.setProperty('--ps-ink', paintPs($('#psLayer'), $('#psShade'), P));
-  $('#psText').textContent = P.text || 'Printing your photo…';
+  $('#psText').textContent = P.text || 'Printing your photo…'; say('printing');
   const pic = $('#psImg'); pic.src = shot.toDataURL('image/jpeg', .85);
   layoutPs(root, shot, Math.min(innerWidth * .42, 380), innerHeight * .62);
   bscreen('b-print'); clearInterval(B.doneT);
@@ -1348,6 +1506,7 @@ function openDone(status, printing) {
   if (s && s.row) qr($('#guestQr'), shareLink(s.row), 200);
   bscreen('b-done');
   $('#gbOpen').hidden = !gbAvailable(s); $('#gbOpen').textContent = (S.guestbook && S.guestbook.prompt) || 'Write a message ✍️';
+  if (s && s.mode !== 'show') say('thanks');
   let left = 30; const tick = () => $('#doneTimer').textContent = `Going back automatically in ${left}s`;
   tick(); clearInterval(B.doneT); B.doneT = setInterval(() => { left--; tick(); if (left <= 0) goHome(); }, 1000);
   if (gbAvailable(s) && S.guestbook.auto && !s.gbAutoShown) { s.gbAutoShown = true; setTimeout(() => { if (B.session === s && $('#b-done').classList.contains('on')) openGuestbook(); }, 1500); }
@@ -2278,7 +2437,7 @@ function renderStudio() {
   $('#bgDim').value = S.bg.dim; $('#bgSub').value = S.bg.sub || '';
   $$('#bgColors .sw').forEach(x => x.classList.toggle('on', x.dataset.c === S.bg.color));
   $('#bgFileName').textContent = S.bg.src ? S.bg.src.split('/').pop() : 'No file yet';
-  applyBrand(); renderBgPrev(); renderPq(); renderPsSettings(); renderStickerSettings(); renderGbStyleSettings();
+  applyBrand(); renderBgPrev(); renderPq(); renderPsSettings(); renderStickerSettings(); renderGbStyleSettings(); renderAiBgSettings(); renderVoiceSettings();
 }
 function renderBgPrev() {
   paintBg($('#bgPrevLayer'), $('#bgPrevShade'), S.bg); $('#bgPrevTitle').textContent = ACTIVE ? ACTIVE.name : '';
@@ -2685,6 +2844,95 @@ $('#gVideoBook').onclick = async () => {
     mk.disabled = false; m.querySelector('#mtCancel').hidden = true;
   };
 };
+/* ---- Admin: AI backgrounds, voice guide and music (Studio settings) ---- */
+function renderAiBgSettings() {
+  const A = S.aiBg;
+  $('#abOn').checked = A.on !== false;
+  $('#abBuiltin').innerHTML = Object.entries(AIBG_BUILTIN).map(([k, [n]]) => `<button class="pill ${(A.builtin || []).includes(k) ? 'on' : ''}" data-ab="${k}">${n}</button>`).join('') + `<button class="pill ${A.blur !== false ? 'on' : ''}" data-ab="blur">Blur</button>`;
+  $('#abList').innerHTML = (A.list || []).map((u, i) => `<div class="abitem"><img src="${esc(u.url)}" alt="" crossorigin="anonymous"><input class="in" data-abn="${i}" value="${esc(u.name || '')}" placeholder="Name" maxlength="20"><button class="btn sm" data-abrm="${i}" style="color:#ff8a80">Remove</button></div>`).join('') || '<span class="lbl">None yet</span>';
+}
+$('#abOn').onchange = () => { S.aiBg.on = $('#abOn').checked; };
+$('#abBuiltin').addEventListener('click', e => {
+  const b = e.target.closest('[data-ab]'); if (!b) return;
+  if (b.dataset.ab === 'blur') S.aiBg.blur = S.aiBg.blur === false;
+  else { const set = new Set(S.aiBg.builtin || []); set.has(b.dataset.ab) ? set.delete(b.dataset.ab) : set.add(b.dataset.ab); S.aiBg.builtin = Object.keys(AIBG_BUILTIN).filter(k => set.has(k)); }
+  renderAiBgSettings();
+});
+$('#abList').addEventListener('input', e => { const i = e.target.dataset.abn; if (i != null) S.aiBg.list[+i].name = e.target.value.trim(); });
+$('#abList').addEventListener('click', e => { const b = e.target.closest('[data-abrm]'); if (!b || !confirm('Remove this background?')) return; S.aiBg.list.splice(+b.dataset.abrm, 1); renderAiBgSettings(); });
+$('#abFile').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  for (const f of files) {
+    try { const u = await gbUpload(f, 'aibg'); if (u) S.aiBg.list = [...(S.aiBg.list || []), { url: u, name: f.name.replace(/\.[^.]+$/, '').slice(0, 20) }]; } catch (err) { toast(err.message, 4000); }
+  }
+  renderAiBgSettings(); toast('Uploaded. Press Save to send to the tablet.');
+});
+
+function renderVoiceSettings() {
+  const V = S.voice, M = S.music;
+  $('#voOn').checked = !!V.on; $('#voLang').value = V.lang || 'ms-MY'; $('#voVol').value = Math.round((V.volume ?? 1) * 100);
+  $('#voLines').innerHTML = Object.entries(VOICE_LINES).map(([k, [when]]) => `<div class="voline"><span class="lbl" style="width:150px;flex:none">${when}</span>
+    <input class="in" data-vl="${k}" value="${esc(voiceLine(k))}" maxlength="90" style="flex:1;min-width:160px">
+    <button class="btn sm" data-vtest="${k}" title="Listen">▶</button>
+    <button class="btn sm" data-vrec="${k}">${V.clips && V.clips[k] ? '● Re-record' : '● Record my voice'}</button>
+    ${V.clips && V.clips[k] ? `<button class="btn sm" data-vdel="${k}" title="Use the computer voice again" style="color:#ff8a80">✕</button>` : ''}</div>`).join('');
+  $('#muOn').checked = !!M.on; $('#muVol').value = Math.round((M.volume ?? .35) * 100);
+  $('#muList').innerHTML = (M.tracks || []).map((t, i) => `<div class="voline"><span style="flex:1;min-width:120px">🎵 ${esc(t.name || 'Track')}</span>
+    <span class="row" style="gap:4px;flex-wrap:wrap">${allTypes().map(ty => `<button class="pill ${(t.types || []).includes(ty) ? 'on' : ''}" data-mut="${i}" data-ty="${esc(ty)}">${esc(ty)}</button>`).join('')}</span>
+    <button class="btn sm" data-mup="${i}">▶</button><button class="btn sm" data-murm="${i}" style="color:#ff8a80">Remove</button></div>`).join('') || '<span class="lbl">No music yet</span>';
+}
+let voRec = null, adminAudio = null;
+$('#voOn').onchange = () => { S.voice.on = $('#voOn').checked; };
+$('#voLang').onchange = () => { S.voice.lang = $('#voLang').value; };
+$('#voVol').oninput = () => { S.voice.volume = +$('#voVol').value / 100; };
+$('#muOn').onchange = () => { S.music.on = $('#muOn').checked; };
+$('#muVol').oninput = () => { S.music.volume = +$('#muVol').value / 100; if (adminAudio) adminAudio.volume = S.music.volume; };
+$('#voLines').addEventListener('input', e => { const k = e.target.dataset.vl; if (k) S.voice.lines = { ...(S.voice.lines || {}), [k]: e.target.value }; });
+$('#voLines').addEventListener('click', async e => {
+  const t = e.target.closest('[data-vtest]'), r = e.target.closest('[data-vrec]'), d = e.target.closest('[data-vdel]');
+  if (t) { // listen here on the laptop
+    const k = t.dataset.vtest, clip = S.voice.clips && S.voice.clips[k];
+    if (clip) { if (adminAudio) adminAudio.pause(); adminAudio = new Audio(clip); adminAudio.play(); return; }
+    if (!window.speechSynthesis) return toast('This browser has no computer voice. Record your own voice instead.');
+    const u = new SpeechSynthesisUtterance(voiceLine(k)), vs = speechSynthesis.getVoices(), lang = (S.voice.lang || 'ms-MY').toLowerCase();
+    u.voice = vs.find(v => v.lang.toLowerCase() === lang) || vs.find(v => v.lang.toLowerCase().startsWith(lang.slice(0, 2))) || null; u.lang = S.voice.lang || 'ms-MY';
+    speechSynthesis.cancel(); speechSynthesis.speak(u); return;
+  }
+  if (d) { delete S.voice.clips[d.dataset.vdel]; renderVoiceSettings(); return; }
+  if (r) {   // record the studio's own voice for this line (tap again to stop)
+    const k = r.dataset.vrec;
+    if (voRec) { voRec.stop(); return; }
+    let mic; try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch (err) { return toast('Allow the microphone to record your voice.', 5000); }
+    const chunks = [], mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+    voRec = new MediaRecorder(mic, mime ? { mimeType: mime } : {}); voRec.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
+    r.textContent = '■ Stop recording'; r.classList.add('pri');
+    const auto = setTimeout(() => voRec && voRec.stop(), 10000);
+    voRec.onstop = async () => {
+      clearTimeout(auto); mic.getTracks().forEach(x => x.stop()); voRec = null;
+      const blob = new Blob(chunks, { type: (mime || 'audio/webm').split(';')[0] }), ext = blob.type.includes('mp4') ? 'm4a' : 'webm';
+      try { const path = `u-${USER.id}/voice-${k}-${Date.now().toString(36)}.${ext}`; await upload(path, blob, blob.type); S.voice.clips = { ...(S.voice.clips || {}), [k]: fileUrl(path) }; toast('Recorded. Press Save to send it to the tablet.'); }
+      catch (err) { toast(err.message, 4000); }
+      renderVoiceSettings();
+    };
+    voRec.start();
+  }
+});
+$('#muList').addEventListener('click', e => {
+  const ty = e.target.closest('[data-mut]'), pl = e.target.closest('[data-mup]'), rm = e.target.closest('[data-murm]');
+  if (ty) { const t = S.music.tracks[+ty.dataset.mut], set = new Set(t.types || []); set.has(ty.dataset.ty) ? set.delete(ty.dataset.ty) : set.add(ty.dataset.ty); t.types = [...set]; renderVoiceSettings(); }
+  if (pl) { const t = S.music.tracks[+pl.dataset.mup]; if (adminAudio && !adminAudio.paused && adminAudio._src === t.url) { adminAudio.pause(); return; } if (adminAudio) adminAudio.pause(); adminAudio = new Audio(t.url); adminAudio._src = t.url; adminAudio.volume = S.music.volume ?? .35; adminAudio.play(); }
+  if (rm && confirm('Remove this track?')) { S.music.tracks.splice(+rm.dataset.murm, 1); renderVoiceSettings(); }
+});
+$('#muFile').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  for (const f of files) {
+    if (!/^audio\//.test(f.type)) { toast('Choose an MP3 or M4A file.'); continue; }
+    if (f.size > 25 * 1024 * 1024) { toast(f.name + ' is over 25 MB.'); continue; }
+    try { const ext = (f.name.split('.').pop() || 'mp3').toLowerCase(), path = `u-${USER.id}/music-${Date.now().toString(36)}.${ext}`; await upload(path, f, f.type); S.music.tracks = [...(S.music.tracks || []), { url: fileUrl(path), name: f.name.replace(/\.[^.]+$/, '').slice(0, 40), types: [] }]; }
+    catch (err) { toast(err.message, 4000); }
+  }
+  renderVoiceSettings(); toast('Uploaded. Tick the event types, then press Save.');
+});
 /* ---- Guestbook PDF: every message of the event with its photo ---- */
 async function imgData(url, max, type) {
   const r = await fetch(url); if (!r.ok) throw new Error('Could not load ' + url.split('/').pop());

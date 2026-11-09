@@ -191,7 +191,31 @@ public class MainActivity extends Activity {
         // otherwise stay in the booth: the Home button still leaves the app
     }
 
+    private android.speech.tts.TextToSpeech tts;
+    private boolean ttsReady = false;
+    private String ttsPending, ttsPendingLang;
+
+    private void say(String text, String lang) {
+        if (text == null || text.isEmpty()) return;
+        if (tts == null) {
+            ttsPending = text; ttsPendingLang = lang;
+            tts = new android.speech.tts.TextToSpeech(getApplicationContext(), status -> {
+                ttsReady = status == android.speech.tts.TextToSpeech.SUCCESS;
+                if (ttsReady && ttsPending != null) { String t = ttsPending, l = ttsPendingLang; ttsPending = null; ui.post(() -> say(t, l)); }
+            });
+            return;
+        }
+        if (!ttsReady) { ttsPending = text; ttsPendingLang = lang; return; }
+        java.util.Locale want = java.util.Locale.forLanguageTag(lang == null || lang.isEmpty() ? "ms-MY" : lang);
+        java.util.Locale[] tries = { want, new java.util.Locale(want.getLanguage()), want.getLanguage().equals("ms") ? new java.util.Locale("id", "ID") : want };
+        for (java.util.Locale l : tries) {
+            if (tts.isLanguageAvailable(l) >= android.speech.tts.TextToSpeech.LANG_AVAILABLE) { tts.setLanguage(l); break; }
+        }
+        tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "pb");
+    }
+
     @Override protected void onDestroy() {
+        if (tts != null) { tts.shutdown(); tts = null; }
         try { unregisterReceiver(usbEvents); } catch (RuntimeException ignored) { }
         if (web != null) { root.removeView(web); web.destroy(); web = null; }
         super.onDestroy();
@@ -263,6 +287,9 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void reload() { ui.post(() -> { if (web != null) web.reload(); }); }
+        // Voice guide: Android's text-to-speech (Malay when installed, else Indonesian, else the default voice)
+        @JavascriptInterface public void speak(String text, String lang) { ui.post(() -> say(text, lang)); }
+        @JavascriptInterface public void stopSpeak() { ui.post(() -> { if (tts != null) tts.stop(); }); }
     }
 
     /* ---------------- Browser behaviour ---------------- */
