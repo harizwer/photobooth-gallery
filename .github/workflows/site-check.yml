@@ -21,6 +21,7 @@ jobs:
           r "old photo via R2: $(curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg)"
           r "again (now from R2): $(curl -s -o /dev/null -w '%{http_code} %{size_download}' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg) · range: $(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-99' $S/files/emvtwhvbg/pmvv9tuy58r0-thumb.jpg)"
           r "storage api (401 = needs login): $(curl -s -o /dev/null -w "%{http_code}" $S/api/storage)"
+          r "AI files: model $(curl -s -o /dev/null -w '%{http_code} %{size_download}' $S/vendor/mediapipe/selfie_multiclass.tflite) · wasm $(curl -s -o /dev/null -w '%{http_code} %{size_download} %{content_type}' $S/vendor/mediapipe/vision_wasm_internal.wasm) · app.js has AI: $(curl -s $S/app/app.js | grep -c withBackground)"
           r "guest page: $(curl -s -o /dev/null -w '%{http_code}' $S/) · 404 page: $(curl -s -o /dev/null -w '%{http_code}' $S/nothing-here)"
       - name: Copy every older Supabase file into R2 (opening a file copies it)
         shell: bash
