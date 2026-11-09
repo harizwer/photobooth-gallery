@@ -1,0 +1,47 @@
+11-09 07:51:55.495  1666  1666 I bootstat: Canonical boot reason: reboot
+11-09 07:51:55.495  1666  1666 I bootstat: Canonical boot reason: reboot
+11-09 07:51:56.268  1664  1664 D AndroidRuntime: >>>>>> START com.android.internal.os.ZygoteInit uid 0 <<<<<<
+11-09 07:51:56.481  1664  1664 I AndroidRuntime: Using default boot image
+11-09 07:51:56.481  1664  1664 I AndroidRuntime: Leaving lock profiling enabled
+11-09 07:51:56.582  1665  1665 D AndroidRuntime: >>>>>> START com.android.internal.os.ZygoteInit uid 0 <<<<<<
+11-09 07:51:56.623  1665  1665 I AndroidRuntime: Using default boot image
+11-09 07:51:56.623  1665  1665 I AndroidRuntime: Leaving lock profiling enabled
+11-09 07:51:59.683  1919  2029 D WifiActiveModeWarden: Switching from WifiDisabledState to ScanOnlyMode
+11-09 07:51:59.683  1919  2029 D WifiActiveModeWarden: Entering ScanOnlyModeActiveState
+11-09 07:51:59.683  1919  2029 D WifiScanOnlyModeManager: entering IdleState
+11-09 07:51:59.737  1919  2029 D WifiScanOnlyModeManager: entering StartedState
+11-09 07:51:59.737  1919  2029 D WifiScanOnlyModeManager: Wifi is ready to use for scanning
+11-09 07:52:00.190  1919  2029 D WifiActiveModeWarden: Switching from ScanOnlyModeActiveState to ClientMode
+11-09 07:52:00.190  1919  2029 D WifiScanOnlyModeManager:  currentstate: StartedState
+11-09 07:52:00.204  1919  2029 D WifiScanOnlyModeManager: expected stop, not triggering callbacks: state = 1
+11-09 07:52:00.668  2194  2194 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+11-09 07:52:00.682  2200  2200 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+11-09 07:52:02.139  2451  2451 I bootstat: Canonical boot reason: reboot,factory_reset
+11-09 07:52:04.386  2757  2757 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-09 07:52:04.399  2757  2757 I AndroidRuntime: Using default boot image
+11-09 07:52:04.399  2757  2757 I AndroidRuntime: Leaving lock profiling enabled
+11-09 07:52:04.583  2757  2757 D AndroidRuntime: Calling main entry com.android.commands.input.Input
+11-09 07:52:05.047  2757  2757 D AndroidRuntime: Shutting down VM
+11-09 07:52:06.475  1919  1961 I PackageManager.DexOptimizer: Running dexopt (dexoptNeeded=1) on: /data/app/my.photobooth.booth-LIreQCD5TJjW-Y13NjqaKg==/base.apk pkg=my.photobooth.booth isa=x86_64 dexoptFlags=boot_complete,profile_guided,public,enable_hidden_api_checks targetFilter=speed-profile oatDir=/data/app/my.photobooth.booth-LIreQCD5TJjW-Y13NjqaKg==/oat classLoaderContext=PCL[]
+11-09 07:52:06.476  1754  1995 V installd: DexInv: --- BEGIN '/data/app/my.photobooth.booth-LIreQCD5TJjW-Y13NjqaKg==/base.apk' ---
+11-09 07:52:06.899  3018  3018 I dex2oat : /apex/com.android.runtime/bin/dex2oat --input-vdex-fd=-1 --output-vdex-fd=10 --resolve-startup-const-strings=true --max-image-block-size=524288 --compiler-filter=speed-profile --classpath-dir=/data/app/my.photobooth.booth-LIreQCD5TJjW-Y13NjqaKg== --class-loader-context=PCL[] --generate-mini-debug-info --compact-dex-level=none --compilation-reason=install
+11-09 07:52:07.789  3018  3018 W dex2oat : Compilation of java.util.Map my.photobooth.booth.MainActivity.-$$Nest$smheaders() took 124.672ms
+11-09 07:52:07.823  3018  3049 W dex2oat : Compilation of void my.photobooth.booth.MainActivity$Bridge.$r8$lambda$ie1qXClKOaZRGS9Ha7ujaZ-QQVY(my.photobooth.booth.MainActivity$Bridge, int, java.lang.String) took 169.214ms
+11-09 07:52:07.942  3143  3169 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-09 07:52:07.988  3143  3172 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-09 07:52:08.019  3143  3167 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-09 07:52:08.177  3143  3172 W MessagingApp: canonicalizeMccMnc: invalid mccmnc:null ,null
+11-09 07:52:08.594  1754  1995 V installd: DexInv: --- END '/data/app/my.photobooth.booth-LIreQCD5TJjW-Y13NjqaKg==/base.apk' (success) ---
+11-09 07:52:08.965  1919  2170 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=my.photobooth.booth/.MainActivity} from uid 2000
+11-09 07:52:09.000  1919  1949 I ActivityManager: Start proc 3305:my.photobooth.booth/u0a116 for activity {my.photobooth.booth/my.photobooth.booth.MainActivity}
+11-09 07:52:09.054  3305  3305 W hotobooth.boot: Unexpected CPU variant for X86 using defaults: x86_64
+11-09 07:52:09.133  3305  3305 I hotobooth.boot: The ClassLoaderContext is a special shared library.
+11-09 07:52:09.209  3305  3305 E chromium: [ERROR:filesystem_posix.cc(89)] stat /data/user/0/my.photobooth.booth/cache/WebView/Crashpad: No such file or directory (2)
+11-09 07:52:09.209  3305  3305 E chromium: [ERROR:filesystem_posix.cc(62)] mkdir /data/user/0/my.photobooth.booth/cache/WebView/Crashpad: No such file or directory (2)
+11-09 07:52:09.235  1919  1949 I ActivityManager: Start proc 3366:com.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0/u0ai9000 for  {my.photobooth.booth/org.chromium.content.app.SandboxedProcessService0}
+11-09 07:52:09.120  3305  3305 W RenderThread: type=1400 audit(0.0:22): avc: denied { write } for name="property_service" dev="tmpfs" ino=6844 scontext=u:r:untrusted_app:s0:c116,c256,c512,c768 tcontext=u:object_r:property_socket:s0 tclass=sock_file permissive=0 app=my.photobooth.booth
+11-09 07:52:09.626  1919  1947 I ActivityTaskManager: Displayed my.photobooth.booth/.MainActivity: +639ms
+11-09 07:52:09.815  3305  3410 I chatty  : uid=10116(my.photobooth.booth) Chrome_InProcGp identical 2 lines
+11-09 07:52:10.506  1919  3259 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.packageinstaller/.PackageInstalledReceiver
+11-09 07:52:10.507  1919  1948 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.gallery3d/.app.PackagesMonitor
+11-09 07:52:10.507  1919  1948 W BroadcastQueue: Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:my.photobooth.booth flg=0x4000010 (has extras) } to com.android.musicfx/.Compatibility$Receiver
