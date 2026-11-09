@@ -2688,6 +2688,8 @@ function renderPaper() {
   if (document.activeElement !== $('#paperEdit')) $('#paperEdit').value = left;
   if (document.activeElement !== $('#capEdit')) $('#capEdit').value = cap;
 }
+// Test prints use paper too: take them off the paper count
+async function countPrinted(n) { try { await loadStation(); await saveStation({ printed_since_reset: (STATION.printed_since_reset || 0) + n }); } catch (e) { } }
 async function saveStation(upd) { check(await sb.from('station_settings').update(upd).eq('owner', USER.id)); await loadStation(); renderPaper(); }
 $('#paperSave').onclick = async () => {
   const cap = Math.max(1, Math.round(+$('#capEdit').value || STATION.media_capacity || 700)), left = Math.max(0, Math.min(cap, Math.round(+$('#paperEdit').value || 0)));
@@ -2719,7 +2721,7 @@ $('#queue').onclick = async e => {
 async function testPrint(strip) {
   const d = strip ? BUILTIN[0] : BUILTIN[1];
   const c = await compose({ ...d, output_long: 1800 }, samples(d.areas.length), 'none', { name: 'TEST PRINT', date: new Date().toLocaleString('en-GB'), qrText: S.printQr.on ? SITE : '' });
-  try { await printImage(printCanvas(d, c).toDataURL('image/jpeg', .95), 1); } catch (e) { toast(e.message, 4000); }
+  try { await printImage(printCanvas(d, c).toDataURL('image/jpeg', .95), 1); await countPrinted(1); } catch (e) { toast(e.message, 4000); }
 }
 $('#test46').onclick = () => testPrint(false); $('#testStrip').onclick = () => testPrint(true);
 // Print settings for this laptop: paper orientation in the DNP driver, fine position and size.
@@ -2755,7 +2757,7 @@ $('#pcEdge').onclick = async () => {
   x.font = '30px system-ui';
   ['Each edge: red = 0–1 mm, orange = 1–2, yellow = 2–3,', 'green = 3–4, blue = 4–5, purple = 5–6 mm.', '', 'White at an edge = the printer did not print there.', 'A colour missing = it was cut off.', '', 'Take a photo of this print', 'and look at each edge closely.'].forEach((t, i) => x.fillText(t, W / 2, H / 2 - 60 + i * 44));
   x.strokeStyle = '#fff'; x.lineWidth = 3; x.setLineDash([18, 12]); x.beginPath(); x.moveTo(W / 2, 220); x.lineTo(W / 2, H / 2 - 210); x.moveTo(W / 2, H / 2 + 330); x.lineTo(W / 2, H - 220); x.stroke();
-  try { await printImage(c.toDataURL('image/png'), 1, 'Edge check', true); } catch (e) { toast(e.message, 4000); }
+  try { await printImage(c.toDataURL('image/png'), 1, 'Edge check', true); await countPrinted(1); } catch (e) { toast(e.message, 4000); }
 };
 $('#pcTest').onclick = async () => {
   $('#pcSave').click();
@@ -2766,7 +2768,7 @@ $('#pcTest').onclick = async () => {
   x.setLineDash([24, 16]); x.strokeStyle = '#d00'; x.beginPath(); x.moveTo(600, 0); x.lineTo(600, 1800); x.stroke(); x.setLineDash([]);
   x.fillStyle = '#000'; x.textAlign = 'center'; x.font = 'bold 54px system-ui'; x.fillText('▲ TOP ▲', 300, 120); x.fillText('▲ TOP ▲', 900, 120);
   x.font = '34px system-ui'; ['Border 2 mm from', 'every edge', '', 'Strips are cut', 'on the red line'].forEach((t, i) => { x.fillText(t, 300, 820 + i * 48); x.fillText(t, 900, 820 + i * 48); });
-  try { await printImage(c.toDataURL('image/jpeg', .95), 1); } catch (e) { toast(e.message, 4000); }
+  try { await printImage(c.toDataURL('image/jpeg', .95), 1); await countPrinted(1); } catch (e) { toast(e.message, 4000); }
 };
 // Two copies of the same strip side by side (or one above the other on a turned page)? Then each is laid out on its own.
 function twinParts(img, W, H) {
