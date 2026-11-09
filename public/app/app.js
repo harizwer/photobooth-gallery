@@ -58,7 +58,7 @@ const STUDIO_DEFAULT = {
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   stickers: { on: true, packs: ['props', 'love', 'party', 'raya', 'fun'], custom: [], texts: [{ t: 'Selamat Pengantin Baru', font: 'Great Vibes', color: '#ffffff' }] },
   guestbook: { on: false, prompt: 'Write a message for the couple ✍️', auto: false, paper: 'cream', paperSrc: '', screen: '#141416', screenSrc: '', pdfBg: true },
-  beautyStep: true, lookStart: { smooth: 30, bright: 30 },
+  beautyStep: true, lookStart: { smooth: 0, bright: 0 },
   aiBg: { on: true, builtin: ['white', 'grey', 'gold', 'rose', 'night'], blur: true, list: [] },
   voice: { on: false, lang: 'ms-MY', volume: 1, lines: {}, clips: {} },
   music: { on: false, volume: .35, tracks: [], repeat: 'one' },
