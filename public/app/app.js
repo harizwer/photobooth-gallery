@@ -2797,7 +2797,10 @@ async function printImage(src, copies, label) {
   for (let i = 0; i < Math.max(1, copies); i++) { const pg = document.createElement('div'), im = new Image(); pg.className = 'pg'; im.src = url; im.alt = ''; pg.appendChild(im); area.appendChild(pg); }
   await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
   await untilShown(label);   // a hidden page cannot print: wait until someone opens it (the alert says so)
-  await wsleep(150); if (run !== printRun) return; window.print(); await wsleep(400); if (run === printRun) area.innerHTML = '';
+  await wsleep(150); if (run !== printRun) return;
+  const t0 = performance.now(); window.print(); const auto = performance.now() - t0 < 1500;
+  if (store.get('autoPrint', null) !== auto) { store.set('autoPrint', auto); autoPrintUi(); }
+  await wsleep(400); if (run === printRun) area.innerHTML = '';
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 async function runPrinter() {
@@ -2842,6 +2845,35 @@ function printAlertUi() {
   b.textContent = p === 'granted' ? '🔔 Print alerts on' : '🔔 Turn on print alerts'; b.disabled = p === 'granted';
 }
 $('#prnAlerts').onclick = askPrintAlerts;
+// One-click launcher for the printer laptop: opens this page in its own Chrome/Edge window that prints without the
+// print window (--kiosk-printing) and is never slowed down when it is covered or in the background.
+$('#apDownload').onclick = () => {
+  const url = SITE + 'app/', L = [
+    '@echo off',
+    'rem Photobooth printer: opens the Printer page in its own window. Prints go straight to the default printer (the DNP).',
+    'set "URL=' + url + '"',
+    'set "PROFILE=%LOCALAPPDATA%\\PhotoboothPrinter"',
+    'set "B="',
+    'for %%P in ("%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe" "%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe" "%LOCALAPPDATA%\\Google\\Chrome\\Application\\chrome.exe" "%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe" "%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe") do if not defined B if exist %%P set "B=%%~P"',
+    'if not defined B (',
+    '  echo Chrome or Edge was not found on this laptop. Install Google Chrome, then run this again.',
+    '  pause',
+    '  exit /b 1',
+    ')',
+    'start "" "%B%" --kiosk-printing --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-features=CalculateNativeWinOcclusion --app="%URL%"',
+    '',
+  ];
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([L.join('\r\n')], { type: 'application/x-bat' })); a.download = 'Photobooth Printer.bat';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('Downloaded. Double-click “Photobooth Printer.bat” on the laptop (if Windows warns, choose More info → Run anyway).', 8000);
+};
+// Did the last print open the print window? (In printing mode print() returns at once; with the window it waits for a click.)
+function autoPrintUi() {
+  const st = store.get('autoPrint', null), el = $('#apState'); if (!el) return;
+  el.className = 'chip' + (st === true ? '' : ' mute');
+  el.textContent = st === true ? '✓ Working on this laptop' : st === false ? 'Print window still shows' : 'Not checked yet';
+}
+autoPrintUi();
 
 /* ---- Studio settings ---- */
 let pendingBg = null;
