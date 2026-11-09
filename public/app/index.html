@@ -220,6 +220,36 @@
         </div>
         <div class="lbl" style="font-size:12px">The tablet's microphone records the sound (the Canon has no microphone over USB). Press Save at the top to send it to the tablet.</div>
       </div>
+      <div class="card" id="cdCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+        <div style="flex:2 1 400px;min-width:0;display:flex;flex-direction:column;gap:12px">
+          <b style="font-size:15px">⏱ Countdown screen</b>
+          <div class="lbl" style="margin-top:-6px">What guests see and hear while the booth counts down to each photo.</div>
+          <div><div class="lbl" style="margin-bottom:6px">Frame over the camera</div><div class="row" id="cdFrames" style="gap:6px;flex-wrap:wrap"></div>
+            <div class="row" style="gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center"><label class="btn sm" for="cdFrameFile" style="cursor:pointer">Upload frame (PNG)</label><input type="file" id="cdFrameFile" accept="image/png,image/webp" hidden><span class="lbl" style="font-size:12px">Landscape, see-through in the middle, e.g. 1920 × 1080</span>
+            <label class="row lbl" for="cdPrevBorder" style="gap:6px;margin-left:auto">Border of the photo between shots <input type="color" id="cdPrevBorder" style="width:44px;height:30px;border:0;background:none;padding:0"></label></div></div>
+          <div id="cdSounds"><div class="lbl" style="margin-bottom:6px">Sounds</div>
+            <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <label class="field" style="width:150px">Each second<select class="in" id="cdTick"></select></label><button class="btn sm" data-cdup="tick" style="height:42px">⬆ Own sound</button>
+              <label class="field" style="width:150px">Last second<select class="in" id="cdLast"></select></label><button class="btn sm" data-cdup="last" style="height:42px">⬆ Own sound</button>
+              <label class="field" style="width:150px">Taking the photo<select class="in" id="cdShutter"></select></label><button class="btn sm" data-cdup="shutter" style="height:42px">⬆ Own sound</button>
+            </div><input type="file" id="cdSoundFile" accept="audio/*,video/*" hidden>
+            <label class="field" for="cdVol" style="margin-top:8px">Sound volume<input type="range" id="cdVol" min="0" max="100" style="accent-color:var(--accent)"></label></div>
+          <div><div class="lbl" style="margin-bottom:6px">Numbers (3, 2, 1)</div>
+            <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <label class="field" style="width:180px">Font<select class="in" id="cdFont"></select></label>
+              <label class="field" style="width:80px">Colour<input type="color" id="cdColor" style="width:100%;height:42px;border:0;background:none;padding:0"></label>
+              <label class="field" style="width:120px">Border<select class="in" id="cdStroke"><option value="0">None</option><option value="3">Thin</option><option value="6">Medium</option><option value="10">Thick</option></select></label>
+              <label class="field" style="width:90px">Border colour<input type="color" id="cdStrokeColor" style="width:100%;height:42px;border:0;background:none;padding:0"></label>
+              <label class="field" style="flex:1;min-width:140px">Size <span class="mono" id="cdSizeV">100%</span><input type="range" id="cdSize" min="50" max="150" style="accent-color:var(--accent)"></label>
+            </div>
+            <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center"><span class="lbl">Movement</span><span class="row" id="cdAnims" style="gap:6px;flex-wrap:wrap"></span></div></div>
+          <div class="lbl">Press Save at the top to send it to the tablet.</div>
+        </div>
+        <div style="flex:1 1 280px;display:flex;flex-direction:column;gap:10px">
+          <div class="cdprev"><div id="cdPrevFrame" class="cdframe"></div><div id="cdPrevNum">3</div><div class="flash" id="cdPrevFlash"></div></div>
+          <button class="btn sm" id="cdPlay">▶ Play 3 · 2 · 1 with sound</button>
+        </div>
+      </div>
       <div class="card" id="smileCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
         <div style="flex:2 1 380px;min-width:0;display:flex;flex-direction:column;gap:12px">
           <b style="font-size:15px">Smile screen</b>
@@ -239,7 +269,6 @@
           </div>
           <div><div class="lbl" style="margin-bottom:6px">Emoji on both sides</div><div class="row" id="smEmoji" style="flex-wrap:wrap;gap:6px"></div></div>
           <div><div class="lbl" style="margin-bottom:6px">Pattern around the word</div><div class="row" id="smDeco" style="flex-wrap:wrap;gap:6px"></div></div>
-          <label class="tog" style="justify-content:flex-start;gap:10px">Use the same font, colour and border for the countdown numbers (3, 2, 1)<input type="checkbox" id="smNumbers"></label>
           <div class="lbl">Press Save at the top to send it to the tablet.</div>
         </div>
         <div style="flex:1 1 280px;display:flex;flex-direction:column;gap:10px">
@@ -489,7 +518,7 @@
       <button class="btn rbtn" id="pickBack" style="padding:0 30px">← Back</button>
     </div>
   </div>
-  <div class="bs" id="b-shoot"><img id="shotPrev" alt="The photo just taken" hidden><div class="shotinfo" id="shotInfo"></div><div id="b-count"></div><button class="btn rbtn recstop" id="recStop" hidden>■ Stop</button><div class="flash" id="flash"></div><button class="btn ghost" id="cancelShoot" style="position:absolute;top:16px;left:16px">✕ Cancel</button></div>
+  <div class="bs" id="b-shoot"><div id="cdFrame" class="cdframe"></div><img id="shotPrev" alt="The photo just taken" hidden><div class="shotinfo" id="shotInfo"></div><div id="b-count"></div><button class="btn rbtn recstop" id="recStop" hidden>■ Stop</button><div class="flash" id="flash"></div><button class="btn ghost" id="cancelShoot" style="position:absolute;top:16px;left:16px">✕ Cancel</button></div>
   <div class="bs" id="b-review">
     <div id="reviewMedia"></div>
     <div class="rp">

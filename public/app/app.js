@@ -61,6 +61,7 @@ const STUDIO_DEFAULT = {
   voice: { on: false, lang: 'ms-MY', volume: 1, lines: {}, clips: {} },
   music: { on: false, volume: .35, tracks: [], repeat: 'one' },
   videoBook: { on: false, sec: 20, prompt: 'Say something to the couple! 🎥', montage: { format: 'portrait', bg: 'leather', bgSrc: '', title: 'Video Guestbook', names: '', font: 'Great Vibes', color: '#ffffff' } },
+  countdown: { frame: 'none', frameSrc: '', prevBorder: '#ffffff', tick: 'beep', tickSrc: '', last: 'beep', lastSrc: '', shutter: 'click', shutterSrc: '', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', size: 100, anim: 'pop', volume: 1 },
   smile: { text: 'Smile!', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', emoji: '', deco: 'none', size: 100, numbers: false },
   printScreen: { on: true, kind: 'theme', theme: 'knit', src: '', dim: 25, text: 'Printing your photo…', sec: 12 },
   modes: { photo: true, gif: true, boom: true, video: false },
@@ -1005,7 +1006,7 @@ function startFlow(mode) {
 // onAt runs when `at` seconds are left (used to start recording the boomerang); minSecs makes the countdown at least that long.
 async function countdown(me, label, onAt, at = 1, minSecs = 0) {
   const el = $('#b-count'); $('#shotInfo').textContent = label;
-  for (let n = Math.max(1, S.capture.countdown || 3, minSecs); n > 0; n--) { if (B.session !== me) return false; showCount(el, n); beep(n === 1 ? 1320 : 880); if (n === at && onAt) onAt(); await sleep(1000); }
+  for (let n = Math.max(1, S.capture.countdown || 3, minSecs); n > 0; n--) { if (B.session !== me) return false; showCount(el, n); cdSound(n === 1 ? 'last' : 'tick'); if (n === at && onAt) onAt(); await sleep(1000); }
   if (B.session !== me) return false;
   showSmile(el); say('smile'); await sleep(250); return true;
 }
@@ -1021,8 +1022,7 @@ function smileStyle(el, m, sizeCss) {
   if (sizeCss) el.style.fontSize = sizeCss;
 }
 function showCount(el, n) {
-  el.textContent = n; el.removeAttribute('style');
-  if (S.smile && S.smile.numbers) smileStyle(el, { ...S.smile, stroke: S.smile.stroke });
+  el.textContent = n; styleCount(el);
 }
 // root: where to draw (the booth countdown or the admin preview); vmin: how big the screen is, in px of 1vh/1vw
 function showSmile(el, m = S.smile || {}, preview) {
@@ -1042,11 +1042,61 @@ function showSmile(el, m = S.smile || {}, preview) {
     el.appendChild(d);
   }
 }
-function flash() { shutter(); const f = $('#flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }
+/* ---------- Countdown screen: frame over the camera, sounds and the look of the numbers (Capture & media) ---------- */
+const CD_FRAMES = { none: 'None', white: 'White', gold: 'Gold', film: 'Film strip', glow: 'Rounded glow', image: 'Your PNG' };
+const CD_SOUNDS = { beep: 'Beep', soft: 'Soft tick', bell: 'Bell', pop: 'Pop', drum: 'Drum', none: 'None' };
+const CD_SHUTTERS = { click: 'Camera click', soft: 'Soft click', retro: 'Retro', none: 'None' };
+const CD_ANIMS = { pop: 'Pop', zoom: 'Zoom', fade: 'Fade', spin: 'Spin', none: 'None' };
+const cdOpt = () => ({ frame: 'none', frameSrc: '', prevBorder: '#ffffff', tick: 'beep', tickSrc: '', last: 'beep', lastSrc: '', shutter: 'click', shutterSrc: '', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', size: 100, anim: 'pop', volume: 1, ...(S.countdown || {}) });
+// Painted sounds (no files needed). last = the final second, a little higher.
+function cdTone(kind, last, vol) {
+  try {
+    const a = ac(), t = a.currentTime, out = a.createGain(); out.gain.value = vol; out.connect(a.destination);
+    const osc = (type, f, d, g0, f1) => { const o = a.createOscillator(), g = a.createGain(); o.type = type; o.frequency.setValueAtTime(f, t); if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + d); g.gain.setValueAtTime(g0, t); g.gain.exponentialRampToValueAtTime(.001, t + d); o.connect(g).connect(out); o.start(t); o.stop(t + d); };
+    const noise = (d, g0, hp) => { const n = Math.round(a.sampleRate * d), b = a.createBuffer(1, n, a.sampleRate), x = b.getChannelData(0); for (let i = 0; i < n; i++) x[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); const s = a.createBufferSource(), g = a.createGain(), f = a.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp; g.gain.value = g0; s.buffer = b; s.connect(f).connect(g).connect(out); s.start(t); };
+    const k = last ? 1.5 : 1;
+    if (kind === 'beep') osc('sine', 880 * k, .12, .25);
+    else if (kind === 'soft') osc('sine', 620 * k, .07, .18);
+    else if (kind === 'bell') { osc('sine', 1046 * k, .9, .22); osc('sine', 2093 * k, .5, .08); }
+    else if (kind === 'pop') osc('triangle', 900 * k, .09, .35, 180);
+    else if (kind === 'drum') { osc('sine', 140 * (last ? 1.3 : 1), .25, .6, 50); noise(.08, .25, 1500); }
+    else if (kind === 'click') noise(.18, .5, 200);
+    else if (kind === 'softclick') noise(.06, .3, 2500);
+    else if (kind === 'retro') { noise(.05, .45, 800); setTimeout(() => cdTone('softclick', false, vol), 110); }
+  } catch (e) { }
+}
+const cdClips = {};
+function cdPlay(src, vol) {   // the studio's own sound file
+  try { let a = cdClips[src]; if (!a) { a = cdClips[src] = new Audio(src); a.preload = 'auto'; } const c = a.cloneNode(); c.volume = Math.min(1, vol); c.play().catch(() => {}); } catch (e) { }
+}
+function cdSound(which) {   // 'tick' | 'last' | 'shutter'
+  const o = cdOpt(), vol = o.volume ?? 1, kind = o[which], src = o[which + 'Src'];
+  if (kind === 'none') return;
+  if (kind === 'file' && src) return cdPlay(src, vol);
+  if (which === 'shutter') return cdTone(kind === 'soft' ? 'softclick' : kind, false, vol);
+  cdTone(kind, which === 'last', vol);
+}
+// Frame over the camera picture while counting down (and the border of the photo shown between shots)
+function paintCdFrame(el, o = cdOpt()) {
+  el.className = 'cdframe cdf-' + (o.frame || 'none');
+  el.innerHTML = o.frame === 'image' && o.frameSrc ? `<img src="${esc(o.frameSrc)}" alt="">` : '';
+}
+// The countdown number with its font, colour, outline, size and movement
+function styleCount(el, o = cdOpt(), preview) {
+  el.removeAttribute('style'); el.classList.remove('cda-pop', 'cda-zoom', 'cda-fade', 'cda-spin');
+  el.style.fontFamily = `"${o.font || 'Geist'}", Geist, system-ui, sans-serif`;
+  el.style.color = o.color || '#fff';
+  el.style.webkitTextStroke = o.stroke ? `${o.stroke / 100}em ${o.strokeColor || '#000'}` : '';
+  el.style.paintOrder = 'stroke fill';
+  const k = (o.size || 100) / 100; el.style.fontSize = preview ? `${Math.round(110 * k)}px` : `min(${Math.round(36 * k)}vw, ${Math.round(36 * k)}vh)`;
+  if (o.anim && o.anim !== 'none') { void el.offsetWidth; el.classList.add('cda-' + o.anim); }
+}
+function flash() { cdSound('shutter'); const f = $('#flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }
 async function startSession(design) {
   clearInterval(B.reviewT); clearInterval(B.doneT);
   const me = B.session = { mode: B.mode, design, shots: [], filter: 'none', copies: 1, saved: null, printed: false, jobId: null };
   if (dslr && !dslrHealthy()) { await dslrFallback(); await sleep(800); }
+  paintCdFrame($('#cdFrame')); $('#shotPrev').style.borderColor = cdOpt().prevBorder || '#fff';
   bscreen('b-shoot');
   try {
     if (me.mode === 'photo') {
@@ -2077,7 +2127,7 @@ const MODES = [
   { key: 'boom', name: 'Boomerang', spec: 'High resolution', note: 'Video · plays forward and back' },
   { key: 'video', name: 'Video', spec: 'High resolution', note: 'Video with the length you choose' },
 ];
-function renderMedia() { renderModes(); renderCaptureForm(); renderSmileSettings(); renderVideoBookSettings(); }
+function renderMedia() { renderModes(); renderCaptureForm(); renderSmileSettings(); renderVideoBookSettings(); renderCountdownSettings(); }
 function renderModes() {
   $('#modes').innerHTML = MODES.map(m => { const on = !!S.modes[m.key]; return `<button class="card mode ${on ? 'on' : ''}" data-m="${m.key}" aria-pressed="${on}"><div class="row" style="justify-content:space-between;width:100%"><span class="row" style="font-weight:600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m.key][1]}</svg>${m.name}</span><span class="chip ${on ? '' : 'mute'}">${on ? 'On' : 'Off'}</span></div><div class="mono" style="font-size:22px;font-weight:600">${m.spec}</div><div class="lbl">${m.note}</div></button>`; }).join('');
 }
@@ -2096,7 +2146,7 @@ function renderSmileSettings() {
   const m = S.smile;
   $('#smText').value = m.text || ''; $('#smFont').value = m.font || 'Geist'; $('#smColor').value = m.color || '#ffffff';
   $('#smStroke').value = String(m.stroke || 0); $('#smStrokeColor').value = m.strokeColor || '#000000'; $('#smStrokeColor').disabled = !m.stroke;
-  $('#smSize').value = m.size || 100; $('#smSizeV').textContent = (m.size || 100) + '%'; $('#smNumbers').checked = !!m.numbers;
+  $('#smSize').value = m.size || 100; $('#smSizeV').textContent = (m.size || 100) + '%';
   $$('#smColors [data-c]').forEach(b => b.classList.toggle('on', b.dataset.c.toLowerCase() === (m.color || '').toLowerCase()));
   $('#smEmoji').innerHTML = SMILE_EMOJI.map(e => `<button class="pill ${e === (m.emoji || '') ? 'on' : ''}" data-e="${e}">${e || 'None'}</button>`).join('');
   $('#smDeco').innerHTML = Object.entries(SMILE_DECO).map(([k, [n, em]]) => `<button class="pill ${k === (m.deco || 'none') ? 'on' : ''}" data-d="${k}">${em[0] ? em[0] + ' ' : ''}${n}</button>`).join('');
@@ -2111,10 +2161,61 @@ $('#smColors').addEventListener('click', e => { const b = e.target.closest('[dat
 $('#smStroke').onchange = () => { S.smile.stroke = +$('#smStroke').value; renderSmileSettings(); };
 $('#smStrokeColor').oninput = () => { S.smile.strokeColor = $('#smStrokeColor').value; smilePreview(); };
 $('#smSize').oninput = () => { S.smile.size = +$('#smSize').value; $('#smSizeV').textContent = S.smile.size + '%'; smilePreview(); };
-$('#smNumbers').onchange = () => { S.smile.numbers = $('#smNumbers').checked; };
 $('#smEmoji').addEventListener('click', e => { const b = e.target.closest('[data-e]'); if (!b) return; S.smile.emoji = b.dataset.e; renderSmileSettings(); });
 $('#smDeco').addEventListener('click', e => { const b = e.target.closest('[data-d]'); if (!b) return; S.smile.deco = b.dataset.d; renderSmileSettings(); });
 $('#smPlay').onclick = smilePreview;
+/* ---- Admin: Countdown screen card ---- */
+function renderCountdownSettings() {
+  const o = cdOpt();
+  $('#cdFrames').innerHTML = Object.entries(CD_FRAMES).map(([k, n]) => `<button class="pill ${o.frame === k ? 'on' : ''}" data-cdf="${k}">${n}</button>`).join('');
+  $('#cdPrevBorder').value = o.prevBorder || '#ffffff';
+  const soundSel = (id, list, key) => { $(id).innerHTML = Object.entries(list).map(([k, n]) => `<option value="${k}">${n}</option>`).join('') + (o[key + 'Src'] ? '<option value="file">Your sound</option>' : ''); $(id).value = o[key] === 'file' && !o[key + 'Src'] ? Object.keys(list)[0] : o[key]; };
+  soundSel('#cdTick', CD_SOUNDS, 'tick'); soundSel('#cdLast', CD_SOUNDS, 'last'); soundSel('#cdShutter', CD_SHUTTERS, 'shutter');
+  if (!$('#cdFont').options.length) $('#cdFont').innerHTML = SMILE_FONTS.map(f => `<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('');
+  $('#cdFont').value = o.font; $('#cdColor').value = o.color; $('#cdStroke').value = String(o.stroke || 0); $('#cdStrokeColor').value = o.strokeColor; $('#cdStrokeColor').disabled = !o.stroke;
+  $('#cdSize').value = o.size; $('#cdSizeV').textContent = o.size + '%'; $('#cdVol').value = Math.round((o.volume ?? 1) * 100);
+  $('#cdAnims').innerHTML = Object.entries(CD_ANIMS).map(([k, n]) => `<button class="pill ${o.anim === k ? 'on' : ''}" data-cda="${k}">${n}</button>`).join('');
+  paintCdFrame($('#cdPrevFrame'), o); styleCount($('#cdPrevNum'), o, true); $('#cdPrevNum').textContent = '3';
+}
+const cdSet = (k, v) => { S.countdown = { ...cdOpt(), [k]: v }; renderCountdownSettings(); };
+$('#cdFrames').addEventListener('click', e => { const b = e.target.closest('[data-cdf]'); if (!b) return; if (b.dataset.cdf === 'image' && !cdOpt().frameSrc) return $('#cdFrameFile').click(); cdSet('frame', b.dataset.cdf); });
+$('#cdAnims').addEventListener('click', e => { const b = e.target.closest('[data-cda]'); if (b) cdSet('anim', b.dataset.cda); });
+$('#cdPrevBorder').oninput = () => { S.countdown = { ...cdOpt(), prevBorder: $('#cdPrevBorder').value }; };
+['tick', 'last', 'shutter'].forEach(k => {
+  const id = '#cd' + k[0].toUpperCase() + k.slice(1);
+  $(id).onchange = () => { cdSet(k, $(id).value); cdSound(k); };
+});
+$('#cdFont').onchange = () => cdSet('font', $('#cdFont').value);
+$('#cdColor').oninput = () => { S.countdown = { ...cdOpt(), color: $('#cdColor').value }; styleCount($('#cdPrevNum'), cdOpt(), true); };
+$('#cdStroke').onchange = () => cdSet('stroke', +$('#cdStroke').value);
+$('#cdStrokeColor').oninput = () => { S.countdown = { ...cdOpt(), strokeColor: $('#cdStrokeColor').value }; styleCount($('#cdPrevNum'), cdOpt(), true); };
+$('#cdSize').oninput = () => { S.countdown = { ...cdOpt(), size: +$('#cdSize').value }; $('#cdSizeV').textContent = $('#cdSize').value + '%'; styleCount($('#cdPrevNum'), cdOpt(), true); };
+$('#cdVol').oninput = () => { S.countdown = { ...cdOpt(), volume: +$('#cdVol').value / 100 }; };
+$('#cdFrameFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (!/^image\/(png|webp)$/.test(f.type)) return toast('Use a PNG with a see-through middle.');
+  try { const u = await gbUpload(f, 'cdframe'); if (u) { S.countdown = { ...cdOpt(), frame: 'image', frameSrc: u }; renderCountdownSettings(); toast('Uploaded. Press Save to send to the tablet.'); } } catch (err) { toast(err.message, 4000); }
+});
+// "Use my own sound": any sound or video file becomes MP3
+let cdUpKey = '';
+$('#cdSounds').addEventListener('click', e => { const b = e.target.closest('[data-cdup]'); if (b) { cdUpKey = b.dataset.cdup; $('#cdSoundFile').click(); } });
+$('#cdSoundFile').addEventListener('change', async e => {
+  const f = e.target.files[0], k = cdUpKey; e.target.value = ''; if (!f || !k) return;
+  try {
+    toast('Adding the sound…', 3000);
+    const mp3 = await toMp3(f, 5), path = `u-${USER.id}/cd-${k}-${Date.now().toString(36)}.mp3`;
+    await upload(path, mp3, 'audio/mpeg'); S.countdown = { ...cdOpt(), [k]: 'file', [k + 'Src']: fileUrl(path) }; renderCountdownSettings(); cdSound(k);
+    toast('Sound added. Press Save to send it to the tablet.');
+  } catch (err) { toast(err.message, 5000); }
+});
+// Preview: 3, 2, 1, Smile with the chosen look and sounds
+$('#cdPlay').onclick = async () => {
+  ac(); const num = $('#cdPrevNum'), o = cdOpt();
+  for (const n of [3, 2, 1]) { num.textContent = n; styleCount(num, o, true); cdSound(n === 1 ? 'last' : 'tick'); await sleep(1000); }
+  num.removeAttribute('style'); showSmile(num, S.smile, true); cdSound('shutter');
+  const fl = $('#cdPrevFlash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
+  await sleep(1200); num.textContent = '3'; styleCount(num, cdOpt(), true);
+};
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
   const liveBefore = S.capture.canonLive !== false;

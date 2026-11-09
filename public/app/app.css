@@ -367,4 +367,24 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .abitem img{width:72px;height:48px;object-fit:cover;border-radius:6px}
 .abitem .in{flex:1;min-width:100px;height:34px}
 .voline .in{height:34px}
+/* Countdown screen */
+.cdframe{position:absolute;inset:0;pointer-events:none;z-index:1}
+.cdframe img{width:100%;height:100%;object-fit:fill;display:block}
+.cdf-white{box-shadow:inset 0 0 0 clamp(8px,1.6vmin,18px) #fff}
+.cdf-gold{border:clamp(8px,1.6vmin,18px) solid;border-image:linear-gradient(135deg,#f9e29c,#b8860b,#fff3c4,#a0700a,#f9e29c) 1}
+.cdf-film{background:repeating-linear-gradient(90deg,#111 0 18px,transparent 18px 36px) top/100% 22px no-repeat,repeating-linear-gradient(90deg,#111 0 18px,transparent 18px 36px) bottom/100% 22px no-repeat;box-shadow:inset 0 0 0 30px rgba(0,0,0,.85)}
+.cdf-glow{border-radius:28px;box-shadow:inset 0 0 0 10px rgba(255,255,255,.9),inset 0 0 60px 20px rgba(255,190,220,.45);margin:2vmin}
+#b-count{z-index:2}
+.cda-pop{animation:cdpop .5s cubic-bezier(.2,1.6,.4,1)}
+.cda-zoom{animation:cdzoom .9s ease-out}
+.cda-fade{animation:cdfade .8s ease-out}
+.cda-spin{animation:cdspin .6s cubic-bezier(.2,1.2,.4,1)}
+@keyframes cdpop{from{transform:scale(.2);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes cdzoom{from{transform:scale(2.2);opacity:0}40%{opacity:1}to{transform:scale(1)}}
+@keyframes cdfade{from{opacity:0}to{opacity:1}}
+@keyframes cdspin{from{transform:rotate(-200deg) scale(.3);opacity:0}to{transform:none;opacity:1}}
+.cdprev{position:relative;aspect-ratio:16/10;border-radius:14px;overflow:hidden;border:1px solid var(--line2);background:linear-gradient(160deg,#4b5563,#1f2937);display:flex;align-items:center;justify-content:center}
+.cdprev .cdframe{z-index:1}
+#cdPrevNum{position:relative;z-index:2;font-weight:800;text-shadow:0 0 30px rgba(0,0,0,.5);line-height:1}
+.cdprev .flash{position:absolute;inset:0;z-index:3}
 .gbhint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b9b2a6;font-size:22px;pointer-events:none}
