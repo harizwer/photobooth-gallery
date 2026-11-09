@@ -2724,11 +2724,18 @@ async function testPrint(strip) {
 $('#test46').onclick = () => testPrint(false); $('#testStrip').onclick = () => testPrint(true);
 // Print settings for this laptop: paper orientation in the DNP driver, fine position and size.
 // bleed: the photo is printed slightly bigger than the paper (edges trimmed) so there is never a white line at an edge
-const printCfg = () => ({ orient: 'portrait', dx: 0, dy: 0, scale: 100, bleed: 3, ...store.get('printCfg', {}) });
-function renderPrintCfg() { const c = printCfg(); $('#pcOrient').value = c.orient; $('#pcDx').value = c.dx; $('#pcDy').value = c.dy; $('#pcSc').value = c.scale; $('#pcBleed').value = c.bleed; }
+// paper: 'dnp' = the DNP's own 4x6 page, which is a little bigger than the paper (1844 x 1240 dots at 300 dpi) so it can
+// cut a clean edge; 'plain' = exactly 4 x 6 in. Settings saved before the DNP page existed were making up for the white
+// edge it caused, so they start again from zero.
+const PAPER = { dnp: [1240 / 300, 1844 / 300], plain: [4, 6] };
+const printCfg = () => {
+  const st = store.get('printCfg', {}), base = { orient: 'portrait', paper: 'dnp', dx: 0, dy: 0, scale: 100, bleed: 0 };
+  return st.paper ? { ...base, ...st } : { ...base, orient: st.orient || 'portrait' };
+};
+function renderPrintCfg() { const c = printCfg(); $('#pcOrient').value = c.orient; $('#pcPaper').value = c.paper; $('#pcDx').value = c.dx; $('#pcDy').value = c.dy; $('#pcSc').value = c.scale; $('#pcBleed').value = c.bleed; }
 $('#pcSave').onclick = () => {
   const num = (id, lo, hi, d) => { const v = +$(id).value; return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; };
-  store.set('printCfg', { orient: $('#pcOrient').value, dx: num('#pcDx', -15, 15, 0), dy: num('#pcDy', -15, 15, 0), scale: num('#pcSc', 90, 110, 100), bleed: num('#pcBleed', 0, 8, 3) });
+  store.set('printCfg', { orient: $('#pcOrient').value, paper: $('#pcPaper').value, dx: num('#pcDx', -15, 15, 0), dy: num('#pcDy', -15, 15, 0), scale: num('#pcSc', 90, 110, 100), bleed: num('#pcBleed', 0, 8, 0) });
   renderPrintCfg(); toast('Print settings saved on this laptop');
 };
 // Edge check: the whole sheet in colour, with 1 mm colour bands at every edge and mm rulers, printed exactly as it is
@@ -2773,17 +2780,23 @@ function twinParts(img, W, H) {
 // The finished page, exactly the paper's size. Each strip (or the whole photo) is placed on its own: moved by the
 // laptop's Move right/down, sized by Size, and enlarged by Edge bleed from its own centre, so every margin is trimmed by
 // the same amount. Around each one, its edge colour carries on, so a move never shows white paper.
-function printPage(pic, cfg, inchesW) {
+// The finished page at the size of the printer's page (pageIn = [width, height] in inches). The design keeps its true
+// 4x6 size in the middle; the extra room the DNP prints past the paper edge is filled with each strip's edge colour.
+function printPage(pic, cfg, inchesW, pageIn) {
   const W = pic.naturalWidth || pic.width, H = pic.naturalHeight || pic.height, mm = W / (inchesW * 25.4);
-  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
-  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.imageSmoothingQuality = 'high';
+  const PW = Math.round(W * pageIn[0] / inchesW), PH = Math.round(PW * pageIn[1] / pageIn[0]), ox = (PW - W) / 2, oy = (PH - H) / 2;
+  const c = document.createElement('canvas'); c.width = PW; c.height = PH; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, PW, PH); x.imageSmoothingQuality = 'high';
   const k = (cfg.scale || 100) / 100 * (1 + Math.max(0, cfg.bleed || 0) / 100), around = .12;
-  for (const [px, py, pw, ph] of twinParts(pic, W, H)) {
+  const parts = twinParts(pic, W, H), twinX = parts.length === 2 && parts[1][0] > 0, twinY = parts.length === 2 && parts[1][1] > 0;
+  parts.forEach(([px, py, pw, ph], i) => {
     const part = document.createElement('canvas'); part.width = pw; part.height = ph; part.getContext('2d').drawImage(pic, px, py, pw, ph, 0, 0, pw, ph);
     const ext = withBleed(part, around), ew = ext.width * k, eh = ext.height * k;
-    const cx = px + pw / 2 + (cfg.dx || 0) * mm, cy = py + ph / 2 + (cfg.dy || 0) * mm;
-    x.save(); x.beginPath(); x.rect(px, py, pw, ph); x.clip(); x.drawImage(ext, cx - ew / 2, cy - eh / 2, ew, eh); x.restore();
-  }
+    const cx = ox + px + pw / 2 + (cfg.dx || 0) * mm, cy = oy + py + ph / 2 + (cfg.dy || 0) * mm;
+    // each strip owns its half of the page, out to the page edge
+    const cl = twinX ? [i ? PW / 2 : 0, 0, PW / 2, PH] : twinY ? [0, i ? PH / 2 : 0, PW, PH / 2] : [0, 0, PW, PH];
+    x.save(); x.beginPath(); x.rect(...cl); x.clip(); x.drawImage(ext, cx - ew / 2, cy - eh / 2, ew, eh); x.restore();
+  });
   return c;
 }
 function rotatedCanvas(img, cw) {
@@ -2851,8 +2864,9 @@ async function printImage(src, copies, label, raw) {
   const cfg = raw ? { ...printCfg(), dx: 0, dy: 0, scale: 100, bleed: 0 } : printCfg(), landPage = cfg.orient === 'landscape', landImg = img.naturalWidth > img.naturalHeight;
   let pic = img;
   if (landImg !== landPage) pic = rotatedCanvas(img, !landPage);   // turn the picture to match the paper
-  const url = URL.createObjectURL(await toBlobQ(printPage(pic, cfg, landPage ? 6 : 4), .95));
-  const [pw, ph] = landPage ? ['6in', '4in'] : ['4in', '6in'];
+  const paperIn = PAPER[cfg.paper] || PAPER.dnp, pageIn = landPage ? [paperIn[1], paperIn[0]] : paperIn;
+  const url = URL.createObjectURL(await toBlobQ(printPage(pic, cfg, landPage ? 6 : 4, pageIn), .95));
+  const [pw, ph] = pageIn.map(v => v.toFixed(4) + 'in');
   $('#pageStyle').textContent = `@page{size:${pw} ${ph};margin:0}`;
   const area = $('#printArea'); area.innerHTML = '';
   area.style.cssText = `--pw:${pw};--ph:${ph}`;   // the picture is already the finished page: no moving or scaling here
