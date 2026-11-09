@@ -1885,7 +1885,43 @@ function showErr(title, msg, onRetry, onCancel) {
 }
 $('#recStop').onclick = () => { if (B.session && B.session.stopRec) B.session.stopRec(); };
 $('#printBtn').onclick = doPrint; $('#doneBtn').onclick = finish; $('#backStart').onclick = goHome;
-$('#retakeBtn').onclick = () => { const s = B.session; if (s) { B.mode = s.mode; startSession(s.design); } };
+// Retake: with several photos the guest chooses which one (or all of them); one photo keeps everything else as it is
+$('#retakeBtn').onclick = () => {
+  const s = B.session; if (!s) return;
+  if (s.mode !== 'photo' || !s.shots || s.shots.length < 2) { B.mode = s.mode; return startSession(s.design); }
+  $('#rtList').innerHTML = s.shots.map((c, i) => `<button class="rtshot" data-rt="${i}"><img alt="" src="${scaled(c, 360).toDataURL('image/jpeg', .7)}"><span>Photo ${i + 1}</span></button>`).join('')
+    + `<button class="rtshot rtall" data-rt="all"><span class="rtic">↺</span><span>All photos</span></button>`;
+  $('#rtPick').hidden = false;
+};
+$('#rtCancel').onclick = () => { $('#rtPick').hidden = true; };
+$('#rtList').addEventListener('click', e => {
+  const b = e.target.closest('[data-rt]'), s = B.session; if (!b || !s) return;
+  $('#rtPick').hidden = true;
+  if (b.dataset.rt === 'all') { B.mode = s.mode; return startSession(s.design); }
+  retakeOne(s, +b.dataset.rt);
+});
+async function retakeOne(s, i) {
+  clearInterval(B.reviewT);
+  paintCdFrame($('#cdFrame')); styleShotPrev($('#shotPrevBox')); $('#shotPrevBox').hidden = true;
+  liveLook({ smooth: s.smooth || 0, bright: s.bright || 0 }); liveSpeed(true);
+  bscreen('b-shoot');
+  try {
+    const wantBoom = S.capture.photoGif !== false && s.design.areas.length > 1, boomSec = boomSeconds();
+    let burst = null; say('ready');
+    if (!(await countdown(s, `Retake · photo ${i + 1}` + (wantBoom ? ' · keep moving for the boomerang!' : ''), wantBoom ? () => { burst = recordBurst(s, boomSec); } : null, boomSec, wantBoom ? boomSec : 0))) return;
+    if (burst) burst.stop();
+    B.lastOriginal = null; flash(); const c = await capturePhoto();
+    if (B.session !== s) return;
+    s.shots[i] = c; (s.originals = s.originals || [])[i] = B.lastOriginal;
+    if (s.bursts) s.bursts[i] = burst ? burst.frames : [];
+    if (s.adjust && s.adjust[i]) s.adjust[i] = { z: 1, dx: 0, dy: 0 };
+    s._view = s._viewFx = s._beauty = null;   // the look and background are made again with the new photo
+    if (aiOn()) personMask(c, 'photo').catch(() => {});
+    if (s.sid) { keepDel(s.sid); s.sid = null; s.kept = false; }   // keep the new set of photos instead
+  } catch (e) { return showErr('Camera problem', e.message, () => retakeOne(s, i), goHome); }
+  $('#b-count').textContent = '';
+  await openReview();
+}
 $('#pickBack').onclick = goHome; $('#cancelShoot').onclick = goHome;
 
 /* ---------- Staff: PIN → menu (back, camera, admin board, log out) ---------- */

@@ -427,3 +427,15 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 #cdPrevNum{position:relative;z-index:2;font-weight:800;text-shadow:0 0 30px rgba(0,0,0,.5);line-height:1}
 .cdprev .flash{position:absolute;inset:0;z-index:3}
 .gbhint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b9b2a6;font-size:22px;pointer-events:none}
+
+/* Retake: choose which photo */
+.rtpick{position:absolute;inset:0;z-index:15;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:24px}
+.rtpick[hidden]{display:none}
+.rtbox{display:flex;flex-direction:column;align-items:center;gap:22px;max-width:100%}
+.rtbox h2{margin:0;font-size:30px}
+.rtlist{display:flex;flex-wrap:wrap;justify-content:center;gap:16px}
+.rtshot{display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;border-radius:18px;border:2px solid var(--line2);background:#1a1a1c;color:#fff;font:700 17px var(--sans);cursor:pointer;width:min(220px,40vw)}
+.rtshot img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px}
+.rtshot:active,.rtshot:hover{border-color:var(--accent)}
+.rtall{justify-content:center}
+.rtic{display:grid;place-items:center;width:100%;aspect-ratio:4/3;border-radius:10px;background:#26262a;font-size:46px}
