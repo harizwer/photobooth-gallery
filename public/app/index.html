@@ -347,7 +347,7 @@
       <div class="wrap">
         <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:12px">
           <label class="tog" style="padding:12px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line)"><span><b>This laptop prints</b><br><span class="lbl" id="prnState">Off</span></span><input type="checkbox" id="prnOn"></label>
-          <div id="prnTip" hidden class="banner warn" style="flex-direction:column;align-items:flex-start;gap:8px"><span><b>Keep this page on screen while printing.</b> If it is minimised or behind another window, the browser holds prints back. Open it in its own window, not a tab you switch away from.</span><button class="btn sm" id="prnAlerts">🔔 Turn on print alerts</button></div>
+          <div id="prnTip" hidden class="lbl" style="font-size:12.5px">Prints start by themselves while this page is open, even behind other windows. Keep the laptop awake (no sleep) during the event.</div>
           <div class="card" id="autoPrint" style="background:#141416;display:flex;flex-direction:column;gap:10px;padding:14px">
             <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><b>⚡ Automatic printing (no Print button)</b><span class="chip mute" id="apState">Not checked yet</span></div>
             <div class="lbl" style="font-size:13px;line-height:1.5">A website cannot skip the print window by itself: the browser has to be opened in printing mode. This file does it for you on Windows:</div>

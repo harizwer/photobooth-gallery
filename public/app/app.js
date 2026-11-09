@@ -2675,10 +2675,10 @@ let printBusy = false;
 function printerUi() {
   const on = printerOn();
   $('#prnState').textContent = on ? 'On — jobs from the tablet print here' : 'Off — jobs wait in the queue';
-  $('#prnTip').hidden = !on; printAlertUi();
+  $('#prnTip').hidden = !on;
   renderDevices();
 }
-$('#prnOn').onchange = () => { store.set('printer', $('#prnOn').checked); printerUi(); track(); runPrinter(); if ($('#prnOn').checked && window.Notification && Notification.permission === 'default') askPrintAlerts(); };
+$('#prnOn').onchange = () => { store.set('printer', $('#prnOn').checked); printerUi(); track(); runPrinter(); };
 function renderPaper() {
   if (!STATION) return;
   const cap = STATION.media_capacity || 700, left = Math.max(0, cap - (STATION.printed_since_reset || 0)), pct = Math.max(0, Math.min(100, left / cap * 100));
@@ -2771,10 +2771,9 @@ function withBleed(img, f) {
   return c;
 }
 let printRun = 0;
-/* ---- Printing when the printer page is not on screen ----
-   Chrome slows a tab that is behind other windows to one timer a minute, may pause it, and holds back printing from it.
-   So: waits use a worker (it keeps time in the background), and when a job arrives while the page is hidden the laptop
-   shows an alert; printing starts the moment the page is on screen again. */
+/* ---- Printing while the printer page is behind other windows ----
+   Chrome slows timers in a tab that is not on screen to one a minute, so the waits around printing use a worker,
+   which keeps time in the background. The print itself starts straight away, on screen or not. */
 const wsleep = (() => {
   let w = null, n = 0; const cb = new Map();
   try {
@@ -2783,22 +2782,6 @@ const wsleep = (() => {
   } catch (e) { w = null; }
   return ms => w ? new Promise(r => { const k = ++n; cb.set(k, r); w.postMessage([k, ms]); }) : sleep(ms);
 })();
-let printAlert = null;
-function untilShown(label) {
-  if (!document.hidden) return Promise.resolve();
-  try {
-    if (window.Notification && Notification.permission === 'granted') {
-      if (printAlert) printAlert.close();
-      printAlert = new Notification('📸 Photo waiting to print', { body: (label ? label + '\n' : '') + 'Click here to print it. Keep the Printer page on screen so prints start by themselves.', requireInteraction: true, tag: 'pb-print' });
-      printAlert.onclick = () => { window.focus(); printAlert && printAlert.close(); };
-    }
-  } catch (e) { }
-  document.title = '🖨 Print waiting · ' + document.title.replace(/^🖨 Print waiting · /, '');
-  return new Promise(res => {
-    const on = () => { if (document.hidden) return; document.removeEventListener('visibilitychange', on); document.title = document.title.replace(/^🖨 Print waiting · /, ''); if (printAlert) { printAlert.close(); printAlert = null; } res(); };
-    document.addEventListener('visibilitychange', on);
-  });
-}
 async function printImage(src, copies, label) {
   const run = ++printRun;
   const img = await withTimeout(new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('Could not download the photo to print')); i.src = src; }), 90000, 'The photo took too long to download. Check the laptop\'s internet.');
@@ -2812,7 +2795,6 @@ async function printImage(src, copies, label) {
   area.style.cssText = `--pw:${pw};--ph:${ph};--dx:${cfg.dx}mm;--dy:${cfg.dy}mm;--sc:${(cfg.scale / 100) * (1 + 2 * f)}`;
   for (let i = 0; i < Math.max(1, copies); i++) { const pg = document.createElement('div'), im = new Image(); pg.className = 'pg'; im.src = url; im.alt = ''; pg.appendChild(im); area.appendChild(pg); }
   await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
-  await untilShown(label);   // a hidden page cannot print: wait until someone opens it (the alert says so)
   await wsleep(150); if (run !== printRun) return;
   const t0 = performance.now(); window.print(); const auto = performance.now() - t0 < 1500;
   if (store.get('autoPrint', null) !== auto) { store.set('autoPrint', auto); autoPrintUi(); }
@@ -2851,18 +2833,7 @@ async function runPrinter() {
 const myJobs = new Set();   // jobs this page is printing right now
 setInterval(() => { if (ROLE === 'admin') runPrinter(); }, 10000);
 document.addEventListener('visibilitychange', () => { track(); if (!document.hidden && ROLE === 'admin') runPrinter(); });
-// Alerts for prints that arrive while the Printer page is hidden
-async function askPrintAlerts() {
-  if (!window.Notification) return toast('This browser cannot show alerts.');
-  const p = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
-  printAlertUi(); toast(p === 'granted' ? 'Alerts on: you will be told when a print is waiting.' : 'Alerts are blocked. Allow notifications for this site in the browser settings.', 5000);
-}
-function printAlertUi() {
-  const b = $('#prnAlerts'); if (!b) return;
-  const p = window.Notification ? Notification.permission : 'denied';
-  b.textContent = p === 'granted' ? '🔔 Print alerts on' : '🔔 Turn on print alerts'; b.disabled = p === 'granted';
-}
-$('#prnAlerts').onclick = askPrintAlerts;
+
 // One-click launcher for the printer laptop: opens this page in its own Chrome/Edge window that prints without the
 // print window (--kiosk-printing) and is never slowed down when it is covered or in the background.
 $('#apDownload').onclick = () => {
