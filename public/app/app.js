@@ -2742,6 +2742,31 @@ $('#pcTest').onclick = async () => {
   x.font = '34px system-ui'; ['Border 2 mm from', 'every edge', '', 'Strips are cut', 'on the red line'].forEach((t, i) => { x.fillText(t, 300, 820 + i * 48); x.fillText(t, 900, 820 + i * 48); });
   try { await printImage(c.toDataURL('image/jpeg', .95), 1); } catch (e) { toast(e.message, 4000); }
 };
+// Two copies of the same strip side by side (or one above the other on a turned page)? Then each is laid out on its own.
+function twinParts(img, W, H) {
+  const t = document.createElement('canvas'); t.width = 64; t.height = 64; const x = t.getContext('2d', { willReadFrequently: true });
+  const same = (a, b) => { x.clearRect(0, 0, 64, 64); x.drawImage(img, ...a, 0, 0, 32, 64); x.drawImage(img, ...b, 32, 0, 32, 64); const d = x.getImageData(0, 0, 64, 64).data; let s = 0; for (let y = 0; y < 64; y++) for (let i = 0; i < 32; i++) { const p = (y * 64 + i) * 4, q = p + 128; s += Math.abs(d[p] - d[q]) + Math.abs(d[p + 1] - d[q + 1]) + Math.abs(d[p + 2] - d[q + 2]); } return s / (64 * 32 * 3) < 6; };
+  const hw = Math.round(W / 2), hh = Math.round(H / 2);
+  if (W < H && same([0, 0, hw, H], [hw, 0, W - hw, H])) return [[0, 0, hw, H], [hw, 0, W - hw, H]];
+  if (W > H && same([0, 0, W, hh], [0, hh, W, H - hh])) return [[0, 0, W, hh], [0, hh, W, H - hh]];
+  return [[0, 0, W, H]];
+}
+// The finished page, exactly the paper's size. Each strip (or the whole photo) is placed on its own: moved by the
+// laptop's Move right/down, sized by Size, and enlarged by Edge bleed from its own centre, so every margin is trimmed by
+// the same amount. Around each one, its edge colour carries on, so a move never shows white paper.
+function printPage(pic, cfg, inchesW) {
+  const W = pic.naturalWidth || pic.width, H = pic.naturalHeight || pic.height, mm = W / (inchesW * 25.4);
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.imageSmoothingQuality = 'high';
+  const k = (cfg.scale || 100) / 100 * (1 + Math.max(0, cfg.bleed || 0) / 100), around = .12;
+  for (const [px, py, pw, ph] of twinParts(pic, W, H)) {
+    const part = document.createElement('canvas'); part.width = pw; part.height = ph; part.getContext('2d').drawImage(pic, px, py, pw, ph, 0, 0, pw, ph);
+    const ext = withBleed(part, around), ew = ext.width * k, eh = ext.height * k;
+    const cx = px + pw / 2 + (cfg.dx || 0) * mm, cy = py + ph / 2 + (cfg.dy || 0) * mm;
+    x.save(); x.beginPath(); x.rect(px, py, pw, ph); x.clip(); x.drawImage(ext, cx - ew / 2, cy - eh / 2, ew, eh); x.restore();
+  }
+  return c;
+}
 function rotatedCanvas(img, cw) {
   const c = document.createElement('canvas'); c.width = img.naturalHeight || img.height; c.height = img.naturalWidth || img.width;
   const x = c.getContext('2d');
@@ -2807,11 +2832,11 @@ async function printImage(src, copies, label) {
   const cfg = printCfg(), landPage = cfg.orient === 'landscape', landImg = img.naturalWidth > img.naturalHeight;
   let pic = img;
   if (landImg !== landPage) pic = rotatedCanvas(img, !landPage);   // turn the picture to match the paper
-  const f = Math.max(0, cfg.bleed || 0) / 200, url = URL.createObjectURL(await toBlobQ(withBleed(pic, f), .95));
+  const url = URL.createObjectURL(await toBlobQ(printPage(pic, cfg, landPage ? 6 : 4), .95));
   const [pw, ph] = landPage ? ['6in', '4in'] : ['4in', '6in'];
   $('#pageStyle').textContent = `@page{size:${pw} ${ph};margin:0}`;
   const area = $('#printArea'); area.innerHTML = '';
-  area.style.cssText = `--pw:${pw};--ph:${ph};--dx:${cfg.dx}mm;--dy:${cfg.dy}mm;--sc:${(cfg.scale / 100) * (1 + 2 * f)}`;
+  area.style.cssText = `--pw:${pw};--ph:${ph}`;   // the picture is already the finished page: no moving or scaling here
   for (let i = 0; i < Math.max(1, copies); i++) { const pg = document.createElement('div'), im = new Image(); pg.className = 'pg'; im.src = url; im.alt = ''; pg.appendChild(im); area.appendChild(pg); }
   await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
   await wsleep(150); if (run !== printRun) return;
