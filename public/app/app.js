@@ -2875,13 +2875,29 @@ function renderVoiceSettings() {
     <input class="in" data-vl="${k}" value="${esc(voiceLine(k))}" maxlength="90" style="flex:1;min-width:160px">
     <button class="btn sm" data-vtest="${k}" title="Listen">▶</button>
     <button class="btn sm" data-vrec="${k}">${V.clips && V.clips[k] ? '● Re-record' : '● Record my voice'}</button>
+    <button class="btn sm" data-vup="${k}" title="MP3, or a video/audio file (it becomes MP3)">⬆ Upload</button>
     ${V.clips && V.clips[k] ? `<button class="btn sm" data-vdel="${k}" title="Use the computer voice again" style="color:#ff8a80">✕</button>` : ''}</div>`).join('');
   $('#muOn').checked = !!M.on; $('#muVol').value = Math.round((M.volume ?? .35) * 100);
   $('#muList').innerHTML = (M.tracks || []).map((t, i) => `<div class="voline"><span style="flex:1;min-width:120px">🎵 ${esc(t.name || 'Track')}</span>
     <span class="row" style="gap:4px;flex-wrap:wrap">${allTypes().map(ty => `<button class="pill ${(t.types || []).includes(ty) ? 'on' : ''}" data-mut="${i}" data-ty="${esc(ty)}">${esc(ty)}</button>`).join('')}</span>
     <button class="btn sm" data-mup="${i}">▶</button><button class="btn sm" data-murm="${i}" style="color:#ff8a80">Remove</button></div>`).join('') || '<span class="lbl">No music yet</span>';
 }
-let voRec = null, adminAudio = null;
+let voRec = null, adminAudio = null, voUpKey = '';
+// Any sound or video file → MP3, here in the browser (MP3 files are kept as they are)
+async function toMp3(file, maxSec = 60) {
+  if (file.type === 'audio/mpeg' || /\.mp3$/i.test(file.name)) return file;
+  if (file.size > 300 * 1024 * 1024) throw new Error('That file is over 300 MB.');
+  const ctx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, 44100);
+  let audio; try { audio = await ctx.decodeAudioData(await file.arrayBuffer()); } catch (e) { throw new Error('Could not read the sound in that file. Try an MP4, MOV, M4A, WAV or MP3.'); }
+  await loadScript('../vendor/lame.min.js');
+  const sr = audio.sampleRate, n = Math.min(audio.length, Math.round(sr * maxSec)), chs = audio.numberOfChannels, pcm = new Int16Array(n);
+  const data = [...Array(chs)].map((_, c) => audio.getChannelData(c));
+  for (let i = 0; i < n; i++) { let v = 0; for (let c = 0; c < chs; c++) v += data[c][i]; v /= chs; pcm[i] = Math.max(-1, Math.min(1, v)) * 32767; }
+  const enc = new window.lamejs.Mp3Encoder(1, sr, 128), parts = [];
+  for (let i = 0; i < n; i += 1152) { const b = enc.encodeBuffer(pcm.subarray(i, i + 1152)); if (b.length) parts.push(b); if (i % (1152 * 400) === 0) await sleep(0); }
+  const end = enc.flush(); if (end.length) parts.push(end);
+  return new Blob(parts, { type: 'audio/mpeg' });
+}
 $('#voOn').onchange = () => { S.voice.on = $('#voOn').checked; };
 $('#voLang').onchange = () => { S.voice.lang = $('#voLang').value; };
 $('#voVol').oninput = () => { S.voice.volume = +$('#voVol').value / 100; };
@@ -2899,6 +2915,7 @@ $('#voLines').addEventListener('click', async e => {
     speechSynthesis.cancel(); speechSynthesis.speak(u); return;
   }
   if (d) { delete S.voice.clips[d.dataset.vdel]; renderVoiceSettings(); return; }
+  const up = e.target.closest('[data-vup]'); if (up) { voUpKey = up.dataset.vup; $('#voFile').click(); return; }
   if (r) {   // record the studio's own voice for this line (tap again to stop)
     const k = r.dataset.vrec;
     if (voRec) { voRec.stop(); return; }
@@ -2917,6 +2934,17 @@ $('#voLines').addEventListener('click', async e => {
     voRec.start();
   }
 });
+$('#voFile').addEventListener('change', async e => {
+  const f = e.target.files[0], k = voUpKey; e.target.value = ''; if (!f || !k) return;
+  if (!/^(audio|video)\//.test(f.type) && !/\.(mp3|m4a|mp4|mov|wav|webm|aac|ogg)$/i.test(f.name)) return toast('Choose a sound or video file (MP3, MP4, MOV, M4A, WAV).');
+  const b = $(`#voLines [data-vup="${k}"]`); if (b) { b.disabled = true; b.textContent = /\.mp3$/i.test(f.name) ? 'Uploading…' : 'Converting to MP3…'; }
+  try {
+    const mp3 = await toMp3(f, 30), path = `u-${USER.id}/voice-${k}-${Date.now().toString(36)}.mp3`;
+    await upload(path, mp3, 'audio/mpeg'); S.voice.clips = { ...(S.voice.clips || {}), [k]: fileUrl(path) };
+    toast(`Added (${Math.round(mp3.size / 1024)} KB MP3). Press Save to send it to the tablet.`);
+  } catch (err) { toast(err.message, 6000); }
+  renderVoiceSettings();
+});
 $('#muList').addEventListener('click', e => {
   const ty = e.target.closest('[data-mut]'), pl = e.target.closest('[data-mup]'), rm = e.target.closest('[data-murm]');
   if (ty) { const t = S.music.tracks[+ty.dataset.mut], set = new Set(t.types || []); set.has(ty.dataset.ty) ? set.delete(ty.dataset.ty) : set.add(ty.dataset.ty); t.types = [...set]; renderVoiceSettings(); }
@@ -2926,9 +2954,11 @@ $('#muList').addEventListener('click', e => {
 $('#muFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
   for (const f of files) {
-    if (!/^audio\//.test(f.type)) { toast('Choose an MP3 or M4A file.'); continue; }
-    if (f.size > 25 * 1024 * 1024) { toast(f.name + ' is over 25 MB.'); continue; }
-    try { const ext = (f.name.split('.').pop() || 'mp3').toLowerCase(), path = `u-${USER.id}/music-${Date.now().toString(36)}.${ext}`; await upload(path, f, f.type); S.music.tracks = [...(S.music.tracks || []), { url: fileUrl(path), name: f.name.replace(/\.[^.]+$/, '').slice(0, 40), types: [] }]; }
+    if (!/^(audio|video)\//.test(f.type)) { toast('Choose a sound or video file (MP3, MP4, M4A, WAV).'); continue; }
+    try {
+      if (!/\.mp3$/i.test(f.name)) toast('Converting ' + f.name + ' to MP3…', 4000);
+      const mp3 = await toMp3(f, 600); if (mp3.size > 25 * 1024 * 1024) { toast(f.name + ' is over 25 MB as MP3.'); continue; }
+      const path = `u-${USER.id}/music-${Date.now().toString(36)}.mp3`; await upload(path, mp3, 'audio/mpeg'); S.music.tracks = [...(S.music.tracks || []), { url: fileUrl(path), name: f.name.replace(/\.[^.]+$/, '').slice(0, 40), types: [] }]; }
     catch (err) { toast(err.message, 4000); }
   }
   renderVoiceSettings(); toast('Uploaded. Tick the event types, then press Save.');
