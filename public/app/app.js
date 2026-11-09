@@ -2748,26 +2748,45 @@ function rotatedCanvas(img, cw) {
   if (cw) { x.translate(c.width, 0); x.rotate(Math.PI / 2); } else { x.translate(0, c.height); x.rotate(-Math.PI / 2); }
   x.drawImage(img, 0, 0); return c;
 }
+// How deep a thin white edge goes on each side of a print (a white line left at the edge of a Canva export, for example).
+// Only near-pure-white rows/columns count, at most 3% deep, and only when the design further in is not white itself.
+function whiteEdges(img) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0);
+  const white = (d, i) => d[i + 3] < 20 || (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240);
+  const share = (sx, sy, sw, sh) => { const d = x.getImageData(sx, sy, sw, sh).data; let n = 0, t = 0; for (let i = 0; i < d.length; i += 4 * 3) { t++; if (white(d, i)) n++; } return n / t; };
+  const depth = (len, other, row) => {
+    const max = Math.max(1, Math.round(len * .03)), probe = (k) => row(k);
+    if (probe(max) > .9) return 0;                       // white further in too: a white design, leave it
+    let k = 0; while (k < max && probe(k) > .97) k++;
+    return k;
+  };
+  return {
+    t: depth(h, w, k => share(0, k, w, 1)), b: depth(h, w, k => share(0, h - 1 - k, w, 1)),
+    l: depth(w, h, k => share(k, 0, 1, h)), r: depth(w, h, k => share(w - 1 - k, 0, 1, h)),
+  };
+}
 // Edge bleed without losing any of the design: the picture is printed at its true size, and a thin band around it
 // (f of the size on each side) repeats the colour at its edge. The band falls off the paper, so a printer that is a
 // fraction out never shows a white line, and the strip's margins stay exactly as designed.
+// A thin white edge in the design itself is covered with the colour just inside it.
 function withBleed(img, f) {
   const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
   const bx = Math.round(w * f), by = Math.round(h * f);
+  let e = { t: 0, b: 0, l: 0, r: 0 }; try { e = whiteEdges(img); } catch (err) { }
   const c = document.createElement('canvas'); c.width = w + bx * 2; c.height = h + by * 2; const x = c.getContext('2d');
   x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
   x.drawImage(img, bx, by);
-  if (bx || by) {
-    x.imageSmoothingEnabled = false;
-    x.drawImage(img, 0, 0, w, 1, bx, 0, w, by);              // top: the first row of pixels, stretched up
-    x.drawImage(img, 0, h - 1, w, 1, bx, by + h, w, by);     // bottom
-    x.drawImage(img, 0, 0, 1, h, 0, by, bx, h);              // left
-    x.drawImage(img, w - 1, 0, 1, h, bx + w, by, bx, h);     // right
-    x.drawImage(img, 0, 0, 1, 1, 0, 0, bx, by);              // corners
-    x.drawImage(img, w - 1, 0, 1, 1, bx + w, 0, bx, by);
-    x.drawImage(img, 0, h - 1, 1, 1, 0, by + h, bx, by);
-    x.drawImage(img, w - 1, h - 1, 1, 1, bx + w, by + h, bx, by);
-  }
+  x.imageSmoothingEnabled = false;
+  const T = e.t, B = h - 1 - e.b, L = e.l, Rr = w - 1 - e.r;          // the first rows/columns that are not a white edge
+  if (by || T) x.drawImage(img, 0, T, w, 1, bx, 0, w, by + T);                 // top: that row, stretched up to the cut
+  if (by || e.b) x.drawImage(img, 0, B, w, 1, bx, by + B + 1, w, by + e.b);    // bottom
+  if (bx || L) x.drawImage(img, L, 0, 1, h, 0, by, bx + L, h);                 // left
+  if (bx || e.r) x.drawImage(img, Rr, 0, 1, h, bx + Rr + 1, by, bx + e.r, h);  // right
+  x.drawImage(img, L, T, 1, 1, 0, 0, bx + L, by + T);                          // corners
+  x.drawImage(img, Rr, T, 1, 1, bx + Rr + 1, 0, bx + e.r, by + T);
+  x.drawImage(img, L, B, 1, 1, 0, by + B + 1, bx + L, by + e.b);
+  x.drawImage(img, Rr, B, 1, 1, bx + Rr + 1, by + B + 1, bx + e.r, by + e.b);
   return c;
 }
 let printRun = 0;
