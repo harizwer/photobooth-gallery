@@ -2689,7 +2689,8 @@ function renderPaper() {
   if (document.activeElement !== $('#capEdit')) $('#capEdit').value = cap;
 }
 // Test prints use paper too: take them off the paper count
-async function countPrinted(n) { try { await loadStation(); await saveStation({ printed_since_reset: (STATION.printed_since_reset || 0) + n }); } catch (e) { } }
+let countQ = Promise.resolve();   // one count at a time, so two prints close together are both counted
+function countPrinted(n) { countQ = countQ.then(async () => { try { await loadStation(); await saveStation({ printed_since_reset: (STATION.printed_since_reset || 0) + n }); } catch (e) { } }); return countQ; }
 async function saveStation(upd) { check(await sb.from('station_settings').update(upd).eq('owner', USER.id)); await loadStation(); renderPaper(); }
 $('#paperSave').onclick = async () => {
   const cap = Math.max(1, Math.round(+$('#capEdit').value || STATION.media_capacity || 700)), left = Math.max(0, Math.min(cap, Math.round(+$('#paperEdit').value || 0)));
@@ -2899,8 +2900,7 @@ async function runPrinter() {
         const pid = job.photo_id || ((await sb.from('print_jobs').select('photo_id').eq('id', job.id).maybeSingle()).data || {}).photo_id;
         if (pid) job.photo_id = pid;
         if (job.photo_id) { const p = (await sb.from('photos').select('printed').eq('id', job.photo_id).maybeSingle()).data; if (p) await sb.from('photos').update({ printed: (p.printed || 0) + job.copies }).eq('id', job.photo_id); }
-        await loadStation(); await sb.from('station_settings').update({ printed_since_reset: (STATION.printed_since_reset || 0) + job.copies }).eq('owner', USER.id);
-        STATION.printed_since_reset = (STATION.printed_since_reset || 0) + job.copies;
+        await countPrinted(job.copies);
       } catch (e) { await sb.from('print_jobs').update({ status: 'failed', error: e.message, updated_at: new Date().toISOString() }).eq('id', job.id); }
       myJobs.delete(job.id);
     }
