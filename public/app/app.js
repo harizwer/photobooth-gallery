@@ -2731,6 +2731,25 @@ $('#pcSave').onclick = () => {
   store.set('printCfg', { orient: $('#pcOrient').value, dx: num('#pcDx', -15, 15, 0), dy: num('#pcDy', -15, 15, 0), scale: num('#pcSc', 90, 110, 100), bleed: num('#pcBleed', 0, 8, 3) });
   renderPrintCfg(); toast('Print settings saved on this laptop');
 };
+// Edge check: the whole sheet in colour, with 1 mm colour bands at every edge and mm rulers, printed exactly as it is
+// (no move, size or bleed). A photo of it shows what the printer does at each edge: white = not printed there,
+// a missing band = cut off. The page then suggests the settings.
+const EDGE_COLS = ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
+$('#pcEdge').onclick = async () => {
+  const W = 1200, H = 1800, mm = 300 / 25.4, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  x.fillStyle = '#263238'; x.fillRect(0, 0, W, H);
+  EDGE_COLS.forEach((col, i) => {   // band i covers i..i+1 mm from every edge
+    const a = Math.round(i * mm), b = Math.round((i + 1) * mm); x.fillStyle = col;
+    x.fillRect(a, a, W - 2 * a, b - a); x.fillRect(a, H - b, W - 2 * a, b - a); x.fillRect(a, a, b - a, H - 2 * a); x.fillRect(W - b, a, b - a, H - 2 * a);
+  });
+  x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.font = 'bold 40px system-ui'; x.fillText('EDGE CHECK', W / 2, H / 2 - 150); x.fillText('▲ TOP', W / 2, 140); x.fillText('BOTTOM ▼', W / 2, H - 140);
+  x.save(); x.translate(140, H / 2); x.rotate(-Math.PI / 2); x.fillText('LEFT', 0, 0); x.restore(); x.save(); x.translate(W - 140, H / 2); x.rotate(Math.PI / 2); x.fillText('RIGHT', 0, 0); x.restore();
+  x.font = '30px system-ui';
+  ['Each edge: red = 0–1 mm, orange = 1–2, yellow = 2–3,', 'green = 3–4, blue = 4–5, purple = 5–6 mm.', '', 'White at an edge = the printer did not print there.', 'A colour missing = it was cut off.', '', 'Take a photo of this print', 'and look at each edge closely.'].forEach((t, i) => x.fillText(t, W / 2, H / 2 - 60 + i * 44));
+  x.strokeStyle = '#fff'; x.lineWidth = 3; x.setLineDash([18, 12]); x.beginPath(); x.moveTo(W / 2, 220); x.lineTo(W / 2, H / 2 - 210); x.moveTo(W / 2, H / 2 + 330); x.lineTo(W / 2, H - 220); x.stroke();
+  try { await printImage(c.toDataURL('image/png'), 1, 'Edge check', true); } catch (e) { toast(e.message, 4000); }
+};
 $('#pcTest').onclick = async () => {
   $('#pcSave').click();
   // 4x6 portrait test sheet at 300 dpi: border 2 mm in, dashed cut line in the middle, arrows to the top
@@ -2826,10 +2845,10 @@ const wsleep = (() => {
   } catch (e) { w = null; }
   return ms => w ? new Promise(r => { const k = ++n; cb.set(k, r); w.postMessage([k, ms]); }) : sleep(ms);
 })();
-async function printImage(src, copies, label) {
+async function printImage(src, copies, label, raw) {
   const run = ++printRun;
   const img = await withTimeout(new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('Could not download the photo to print')); i.src = src; }), 90000, 'The photo took too long to download. Check the laptop\'s internet.');
-  const cfg = printCfg(), landPage = cfg.orient === 'landscape', landImg = img.naturalWidth > img.naturalHeight;
+  const cfg = raw ? { ...printCfg(), dx: 0, dy: 0, scale: 100, bleed: 0 } : printCfg(), landPage = cfg.orient === 'landscape', landImg = img.naturalWidth > img.naturalHeight;
   let pic = img;
   if (landImg !== landPage) pic = rotatedCanvas(img, !landPage);   // turn the picture to match the paper
   const url = URL.createObjectURL(await toBlobQ(printPage(pic, cfg, landPage ? 6 : 4), .95));
