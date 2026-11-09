@@ -10,7 +10,7 @@ function seg(kind) {
     const fileset = { wasmLoaderPath: BASE + 'vision_wasm_internal.js', wasmBinaryPath: BASE + 'vision_wasm_internal.wasm' };
     const model = BASE + (kind === 'photo' ? 'selfie_multiclass.tflite' : 'selfie_segmenter.tflite');
     const make = delegate => ImageSegmenter.createFromOptions(fileset, { baseOptions: { modelAssetPath: model, delegate }, runningMode: 'IMAGE', outputCategoryMask: false, outputConfidenceMasks: true });
-    try { return await make('GPU'); } catch (e) { return make('CPU'); }
+    return make('CPU');   // the processor: the graphics chip can stop answering inside a worker on some tablets
   })();
   segs[kind].catch(() => { delete segs[kind]; });
   return segs[kind];

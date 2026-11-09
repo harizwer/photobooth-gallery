@@ -258,17 +258,32 @@ async function personMask(src, kind) {
 }
 // The AI runs in a background worker (seg-worker.js), so the screen never freezes while it works.
 // It loads while the start screen shows, and each photo is analysed as soon as it is taken.
-let segW = null, segWBroken = false, segN = 0; const segWait = new Map();
+let segW = null, segWBroken = false, segWDead = false, segReady = false, segN = 0, segSince = 0; const segWait = new Map();
 function segWorker() {
   if (segW || segWBroken || !window.Worker) return segW;
   try {
-    segW = new Worker('seg-worker.js');
+    segW = new Worker('seg-worker.js'); segSince = Date.now();
     segW.onmessage = e => { const f = segWait.get(e.data.id); if (f) { segWait.delete(e.data.id); f(e.data); } };
     segW.onerror = () => { segWBroken = true; segW = null; segWait.forEach(f => f({ ok: false, error: 'worker stopped' })); segWait.clear(); };
   } catch (e) { segWBroken = true; segW = null; }
   return segW;
 }
-function segAsk(msg, transfer) { const w = segWorker(); if (!w) return Promise.resolve({ ok: false, error: 'no worker' }); const id = ++segN; return new Promise(res => { segWait.set(id, res); w.postMessage({ ...msg, id }, transfer || []); }); }
+function segAsk(msg, transfer) {
+  if (segWDead) return Promise.resolve({ ok: false, error: 'AI not available on this tablet right now' });
+  const w = segWorker(); if (!w) return Promise.resolve({ ok: false, error: 'no worker' });
+  // the first time includes downloading the AI (about 26 MB): up to 2 minutes from when it started loading
+  const id = ++segN, ms = segReady ? 20000 : Math.max(20000, 120000 - (Date.now() - segSince));
+  return new Promise(res => {
+    const t = setTimeout(() => {   // no answer: stop the worker so nothing waits on it, and carry on without the AI
+      if (!segWait.has(id)) return;
+      camLog('AI did not answer in time: switched off until the app restarts');
+      segWDead = true; try { segW.terminate(); } catch (e) { } segW = null;
+      segWait.forEach(f => f({ ok: false, error: 'AI not available on this tablet right now' })); segWait.clear();
+    }, ms);
+    segWait.set(id, r => { clearTimeout(t); if (r.ok) segReady = true; res(r); });
+    w.postMessage({ ...msg, id }, transfer || []);
+  });
+}
 const aiOn = () => ROLE === 'booth' && S.aiBg && S.aiBg.on !== false;
 function aiWarm() { if (aiOn()) segAsk({ kind: 'photo', warm: true }); }
 async function personMaskNow(src, kind) {
@@ -281,8 +296,9 @@ async function personMaskNow(src, kind) {
       for (let i = 0; i < r.a.length; i++) img.data[i * 4 + 3] = r.a[i];
       ox.putImageData(img, 0, 0); return out;
     }
-    if (r.error !== 'worker stopped' && r.error !== 'no worker') throw new Error(r.error);
+    if (segWDead || (r.error !== 'worker stopped' && r.error !== 'no worker')) throw new Error(r.error);
   }
+  if (segWDead) throw new Error('AI not available on this tablet right now');
   return personMaskHere(src, kind);
 }
 async function personMaskHere(src, kind) {   // fallback: on the page itself (only if the worker cannot run)
@@ -1340,7 +1356,8 @@ async function startSession(design) {
       me.poster = grabFrame(1920);
     }
   } catch (e) { return showErr('Camera problem', e.message, () => startSession(design), goHome); }
-  $('#b-count').textContent = '';
+  $('#b-count').textContent = ''; $('#shotInfo').textContent = 'Preparing your photo…';
+  camLog('session: photos taken, preparing the review');
   await openReview();
 }
 function recMime() { const c = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']; return c.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || ''; }
@@ -1427,11 +1444,12 @@ async function stripBoomerang(design, bursts, filter, name, date, adjust, sticke
   const cv = await Promise.all(pick.map(async b => { const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); bm.close && bm.close(); return scaled(c, 800); }));
   return makeGif(cv, 90, true);
 }
-let rsJob = null, rsAgain = false;
+let rsJob = null, rsAgain = false, rsAt = 0, rsFor = null;
 function renderSession() {
-  if (rsJob) { rsAgain = true; return rsJob; }
-  rsJob = (async () => { try { do { rsAgain = false; if (!B.session) return; await renderSessionNow(); } while (rsAgain); } finally { rsJob = null; keepEdits(B.session); } })();
-  return rsJob;
+  if (rsJob && rsFor === B.session && Date.now() - rsAt < 20000) { rsAgain = true; return rsJob; }
+  rsAt = Date.now(); rsFor = B.session;
+  const job = rsJob = (async () => { try { do { rsAgain = false; if (!B.session) return; await renderSessionNow(); } while (rsAgain && rsJob === job); } finally { if (rsJob === job) rsJob = null; keepEdits(B.session); } })();
+  return job;
 }
 async function renderSessionNow() {
   const s = B.session, box = $('#reviewMedia');
@@ -1459,11 +1477,12 @@ async function renderSessionNow() {
 async function openReview() {
   const s = B.session;
   if (s.mode === 'photo' && !s.adjust) { s.adjust = s.shots.map(() => ({ z: 1, dx: 0, dy: 0 })); s.adjSel = 0; s.stickers = []; s.stkSel = -1; s.bg = ''; }
-  try { await renderSession(); } catch (e) { return showErr('Something went wrong', e.message, () => openReview(), goHome); }
+  try { await withTimeout(renderSession(), 30000, 'Preparing the photo took too long.'); }
+  catch (e) { camLog('review not shown: ' + e.message); return showErr('Something went wrong', e.message + ' Tap Try again.', () => openReview(), goHome); }
   const isPhoto = s.mode === 'photo';
   $('#rvTabs').hidden = !isPhoto;
   $('#rvTabs [data-tab=stk]').hidden = !(S.stickers && S.stickers.on !== false);
-  $('#rvTabs [data-tab=aibg]').hidden = !(S.aiBg && S.aiBg.on !== false);
+  $('#rvTabs [data-tab=aibg]').hidden = !(S.aiBg && S.aiBg.on !== false) || segWDead;   // hidden if the AI stopped answering on this tablet
   if (isPhoto) { renderAiBgPanel(); say('review'); }
   // (The AI background runs only when the guest picks one: preparing it in advance froze the tablet's screen.)
   showReviewTab(isPhoto ? 'adj' : '');
