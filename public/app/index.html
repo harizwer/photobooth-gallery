@@ -171,7 +171,7 @@
         </div>
         <div class="card" style="flex:1 1 250px;max-width:300px;display:flex;flex-direction:column;gap:14px">
           <div class="cap">Output</div>
-          <label class="field" for="tPaper">Paper<select class="in" id="tPaper"><option value="strip">2x6 strip (2 per 4x6 sheet)</option><option value="portrait">4x6 portrait</option><option value="landscape">4x6 landscape</option></select></label>
+          <label class="field" for="tPaper">Paper<select class="in" id="tPaper"><option value="strip">2x6 strip (2 per sheet, cut)</option><option value="portrait">4R portrait (4×6, not cut)</option><option value="landscape">4R landscape (6×4, not cut)</option></select></label>
           <label class="field" for="tRes">Resolution<select class="in" id="tRes"><option value="3840">High resolution (recommended)</option><option value="1800">Smaller file (print size)</option></select></label>
           <div class="cap">Photo areas</div>
           <div id="areaList" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -206,6 +206,7 @@
           <label class="field" for="capCam">Camera on the tablet<select class="in" id="capCam"><option value="user">Front camera</option><option value="environment">Back camera</option><option value="dslr">Canon DSLR plugged into the tablet (USB)</option></select></label>
           <label class="tog">Mirror the live preview (like a mirror)<input type="checkbox" id="capMirror"></label>
           <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Canon live preview<br><span class="lbl" style="font-size:12px">Preview from the Canon over USB (keep a charger plugged into the USB hub). If it ever freezes, the booth uses the tablet camera for the preview until the Canon is switched off and on — photos still come from the Canon.</span></span><input type="checkbox" id="capCanonLive"></label>
+          <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Guests choose 2x6 strip or 4R<br><span class="lbl" style="font-size:12px">When the event has both kinds of layout (tick them in Events → Edit)</span></span><input type="checkbox" id="capSize"></label>
           <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Boomerang on the strip<br><span class="lbl" style="font-size:12px">Records the last seconds of the countdown (see Boomerang length) before each photo and plays all the photos moving together on the strip the guest chose. Guests get the photo and the boomerang with the same QR. The boomerang is not printed.</span></span><input type="checkbox" id="capPhotoGif"></label>
           <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>HD camera photos for guests<br><span class="lbl" style="font-size:12px">Besides the strip, each photo from the camera is saved in full HD (up to 4000 px), and the guest can download every one. Uses about 8 MB more storage per session.</span></span><input type="checkbox" id="capOriginals"></label>
           <label class="field" for="capQ">Photo quality <span class="mono" id="capQv">95%</span><input type="range" id="capQ" min="70" max="100" value="95" style="accent-color:var(--accent)"></label>
@@ -347,6 +348,7 @@
       <div class="wrap">
         <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:12px">
           <label class="tog" style="padding:12px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line)"><span><b>This laptop prints</b><br><span class="lbl" id="prnState">Off</span></span><input type="checkbox" id="prnOn"></label>
+          <label class="field" for="prnKinds">This window prints<select class="in" id="prnKinds"><option value="all">All prints</option><option value="strip">Only 2x6 strips (DNP with 2-inch cut)</option><option value="4r">Only 4R photos (DNP without cut)</option></select></label>
           <div id="prnTip" hidden class="lbl" style="font-size:12.5px">Prints start by themselves while this page is open, even behind other windows. Keep the laptop awake (no sleep) during the event.</div>
           <div class="row" style="flex-wrap:wrap"><button class="btn" id="test46">Test print 4x6</button><button class="btn" id="testStrip">Test print strip</button></div>
           <div class="cap" style="margin-top:6px">Print size &amp; position (this laptop)</div>
@@ -541,6 +543,14 @@
       <label class="lkrow" for="lkBright"><span>Brighten skin</span><b id="lkBrightV">0</b><input type="range" id="lkBright" min="0" max="100" step="1"></label>
       <button class="btn rbtn pri" id="lkGo" style="height:58px;font-size:19px">Start ▶</button>
       <div class="row" style="justify-content:space-between"><button class="btn rbtn" id="lkBack">← Back</button><button class="btn rbtn" id="lkOff">No filter</button></div>
+    </div>
+  </div>
+  <div class="bs" id="b-size">
+    <div style="position:absolute;inset:0;background:rgba(0,0,0,.75)"></div>
+    <div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:22px;margin:auto;padding:24px;max-width:100%">
+      <h2 style="margin:0;font-size:30px">Choose your print</h2>
+      <div class="row" id="sizeList" style="flex-wrap:wrap;justify-content:center;gap:20px"></div>
+      <button class="btn rbtn" id="sizeBack" style="padding:0 30px">← Back</button>
     </div>
   </div>
   <div class="bs" id="b-pick">

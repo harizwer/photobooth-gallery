@@ -439,3 +439,8 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .rtshot:active,.rtshot:hover{border-color:var(--accent)}
 .rtall{justify-content:center}
 .rtic{display:grid;place-items:center;width:100%;aspect-ratio:4/3;border-radius:10px;background:#26262a;font-size:46px}
+
+/* Print size choice (2x6 strip or 4R) */
+.sizecard{align-items:center;padding:18px;gap:8px;width:min(260px,42vw)}
+.sizecard img{height:230px;max-width:100%;object-fit:contain;border-radius:4px;background:#2a2a2e}
+.sizecard b{font-size:20px}

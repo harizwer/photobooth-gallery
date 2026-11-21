@@ -721,7 +721,13 @@ function lookLabels() { $('#lkSmoothV').textContent = $('#lkSmooth').value; $('#
   B.look = { smooth: +$('#lkSmooth').value, bright: +$('#lkBright').value }; lookLabels(); liveLook(B.look);
 }));
 $('#lkGo').onclick = () => startSession(B.lookDesign);
-$('#lkBack').onclick = () => { if (designsFor(ACTIVE).length > 1) { liveLook(null); startFlow('photo', true); } else goHome(); };
+$('#lkBack').onclick = () => {
+  const g = sizeGroups(), list = B.size && sizeChoice(g) ? g[B.size] : g.all;
+  liveLook(null);
+  if (list.length > 1) startFlow('photo', true);            // back to the layouts
+  else if (sizeChoice(g)) { B.size = null; startFlow('photo', true); }   // back to the print size
+  else goHome();
+};
 $('#lkOff').onclick = () => { $('#lkSmooth').value = 0; $('#lkBright').value = 0; B.look = { smooth: 0, bright: 0 }; lookLabels(); liveLook(B.look); };
 function applyMirror() { const m = !!(S.capture && S.capture.mirror); $('#live').classList.toggle('mirror', m); $('#dslrView').classList.toggle('mirror', m); }
 function boothStatus() {
@@ -1158,7 +1164,7 @@ async function restoreSessions() {
         s.savePromise.then(async row => {
           if (!s.printCopies || s.jobId) return keepDone(s);   // no print, or it was already sent (linked to the photo by startSave)
           const done = await sb.from('print_jobs').select('id').eq('photo_id', row.id).limit(1);
-          if (!(done.data && done.data.length)) await retry(async () => check(await sb.from('print_jobs').insert({ event_id: row.event_id, photo_id: row.id, path: row.print_path || row.path, copies: s.printCopies, label: `${ACTIVE.name} · ${s.design.name}` }).select().single()));
+          if (!(done.data && done.data.length)) await retry(async () => check(await sb.from('print_jobs').insert({ event_id: row.event_id, photo_id: row.id, path: row.print_path || row.path, copies: s.printCopies, label: `${ACTIVE.name} · ${s.design.name}`, paper: paperOf(s.design) }).select().single()));
           keepDone(s);
         }).catch(() => {});
         toast('Saving an earlier guest\'s photo…', 4000);
@@ -1179,19 +1185,25 @@ try { new PerformanceObserver(l => { for (const t of l.getEntries()) if (t.durat
 function goHome() {
   if (B.session && !B.session.row) keepDone(B.session);   // left without saving: nothing to keep
   if (S.music && S.music.on) musicPlay();   // the guest is done: music back on
-  B.session = null; B.look = null; liveLook(null); liveSpeed(false); clearInterval(B.reviewT); clearInterval(B.doneT);
+  B.session = null; B.look = null; B.size = null; liveLook(null); liveSpeed(false); clearInterval(B.reviewT); clearInterval(B.doneT);
   $('#b-count').textContent = ''; $('#busy').hidden = true; $('#bErr').hidden = true;
   bscreen('b-attract');
   if (B.recoverDslr) dslrRecover();
   if (B.pendingReload) { B.pendingReload = false; boothLoad(); }
 }
 const pickDesign = d => S.beautyStep !== false ? openLook(d) : startSession(d);
+// Print size: a 2x6 strip (two on a 4x6 sheet, cut by the printer) or a 4R photo (one 4x6, not cut)
+const paperOf = d => d && d.paper === 'strip' ? 'strip' : '4r';
+function sizeGroups() { const all = designsFor(ACTIVE); return { all, strip: all.filter(d => paperOf(d) === 'strip'), '4r': all.filter(d => paperOf(d) === '4r') }; }
+const sizeChoice = g => S.capture.sizeChoice !== false && g.strip.length > 0 && g['4r'].length > 0;
 function startFlow(mode, again) {
-  if (!again) { ac(); keepAwake(); musicPause(); say(mode === 'video' ? 'video' : 'welcome'); B.look = null; }
+  if (!again) { ac(); keepAwake(); musicPause(); say(mode === 'video' ? 'video' : 'welcome'); B.look = null; B.size = null; }
   if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
   B.mode = mode || 'photo';
   if (B.mode !== 'photo') return startSession(null);
-  const ds = designsFor(ACTIVE);
+  const g = sizeGroups();
+  if (sizeChoice(g) && !B.size) return showSizes(g);
+  const ds = B.size && sizeChoice(g) ? g[B.size] : g.all;
   if (ds.length === 1) return pickDesign(ds[0]);
   $('#pickList').innerHTML = '';
   ds.forEach(async (d, i) => {
@@ -1202,6 +1214,18 @@ function startFlow(mode, again) {
     b.querySelector('img').src = c.toDataURL('image/jpeg', .7);
   });
   bscreen('b-pick');
+}
+function showSizes(g) {
+  const SZ = { strip: ['2×6 Photo Strip', 'Two strips, cut apart'], '4r': ['4R Photo', 'One 4×6 photo'] };
+  $('#sizeList').innerHTML = '';
+  ['strip', '4r'].forEach(async k => {
+    const b = document.createElement('button'); b.className = 'role sizecard';
+    b.innerHTML = `<img alt=""><b>${SZ[k][0]}</b><span class="lbl">${SZ[k][1]}</span>`;
+    b.onclick = () => { B.size = k; startFlow('photo', true); }; $('#sizeList').appendChild(b);
+    const d = g[k][0], c = await compose({ ...d, output_long: 600 }, samples(d.areas.length), 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
+    b.querySelector('img').src = c.toDataURL('image/jpeg', .7);
+  });
+  bscreen('b-size');
 }
 // onAt runs when `at` seconds are left (used to start recording the boomerang); minSecs makes the countdown at least that long.
 async function countdown(me, label, onAt, at = 1, minSecs = 0) {
@@ -1681,7 +1705,7 @@ function startSave(s, reuse) {
   if (s.row) return s.row;
   const id = reuse ? reuse.id : 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ev = reuse ? reuse.event_id : ACTIVE.id, evName = ACTIVE.name, evDate = ACTIVE.event_date;
   const row = s.row = reuse ? { ...reuse } : { id, event_id: ev, kind: s.mode, share_token: token(), print_token: token(), path: `${ev}/${id}.jpg`, thumb_path: `${ev}/${id}-thumb.jpg`, layout: s.design ? s.design.name : s.mode };
-  if (s.mode === 'photo') row.print_path = `${ev}/${id}-print.jpg`;
+  if (s.mode === 'photo') { row.print_path = `${ev}/${id}-print.jpg`; row.paper = paperOf(s.design); }
   keepEdits(s, true);   // a refresh from now on still finishes this save, with the same QR link
   const q = (S.capture.quality || 95) / 100, qrOn = !!S.printQr.on, photoGifOn = S.capture.photoGif !== false;
   let printReady; s.printReady = new Promise((res, rej) => { printReady = { res, rej }; }); s.printReady.catch(() => {});
@@ -1756,7 +1780,7 @@ async function doPrint() {
   const copies = s.copies, label = `${ACTIVE.name} · ${s.design.name}`, ev = ACTIVE.id;
   try {
     const row = await s.printReady;
-    const job = await retry(async () => check(await sb.from('print_jobs').insert({ event_id: ev, photo_id: null, path: row.print_path || row.path, copies, label }).select().single()));
+    const job = await retry(async () => check(await sb.from('print_jobs').insert({ event_id: ev, photo_id: null, path: row.print_path || row.path, copies, label, paper: paperOf(s.design) }).select().single()));
     s.jobId = job.id; keepEdits(s, true);
     s.printMsg = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.';
     if (B.session === s && $('#b-done').classList.contains('on')) { $('#printMsg').textContent = printerOnline() ? 'Sending to the printer…' : 'Your print is in the queue. It starts when the printer laptop is connected.'; $('#printBar').style.width = '30%'; }
@@ -1941,7 +1965,8 @@ async function retakeOne(s, i) {
   $('#b-count').textContent = '';
   await openReview();
 }
-$('#pickBack').onclick = goHome; $('#cancelShoot').onclick = goHome;
+$('#pickBack').onclick = () => { if (B.size && sizeChoice(sizeGroups())) { B.size = null; startFlow('photo', true); } else goHome(); };
+$('#sizeBack').onclick = goHome; $('#cancelShoot').onclick = goHome;
 
 /* ---------- Staff: PIN → menu (back, camera, admin board, log out) ---------- */
 let pin = '';
@@ -2150,7 +2175,7 @@ function openEventModal(ev) {
     const mine = TEMPLATES.filter(t => t.frame_url).map(tplToDesign).sort((a, b) => (b.event_type === type) - (a.event_type === type));
     const list = [...mine, ...BUILTIN];
     if (!chosen) { const t = mine.filter(d => d.event_type === type); chosen = (t.length ? t : BUILTIN).map(d => d.id); }
-    const paper = { strip: '2x6 strip', portrait: '4x6 portrait', landscape: '4x6 landscape' };
+    const paper = { strip: '2x6 strip', portrait: '4R portrait', landscape: '4R landscape' };
     box.innerHTML = list.map(d => `<label class="tog" style="justify-content:flex-start;gap:10px;padding:6px 10px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line);color:var(--fg)"><input type="checkbox" value="${esc(d.id)}" ${chosen.includes(d.id) ? 'checked' : ''}>${d.frame_url ? `<img src="${esc(d.frame_url)}" alt="" crossorigin="anonymous" style="height:40px;width:28px;object-fit:contain;background:#2a2a2e;border-radius:3px">` : ''}<span><b style="font-size:13px">${esc(d.name)}</b><br><span class="lbl" style="font-size:11.5px">${d.builtin ? 'Standard' : esc(d.event_type)} · ${paper[d.paper]} · ${d.areas.length} photo${d.areas.length === 1 ? '' : 's'}</span></span></label>`).join('');
   };
   drawTpls();
@@ -2438,7 +2463,7 @@ function renderModes() {
 }
 function renderCaptureForm() {
   const c = S.capture;
-  $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive !== false; $('#capPhotoGif').checked = c.photoGif !== false; $('#capOriginals').checked = c.originals !== false; $('#capBoomSec').value = c.boomSec || 5; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
+  $('#capSize').checked = c.sizeChoice !== false; $('#capCam').value = c.camera; $('#capMirror').checked = !!c.mirror; $('#capCanonLive').checked = c.canonLive !== false; $('#capPhotoGif').checked = c.photoGif !== false; $('#capOriginals').checked = c.originals !== false; $('#capBoomSec').value = c.boomSec || 5; $('#capQ').value = c.quality; $('#capQv').textContent = c.quality + '%';
   $('#capCount').value = c.countdown; $('#capGap').value = c.gap ?? 2; $('#capVid').value = c.videoSec; $('#capCopies').value = c.maxCopies;
   renderDslrState();
 }
@@ -2545,7 +2570,7 @@ $('#cdPlay').onclick = async () => {
 $('#mediaSave').onclick = async () => {
   const n = (id, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+$(id).value || d)));
   const liveBefore = S.capture.canonLive !== false;
-  Object.assign(S.capture, { camera: $('#capCam').value, mirror: $('#capMirror').checked, canonLive: $('#capCanonLive').checked, photoGif: $('#capPhotoGif').checked, originals: $('#capOriginals').checked, boomSec: n('#capBoomSec', 1, 5, 5), quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
+  Object.assign(S.capture, { sizeChoice: $('#capSize').checked, camera: $('#capCam').value, mirror: $('#capMirror').checked, canonLive: $('#capCanonLive').checked, photoGif: $('#capPhotoGif').checked, originals: $('#capOriginals').checked, boomSec: n('#capBoomSec', 1, 5, 5), quality: n('#capQ', 70, 100, 95), countdown: n('#capCount', 1, 10, 3), gap: Math.max(0, Math.min(10, Math.round((+$('#capGap').value || 0) * 2) / 2)), videoSec: n('#capVid', 3, 30, 10), maxCopies: n('#capCopies', 1, 10, 3) });
   try { await saveStudio(); renderMedia(); toast('Saved. The tablet updates right away.'); } catch (e) { toast(e.message, 4000); }
   if (dslr && liveBefore !== (S.capture.canonLive !== false)) {   // apply the Canon live view choice now
     camTestOff(); try { sessionStorage.removeItem('pb.liveBroken'); } catch (e) {}
@@ -2696,7 +2721,7 @@ $('#thumbs').addEventListener('click', e => {
     rp.disabled = true;
     try {
       const c = Math.max(1, Math.min(10, +m.querySelector('#rpC').value || 1)), path = as4r ? await path4r() : (p.print_path || p.path);
-      check(await sb.from('print_jobs').insert({ event_id: p.event_id, photo_id: p.id, path, copies: c, label: `${ev ? ev.name : ''} · reprint${as4r ? ' · 4R ×4' : ''}` }));
+      check(await sb.from('print_jobs').insert({ event_id: p.event_id, photo_id: p.id, path, copies: c, label: `${ev ? ev.name : ''} · reprint${as4r ? ' · 4R ×4' : ''}`, paper: as4r ? '4r' : (p.paper || 'strip') }));
       toast(printerOn() ? 'Sent to the printer' : 'Added to the print queue. Turn on printing in Printer.'); runPrinter();
     } catch (err) { toast(err.message, 4000); }
     rp.disabled = false;
@@ -2758,9 +2783,13 @@ async function renderGuestPreview() {
 
 /* ---- Printer (this laptop) ---- */
 let printBusy = false;
+// Which prints this window takes: everything, or only 2x6 strips / only 4R (to send each to its own DNP setting)
+const printKinds = () => store.get('printKinds', 'all');
+$('#prnKinds').onchange = () => { store.set('printKinds', $('#prnKinds').value); printerUi(); runPrinter(); };
 function printerUi() {
-  const on = printerOn();
-  $('#prnState').textContent = on ? 'On — jobs from the tablet print here' : 'Off — jobs wait in the queue';
+  const on = printerOn(), k = printKinds();
+  $('#prnKinds').value = k;
+  $('#prnState').textContent = on ? (k === 'strip' ? 'On — this window prints 2x6 strips only' : k === '4r' ? 'On — this window prints 4R photos only' : 'On — jobs from the tablet print here') : 'Off — jobs wait in the queue';
   $('#prnTip').hidden = !on;
   renderDevices();
 }
@@ -2972,9 +3001,13 @@ async function runPrinter() {
   try {
     // A job still on "printing" from an earlier page (closed, reloaded or frozen) would block the queue: print it again
     const stale = new Date(Date.now() - 3 * 60e3).toISOString();
-    await sb.from('print_jobs').update({ status: 'waiting', updated_at: new Date().toISOString() }).eq('owner', USER.id).eq('status', 'printing').lt('created_at', stale).not('id', 'in', `(${[...myJobs].join(',') || '00000000-0000-0000-0000-000000000000'})`);
+    let sq = sb.from('print_jobs').update({ status: 'waiting', updated_at: new Date().toISOString() }).eq('owner', USER.id).eq('status', 'printing').lt('created_at', stale);
+    if (printKinds() !== 'all') sq = sq.eq('paper', printKinds());
+    await sq.not('id', 'in', `(${[...myJobs].join(',') || '00000000-0000-0000-0000-000000000000'})`);
     for (;;) {
-      const next = check(await sb.from('print_jobs').select('*').eq('owner', USER.id).eq('status', 'waiting').order('created_at', { ascending: true }).limit(1));
+      let q = sb.from('print_jobs').select('*').eq('owner', USER.id).eq('status', 'waiting');
+      if (printKinds() !== 'all') q = q.eq('paper', printKinds());   // this window prints only strips or only 4R
+      const next = check(await q.order('created_at', { ascending: true }).limit(1));
       if (!next.length || !printerOn()) break;
       const job = next[0];
       const claimed = check(await sb.from('print_jobs').update({ status: 'printing', updated_at: new Date().toISOString() }).eq('id', job.id).eq('status', 'waiting').select());
