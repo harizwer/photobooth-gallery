@@ -86,6 +86,7 @@ function applyBrand() {
   $$('[data-brand]').forEach(el => el.textContent = name); document.title = name;
   $$('[data-logo]').forEach(el => { const sz = +el.dataset.size || 24; el.innerHTML = S.logo ? `<img src="${esc(S.logo)}" alt="" style="width:${Math.round(sz * 1.25)}px;height:${Math.round(sz * 1.25)}px">` : DEFAULT_LOGO(sz); });
   const lp = $('#logoPrev'); if (lp) lp.innerHTML = S.logo ? `<img src="${esc(S.logo)}" alt="Your logo">` : DEFAULT_LOGO(40);
+  const fav = $('#favicon'); if (fav) fav.href = S.logo || '/icon-32.png';   // the browser tab shows the studio's logo
 }
 applyBrand();
 

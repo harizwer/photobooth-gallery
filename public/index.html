@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0a0a0b">
+<link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" id="favicon">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>Your photo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,600&display=swap">
@@ -87,6 +90,7 @@ async function rpc(fn, body) {
 function studio(s) {
   s = s || {}; const name = s.brand || 'Photobooth Studio';
   $('#brand').hidden = false; $('#brand').innerHTML = (s.logo ? `<img src="${esc(s.logo)}" alt="">` : '') + `<span>${esc(name)}</span>`;
+  if (s.logo) { const fav = document.getElementById('favicon'); if (fav) fav.href = s.logo; }   // the browser tab shows the studio's logo
   $('#foot').textContent = s.footer || ('Photos by ' + name); document.title = name;
 }
 function message(title, text, icon = true) {
