@@ -9,6 +9,9 @@ if (NATIVE && NATIVE.alive) setInterval(() => { try { NATIVE.alive(); } catch (e
 const PUBLIC_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxZXlhaW14Zmt1cnN0dGJkbXlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODc2NTQsImV4cCI6MjEwODg2MzY1NH0.T5tHvHVpNzNHwxYFASy8WO6xr1bvfBko9gxHCoxVQSc';
 const SITE = location.origin + location.pathname.replace(/app\/?(index\.html)?$/, '');
 const APP_URL = SITE + 'app/';
+// Guests' links and QR codes use the studio's own domain (Studio settings → Link domain) once it is set; the tablet and
+// laptop keep working on whatever address they are opened on. Old links keep working on both addresses.
+const LINK = () => (S && S.linkDomain ? `https://${S.linkDomain}/` : SITE);
 const sb = (window.__SB_FAKE__ || window.supabase).createClient(SUPABASE_URL, PUBLIC_KEY);
 
 const $ = s => document.querySelector(s);
@@ -40,8 +43,8 @@ function check(res) { if (res.error) throw new Error(res.error.message || String
 function toast(m, ms = 2800) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(t._t); t._t = setTimeout(() => t.hidden = true, ms); }
 function qr(el, text, size) { el.innerHTML = ''; if (window.QRCode) new QRCode(el, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel.M }); else el.textContent = text; }
 function qrCanvas(text, size, level) { const d = document.createElement('div'); new QRCode(d, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel[level || 'M'] }); return d.querySelector('canvas'); }
-const shareLink = p => `${SITE}?p=${p.share_token}`;
-const albumLink = e => `${SITE}?album=${e.album_token}`;
+const shareLink = p => `${LINK()}?p=${p.share_token}`;
+const albumLink = e => `${LINK()}?album=${e.album_token}`;
 const toBlob = (c, type = 'image/jpeg', q = .92) => new Promise(r => c.toBlob(r, type, q));
 function scaled(src, max) {
   const w0 = src.width || src.videoWidth, h0 = src.height || src.videoHeight;
@@ -53,7 +56,7 @@ function download(blobOrUrl, name) { const a = document.createElement('a'); a.hr
 
 /* ---------------- Studio settings ---------------- */
 const STUDIO_DEFAULT = {
-  brand: 'Photobooth Studio', guestFooter: '', logo: '',
+  brand: 'Photobooth Studio', guestFooter: '', logo: '', linkDomain: '',
   printQr: { on: false, pos: 'br' },
   bg: { kind: 'color', color: '#ff5a26', src: '', dim: 45, sub: '' },
   stickers: { on: true, packs: ['props', 'love', 'party', 'raya', 'fun'], custom: [], texts: [{ t: 'Selamat Pengantin Baru', font: 'Great Vibes', color: '#ffffff' }] },
@@ -1776,7 +1779,7 @@ function startSave(s, reuse) {
       // The print: made first and sent first, so the print job goes out before the HD photos and the boomerang.
       // Sized for the printer (a 4x6 sheet at 400 dpi; the DNP prints at 300), which keeps it quick to send and print.
       const sheet = scaled(full, PRINT_LONG);
-      if (qrOn) drawPrintQr(sheet.getContext('2d'), sheet.width, sheet.height, s.design, `${SITE}?q=${row.print_token}`);
+      if (qrOn) drawPrintQr(sheet.getContext('2d'), sheet.width, sheet.height, s.design, `${LINK()}?q=${row.print_token}`);
       const printBlob = await jpeg(printCanvas(s.design, sheet), .93);
       const pu = retry(() => upload(row.print_path, printBlob, 'image/jpeg')); work.push(pu);
       pu.then(() => printReady.res(row), e => printReady.rej(e));
@@ -2513,7 +2516,7 @@ $('#tPreview').onclick = async () => {
   readDraft(); const img = $('#frameImg');
   if (!img.naturalWidth || !draft.areas.length) return toast('Upload a frame with photo areas first');
   const d = { ...tplToDesign({ ...draft, width: img.naturalWidth, height: img.naturalHeight }), frame_url: img.src, output_long: 1800, qrPlace: draft.qrPlace };
-  const c = await compose(d, samples(d.areas.length), 'none', { qrText: S.printQr.on ? SITE + '?q=preview' : '' });
+  const c = await compose(d, samples(d.areas.length), 'none', { qrText: S.printQr.on ? LINK() + '?q=preview' : '' });
   modal(`<div class="row" style="justify-content:space-between"><b>Preview · ${esc(draft.name)}</b><button class="ico" data-close aria-label="Close">✕</button></div><img alt="Template preview" src="${c.toDataURL('image/jpeg', .85)}" style="max-height:72vh;max-width:100%;align-self:center;border-radius:4px">`, 720);
 };
 $('#tplQrOn').onchange = async () => { S.printQr.on = $('#tplQrOn').checked; $('#tplQr').hidden = !S.printQr.on; $('#tplQrBox').hidden = !S.printQr.on; showTplQr(); try { await saveStudio(); toast(S.printQr.on ? 'Small QR will be printed on every print' : 'Small QR turned off'); } catch (e) { toast(e.message, 4000); } };
@@ -2846,7 +2849,7 @@ $('#gZip').onclick = async () => {
 async function renderGuestPreview() {
   const r = await sb.from('photos').select('share_token').eq('owner', USER.id).order('created_at', { ascending: false }).limit(1);
   const p = r.data && r.data[0];
-  const url = p ? `${SITE}?p=${p.share_token}` : `${SITE}?p=preview`;
+  const url = p ? `${LINK()}?p=${p.share_token}` : `${LINK()}?p=preview`;
   $('#gvFrame').src = url; $('#gvOpen').href = url;
 }
 
@@ -2925,7 +2928,7 @@ $('#queue').onclick = async e => {
 };
 async function testPrint(strip) {
   const d = strip ? BUILTIN[0] : BUILTIN[1];
-  const c = await compose({ ...d, output_long: 1800 }, samples(d.areas.length), 'none', { name: 'TEST PRINT', date: new Date().toLocaleString('en-GB'), qrText: S.printQr.on ? SITE : '' });
+  const c = await compose({ ...d, output_long: 1800 }, samples(d.areas.length), 'none', { name: 'TEST PRINT', date: new Date().toLocaleString('en-GB'), qrText: S.printQr.on ? LINK() : '' });
   try { await printImage(printCanvas(d, c).toDataURL('image/jpeg', .95), 1); await countPrinted(1); } catch (e) { toast(e.message, 4000); }
 }
 $('#test46').onclick = () => testPrint(false); $('#testStrip').onclick = () => testPrint(true);
@@ -3123,6 +3126,7 @@ document.addEventListener('visibilitychange', () => { track(); if (!document.hid
 /* ---- Studio settings ---- */
 let pendingBg = null;
 function renderStudio() {
+  $('#linkDom').value = S.linkDomain || ''; linkDomInfo();
   $('#brandIn').value = S.brand; $('#guestFoot').value = S.guestFooter; $('#guestFoot').placeholder = 'Photos by ' + (S.brand || 'Photobooth Studio');
   $('#pqOn').checked = !!S.printQr.on; $('#pqPos').value = S.printQr.pos;
   $('#bgDim').value = S.bg.dim; $('#bgSub').value = S.bg.sub || '';
@@ -3140,11 +3144,33 @@ function renderBgPrev() {
 }
 async function renderPq() {
   $('#pqChip').className = 'chip' + (S.printQr.on ? '' : ' mute'); $('#pqChip').textContent = S.printQr.on ? 'On · 12 h links' : 'Off';
-  const c = await compose({ ...BUILTIN[0], output_long: 900 }, samples(3), 'none', { name: ACTIVE ? ACTIVE.name : '', date: ACTIVE ? ACTIVE.event_date : '', qrText: S.printQr.on ? SITE + '?q=preview' : '' });
+  const c = await compose({ ...BUILTIN[0], output_long: 900 }, samples(3), 'none', { name: ACTIVE ? ACTIVE.name : '', date: ACTIVE ? ACTIVE.event_date : '', qrText: S.printQr.on ? LINK() + '?q=preview' : '' });
   $('#pqPrev').src = c.toDataURL('image/jpeg', .85);
 }
 $('#brandIn').addEventListener('input', () => { S.brand = $('#brandIn').value.trim() || 'Photobooth Studio'; applyBrand(); $('#guestFoot').placeholder = 'Photos by ' + S.brand; });
 $('#guestFoot').addEventListener('input', () => { S.guestFooter = $('#guestFoot').value.trim(); });
+// Link domain: e.g. foto.raysnapphotobooth.com, connected to this website in Cloudflare first (Custom domain)
+const cleanDomain = v => String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/?#].*$/, '');
+function linkDomInfo(msg, ok) {
+  const d = cleanDomain($('#linkDom').value);
+  $('#linkDomInfo').innerHTML = msg ? `<span style="color:${ok ? '#5fd38a' : '#ff8a80'}">${esc(msg)}</span>` : d ? `Guests' links: <span class="mono">https://${esc(d)}/?p=…</span>` : `Guests' links use this website: <span class="mono">${esc(SITE)}</span>`;
+}
+$('#linkDom').addEventListener('input', () => linkDomInfo());
+// The domain must open this same website (its own copy of the icon answers) before guests' QR codes use it
+function domainWorks(d) {
+  return new Promise(res => { const i = new Image(), t = setTimeout(() => res(false), 8000); i.onload = () => { clearTimeout(t); res(true); }; i.onerror = () => { clearTimeout(t); res(false); }; i.src = `https://${d}/icon-32.png?check=${Date.now()}`; });
+}
+$('#linkDomSave').onclick = async () => {
+  const d = cleanDomain($('#linkDom').value), b = $('#linkDomSave');
+  if (d && !/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(d)) return linkDomInfo('That is not a domain. Example: foto.raysnapphotobooth.com', false);
+  b.disabled = true; linkDomInfo('Checking…', true);
+  try {
+    if (d && !(await domainWorks(d))) return linkDomInfo(`${d} does not open this website yet. Add it in Cloudflare first (see the steps below), wait a few minutes, then try again.`, false);
+    S.linkDomain = d; await saveStudio(); $('#linkDom').value = d;
+    linkDomInfo(d ? `Saved. New QR codes and links use https://${d}/` : 'Saved. Links use this website again.', true);
+  } catch (e) { linkDomInfo(e.message, false); }
+  finally { b.disabled = false; }
+};
 $('#pqOn').onchange = () => { S.printQr.on = $('#pqOn').checked; renderPq(); };
 $('#pqPos').onchange = () => { S.printQr.pos = $('#pqPos').value; renderPq(); };
 $('#bgKinds').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (!b) return; if (S.bg.kind !== b.dataset.k) { S.bg.src = ''; $('#bgFileName').textContent = 'No file yet'; } S.bg.kind = b.dataset.k; renderBgPrev(); });
@@ -3781,7 +3807,7 @@ const phoneLeft = () => PHN.info.limit > 0 ? Math.max(0, PHN.info.limit - PHN.in
 function phoneHome() {
   phoneStop();
   const mine = phoneMine(), left = phoneLeft();
-  const codes = mine.length ? `<div class="phcard"><b>Strip saya</b>${mine.slice().reverse().map(x => `<div class="phrow"><span class="phcode sm">${esc(x.code)}</span><a href="${esc(SITE + '?p=' + x.share)}" target="_blank" rel="noopener">Simpan gambar HD ›</a></div>`).join('')}<p class="phnote">Tunjuk kod di booth photobooth untuk print.</p></div>` : '';
+  const codes = mine.length ? `<div class="phcard"><b>Strip saya</b>${mine.slice().reverse().map(x => `<div class="phrow"><span class="phcode sm">${esc(x.code)}</span><a href="${esc(LINK() + '?p=' + x.share)}" target="_blank" rel="noopener">Simpan gambar HD ›</a></div>`).join('')}<p class="phnote">Tunjuk kod di booth photobooth untuk print.</p></div>` : '';
   if (left <= 0) return phoneUi(`<div class="phmsg">Anda sudah buat ${PHN.info.limit} strip dari telefon ini. Terima kasih! 🎉</div>${codes}`);
   phoneUi(`<h1 class="phh1">Bergambar dari meja anda 📸</h1>
     <p class="phlead">Pilih layout, bergambar dengan telefon anda, kemudian tunjuk kod di booth untuk print.${left !== Infinity ? ` <b>Baki: ${left} strip.</b>` : ''}</p>
@@ -3846,7 +3872,7 @@ async function phoneSend() {
     set('Menyediakan gambar…');
     const full = await compose({ ...d, output_long: Math.min(d.output_long || 2400, 2400) }, PHN.shots, 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
     const sheet = scaled(full, PRINT_LONG);
-    if (S.printQr && S.printQr.on) drawPrintQr(sheet.getContext('2d'), sheet.width, sheet.height, d, `${SITE}?q=${r.print_token}`);
+    if (S.printQr && S.printQr.on) drawPrintQr(sheet.getContext('2d'), sheet.width, sheet.height, d, `${LINK()}?q=${r.print_token}`);
     const files = [[base + '-print.jpg', await jpeg(printCanvas(d, sheet), .93)], [base + '.jpg', await jpeg(full, .9)], [base + '-thumb.jpg', await jpeg(scaled(full, 520), .78)]];
     for (const [i, shot] of PHN.shots.entries()) files.push([`${base}-o${i + 1}.jpg`, await jpeg(scaled(shot, 2400), .9)]);
     for (const [i, [path, blob]] of files.entries()) {
@@ -3862,7 +3888,7 @@ async function phoneSend() {
     store.set('phoneDone', [...store.get('phoneDone', []), { ev: ACTIVE.id, code: fin.code, share: fin.share_token, at: Date.now() }].slice(-20));
     phoneUi(`<h1 class="phh1">Siap! 🎉</h1>
       <div class="phcard center"><p class="phlead">Tunjuk kod ini di booth photobooth untuk print:</p><div class="phcode">${esc(fin.code)}</div></div>
-      <div class="phbtns"><a class="btn rbtn pri" href="${esc(SITE + '?p=' + fin.share_token)}" target="_blank" rel="noopener">💾 Simpan gambar HD</a>${phoneLeft() > 0 ? '<button class="btn rbtn" id="phMore">📸 Buat strip lagi</button>' : ''}</div>`);
+      <div class="phbtns"><a class="btn rbtn pri" href="${esc(LINK() + '?p=' + fin.share_token)}" target="_blank" rel="noopener">💾 Simpan gambar HD</a>${phoneLeft() > 0 ? '<button class="btn rbtn" id="phMore">📸 Buat strip lagi</button>' : ''}</div>`);
     const more = $('#phMore'); if (more) more.onclick = phoneHome;
   } catch (e) {
     phoneUi(`<div class="phmsg">Tak berjaya menghantar: ${esc(netMsg(e))}</div><div class="phbtns"><button class="btn rbtn pri" id="phAgain">Cuba lagi</button><button class="btn rbtn" id="phHome">Mula semula</button></div>`);
@@ -3871,7 +3897,7 @@ async function phoneSend() {
 }
 
 /* ---- Admin: table QR settings (Events → Edit) and table cards ---- */
-const phoneLink = ev => ev && ev.settings && ev.settings.phone && ev.settings.phone.token ? `${SITE}app/?phone=${ev.settings.phone.token}` : '';
+const phoneLink = ev => ev && ev.settings && ev.settings.phone && ev.settings.phone.token ? `${LINK()}app/?phone=${ev.settings.phone.token}` : '';
 async function phoneCards(ev) {
   const link = phoneLink(ev); if (!link) return toast('Save the event with Table QR on first.');
   await loadScript('../vendor/jspdf.umd.min.js');

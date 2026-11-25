@@ -419,6 +419,16 @@
           <div class="lbl">Leave empty to use “Photos by” + your photobooth name.</div>
           <div class="row" style="padding:12px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line)"><span class="logo" data-logo data-size="22"></span><b data-brand style="font-size:16px">Photobooth Studio</b></div>
         </div>
+        <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:10px">
+          <b>Link domain for guests' QR codes</b>
+          <div class="lbl" style="line-height:1.5">Guests' photo links, album links, the small QR on prints and Table QR use this address. The tablet and this board keep working as they are, and old QR codes keep working.</div>
+          <div class="row" style="gap:8px;flex-wrap:nowrap"><input class="in mono" id="linkDom" placeholder="foto.raysnapphotobooth.com" autocomplete="off" spellcheck="false" style="flex:1;min-width:0"><button class="btn sm pri" id="linkDomSave">Check &amp; save</button></div>
+          <div class="lbl" id="linkDomInfo" style="font-size:12.5px"></div>
+          <details class="lbl" style="font-size:12.5px;line-height:1.6"><summary style="cursor:pointer">How to connect the domain (Cloudflare, once)</summary>
+            1. Cloudflare → Workers &amp; Pages → <b>photobooth-studio</b> → Settings → Domains &amp; Routes → Add → <b>Custom domain</b>.<br>
+            2. Type the subdomain, e.g. <span class="mono">foto.raysnapphotobooth.com</span>, then Add domain. Wait until it says Active (a few minutes).<br>
+            3. Type the same subdomain here and press Check &amp; save. Leave it empty to go back to the old address.</details>
+        </div>
         <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><b>Small QR on the print</b><span class="chip mute" id="pqChip">Off</span></div>
           <label class="tog">Print a small QR on every print<input type="checkbox" id="pqOn"></label>
