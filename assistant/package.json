@@ -17,9 +17,19 @@
   "build": {
     "appId": "com.raysnap.printassistant",
     "productName": "Raysnap Print Assistant",
-    "files": ["main.js", "preload.js", "ui/**"],
-    "directories": { "output": "dist" },
-    "win": { "target": "nsis", "icon": "build/icon.png" },
+    "files": [
+      "main.js",
+      "preload.js",
+      "ui/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png",
+      "forceCodeSigning": false
+    },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
@@ -27,6 +37,11 @@
       "createDesktopShortcut": true,
       "shortcutName": "Raysnap Print Assistant",
       "artifactName": "RaysnapPrintAssistant-Setup.exe"
-    }
+    },
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harizwer/photobooth-gallery.git"
   }
 }
