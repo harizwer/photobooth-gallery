@@ -42,6 +42,8 @@ jobs:
           gh release view assistant --repo "${{ github.repository }}" > /dev/null 2>&1 || \
             gh release create assistant --repo "${{ github.repository }}" --title "Raysnap Print Assistant" \
               --notes "Windows program that prints Raysnap Photobooth photos straight to the DNP printer. Download RaysnapPrintAssistant-Setup.exe and run it."
-          gh release upload assistant dist/RaysnapPrintAssistant-Setup.exe --clobber --repo "${{ github.repository }}"
+          # the installer, then what the installed program reads to update itself (latest.yml last, so it never points at a missing file)
+          gh release upload assistant dist/RaysnapPrintAssistant-Setup.exe dist/RaysnapPrintAssistant-Setup.exe.blockmap --clobber --repo "${{ github.repository }}"
+          gh release upload assistant dist/latest.yml --clobber --repo "${{ github.repository }}"
           echo "Built from ${{ github.sha }} (run ${{ github.run_number }})" > build-info.txt
           gh release upload assistant build-info.txt --clobber --repo "${{ github.repository }}"

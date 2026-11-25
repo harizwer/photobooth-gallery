@@ -244,7 +244,23 @@ async function openStudio() {
   });
   $('#studioRetry').onclick = () => { $('#studioRetry').hidden = true; $('#studioErr').textContent = ''; wv.reload(); };
   wv.src = (await A.studioUrl()) + '/app/';
+  studioVer = await A.studioVersion().catch(() => '');
 }
+// When the website is updated, the admin board loads the new version: right away when it is not on screen (another
+// tab, or the window is in the tray), otherwise a bar offers "Refresh now" so nothing being typed is lost.
+let studioVer = '';
+const studioOnScreen = () => $('#studioPane').classList.contains('on') && document.visibilityState === 'visible';
+function refreshStudio() { $('#studioBar').hidden = true; $('#studio').reloadIgnoringCache(); }
+$('#studioRefresh').onclick = refreshStudio;
+document.addEventListener('keydown', e => { if ((e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r')) && studioOpen) { e.preventDefault(); refreshStudio(); } });
+setInterval(async () => {
+  if (!studioOpen) return;
+  if (!$('#studioBar').hidden && !studioOnScreen()) return refreshStudio();
+  const v = await A.studioVersion().catch(() => '');
+  if (!v) return;
+  if (!studioVer) { studioVer = v; return; }
+  if (v !== studioVer) { studioVer = v; if (studioOnScreen()) $('#studioBar').hidden = false; else refreshStudio(); }
+}, 60000);
 // Right after logging in, the admin board gets its own login (a second session, so the two never fight over one token)
 async function seedStudio() {
   const seed = store.get('studioSeed', null); if (!seed) return;
@@ -258,6 +274,15 @@ async function seedStudio() {
 }
 window.addEventListener('online', () => { online = true; renderStatus(); run(); });
 window.addEventListener('offline', () => { online = false; renderStatus(); });
+
+/* ---------- Program updates ---------- */
+function showUpdate(v) { if (!v) return; const b = $('#updBtn'); b.hidden = false; b.textContent = `Update ${v} ready · Restart`; }
+A.onUpdateReady(showUpdate); A.updateState().then(showUpdate).catch(() => {});
+$('#updBtn').onclick = async () => {
+  const waiting = busy ? ' A print is being sent right now: wait a moment first.' : '';
+  if (!confirm('Restart to install the new version? It takes about 30 seconds and then opens again by itself. Prints wait in the queue meanwhile.' + waiting)) return;
+  await A.updateInstall();
+};
 
 /* ---------- Open: already logged in? ---------- */
 (async () => {

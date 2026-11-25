@@ -2,7 +2,7 @@
 // It logs in to the studio, takes print jobs from the tablet and phones, and prints them straight to the chosen
 // printer (no print window): 2x6 strips to the DNP set up with the 2-inch cut, 4R photos to the DNP without it.
 // The window (ui/) does the work; this file opens it, keeps it running in the tray and prints pages silently.
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, net } = require('electron');
 const path = require('path'), fs = require('fs'), os = require('os');
 
 const SELFTEST = process.argv.includes('--selftest');
@@ -33,6 +33,7 @@ app.whenReady().then(async () => {
     { label: 'Quit (stop printing)', click: () => { quitting = true; app.quit(); } },
   ]));
   tray.on('click', () => { win.show(); win.focus(); });
+  setTimeout(checkUpdates, 20000); setInterval(checkUpdates, 3 * 3600e3);
 });
 app.on('before-quit', () => { quitting = true; });
 app.on('window-all-closed', () => { if (quitting || SELFTEST) app.quit(); });
@@ -53,6 +54,29 @@ app.on('web-contents-created', (e, wc) => {
   });
 });
 ipcMain.handle('studio-url', () => STUDIO);
+// The admin board's version: changes each time the website is updated (then the board is loaded again)
+ipcMain.handle('studio-version', async () => {
+  try { const r = await net.fetch(STUDIO + '/app/app.js', { method: 'HEAD', cache: 'no-store' }); return r.ok ? (r.headers.get('etag') || r.headers.get('last-modified') || '') : ''; }
+  catch (e) { return ''; }
+});
+
+// Updates of this program: checked at start and every 3 hours, downloaded in the background, installed when the
+// person presses "Restart to update" (or when the program is quit), so printing is never stopped in the middle of an event.
+let updater = null, updateReady = '';
+function checkUpdates() {
+  if (!app.isPackaged || SELFTEST) return;
+  try {
+    if (!updater) {
+      updater = require('electron-updater').autoUpdater;
+      updater.autoDownload = true; updater.autoInstallOnAppQuit = true;
+      updater.on('update-downloaded', info => { updateReady = info.version; if (win) win.webContents.send('update-ready', info.version); });
+      updater.on('error', () => {});
+    }
+    updater.checkForUpdates().catch(() => {});
+  } catch (e) { }
+}
+ipcMain.handle('update-state', () => updateReady);
+ipcMain.handle('update-install', () => { if (!updater || !updateReady) return false; quitting = true; setImmediate(() => updater.quitAndInstall(true, true)); return true; });
 ipcMain.handle('studio-clear', () => session.fromPartition('persist:studio').clearStorageData());
 ipcMain.handle('printers', async () => (await win.webContents.getPrintersAsync()).map(p => ({ name: p.name, label: p.displayName || p.name, isDefault: !!p.isDefault })));
 ipcMain.handle('version', () => app.getVersion());

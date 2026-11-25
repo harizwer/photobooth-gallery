@@ -8,4 +8,8 @@ contextBridge.exposeInMainWorld('assistant', {
   openExternal: url => ipcRenderer.invoke('open-external', url),
   studioUrl: () => ipcRenderer.invoke('studio-url'),
   studioClear: () => ipcRenderer.invoke('studio-clear'),
+  studioVersion: () => ipcRenderer.invoke('studio-version'),
+  updateState: () => ipcRenderer.invoke('update-state'),
+  updateInstall: () => ipcRenderer.invoke('update-install'),
+  onUpdateReady: cb => ipcRenderer.on('update-ready', (e, v) => cb(v)),
 });
