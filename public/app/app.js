@@ -586,6 +586,8 @@ function connectLive() {
   chan.on('presence', { event: 'sync' }, () => { devices = chan.presenceState(); onDevices(); })
     .on('broadcast', { event: 'event-updated' }, () => onEventUpdated())
     .on('broadcast', { event: 'show-qr' }, m => { if (ROLE === 'booth') boothShowQr(m.payload || {}); })
+    .on('broadcast', { event: 'retake' }, m => { if (ROLE === 'booth') retakeFromAdmin(m.payload || {}); })
+    .on('broadcast', { event: 'retake-reply' }, m => { if (ROLE === 'admin') retakeReply(m.payload || {}); })
     .subscribe(status => { if (status === 'SUBSCRIBED') track(); });
   jobChan = sb.channel('jobs-' + USER.id)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'print_jobs', filter: `owner=eq.${USER.id}` }, p => onJobChange(p.new || p.old))
@@ -1129,7 +1131,48 @@ async function keepOp(mode, fn) { const db = await KEEP_DB(); return new Promise
 const keepPut = (k, v) => keepOp('readwrite', st => st.put(v, k)).catch(() => {});
 const keepGet = k => keepOp('readonly', st => st.get(k)).catch(() => null);
 const keepDel = sid => keepOp('readwrite', st => { st.delete('p:' + sid); st.delete('e:' + sid); }).catch(() => {});
-const keepDone = s => { if (s && s.sid) { clearTimeout(s.keepT); s.keepDone = true; keepDel(s.sid); } };
+const keepDone = s => { if (s && s.sid) { clearTimeout(s.keepT); s.keepDone = true; if (s.row && s.mode === 'photo' && s.kept) keepRecent(s); else keepDel(s.sid); } };
+// The last few saved sessions stay on the tablet for 4 hours, so the admin can ask for a retake after the print
+// ('rp:<photo id>' = the photos, 're:<photo id>' = the guest's edits).
+const RECENT_KEEP = 4, RECENT_HOURS = 4;
+async function keepRecent(s) {
+  const sid = s.sid, id = s.row.id;
+  try {
+    const p = await keepGet('p:' + sid), e = await keepGet('e:' + sid);
+    if (p) { await keepPut('rp:' + id, { ...p, at: Date.now() }); await keepPut('re:' + id, { ...(e || {}), at: Date.now(), printCopies: s.printCopies || 0 }); }
+  } catch (err) { }
+  keepDel(sid); pruneRecent();
+}
+async function pruneRecent() {
+  const keys = (await keepOp('readonly', st => st.getAllKeys()).catch(() => []) || []).filter(k => String(k).startsWith('re:'));
+  const list = [];
+  for (const k of keys) { const e = await keepGet(k); list.push({ id: String(k).slice(3), at: e ? e.at : 0 }); }
+  list.sort((a, b) => b.at - a.at);
+  for (const [i, r] of list.entries()) if (i >= RECENT_KEEP || Date.now() - r.at > RECENT_HOURS * 3600e3) await keepOp('readwrite', st => { st.delete('rp:' + r.id); st.delete('re:' + r.id); }).catch(() => {});
+}
+// The admin pressed "Retake on tablet": bring this guest's photos back and let them choose which one to take again
+async function retakeFromAdmin(m) {
+  const photo = m && m.photo_id, reply = (ok, msg) => chan && chan.send({ type: 'broadcast', event: 'retake-reply', payload: { photo_id: photo, ok, msg: msg || '' } }).catch(() => {});
+  if (!photo) return;
+  const busyNow = () => B.session || !$('#b-attract').classList.contains('on');   // a guest is using the tablet (or the staff menu is open)
+  if (busyNow()) return reply(false, 'The tablet is busy with another guest. Try again when it is back on the start screen.');
+  try {
+    await pruneRecent();
+    const k = await keepGet('rp:' + photo), e = (await keepGet('re:' + photo)) || {};
+    if (!k || !ACTIVE || k.event !== ACTIVE.id) return reply(false, `This photo is no longer on the tablet. Only the last ${RECENT_KEEP} sessions from the last ${RECENT_HOURS} hours of the active event can be retaken.`);
+    const shots = [];
+    for (const b of k.shots) { const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); bm.close && bm.close(); shots.push(c); }
+    if (busyNow()) return reply(false, 'The tablet is busy with another guest. Try again when it is back on the start screen.');
+    const s = { mode: 'photo', design: k.design, shots, originals: k.originals, bursts: k.bursts, filter: e.filter || 'none', copies: e.printCopies || 1, saved: null, printed: false, jobId: null,
+      adjust: e.adjust, adjSel: e.adjSel || 0, stickers: e.stickers || [], stkSel: -1, smooth: e.smooth || 0, bright: e.bright || 0, bg: e.bg || '', printCopies: 0, retakeOf: photo };
+    camLog('admin asked for a retake of ' + photo);
+    keepAwake(); musicPause();
+    B.mode = 'photo'; B.session = s;
+    await openReview();
+    if (B.session === s) $('#retakeBtn').onclick();   // "Retake which photo?"
+    reply(true);
+  } catch (err) { reply(false, 'The tablet could not open the photos: ' + err.message); }
+}
 const toBlobQ = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q));
 // Called when the review screen opens: the photos themselves
 async function keepSession(s) {
@@ -1841,6 +1884,7 @@ function showPrinting(s, shot) {
 function finish() {
   clearInterval(B.reviewT);
   const s = B.session; if (!s) return;
+  if (s.retakeOf && !s.retaken) return goHome();   // opened for a retake but nothing was taken again: the photo is already saved
   startSave(s);
   openDone(s.mode === 'photo' ? 'Your photo is saved.' : 'Saved!', false);
 }
@@ -1971,7 +2015,7 @@ async function retakeOne(s, i) {
     if (burst) burst.stop();
     B.lastOriginal = null; flash(); const c = await capturePhoto();
     if (B.session !== s) return;
-    s.shots[i] = c; (s.originals = s.originals || [])[i] = B.lastOriginal;
+    s.shots[i] = c; (s.originals = s.originals || [])[i] = B.lastOriginal; s.retaken = true;
     if (s.bursts) s.bursts[i] = burst ? burst.frames : [];
     if (s.adjust && s.adjust[i]) s.adjust[i] = { z: 1, dx: 0, dy: 0 };
     s._view = s._viewFx = s._beauty = null;   // the look and background are made again with the new photo
@@ -2711,13 +2755,14 @@ $('#thumbs').addEventListener('click', e => {
         <div class="row" style="align-items:center;gap:14px"><div class="qrbox" id="photoQr"></div><p class="lbl" style="margin:0;line-height:1.5">Show this to the guest to scan. It opens only this ${kind === 'photo' ? 'photo' : 'file'}.</p></div>
         <input class="in mono" id="photoLink" readonly value="${esc(link)}" aria-label="Photo link" style="font-size:12px">
         ${S.printQr.on && kind === 'photo' && exp ? `<div class="lbl">The QR printed on this photo ${exp > new Date() ? 'works until ' + exp.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'has expired'}. Guest links (this QR too) work for 12 hours after the photo; after that, share the event album.</div>` : ''}
-        <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm" id="copyPhoto">Copy link</button><button class="btn sm" id="showTab">Show on tablet</button></div>
+        <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm" id="copyPhoto">Copy link</button><button class="btn sm" id="showTab">Show on tablet</button>${kind === 'photo' && p.source !== 'phone' ? '<button class="btn sm" id="retakeTab" title="The guest takes one of the photos again on the tablet">↺ Retake on tablet</button>' : ''}</div>
         ${kind === 'photo' ? '<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px"><button class="btn sm" id="dup4r" aria-pressed="false">⊞ Duplicate to 4R</button><span class="lbl" id="dup4rInfo" style="font-size:12px">Print this photo small, 4 times on one 4×6 (4R) sheet.</span></div>' : ''}
         <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">${kind === 'photo' ? '<label class="field" style="width:80px" for="rpC">Copies<input class="in mono" id="rpC" type="number" min="1" max="10" value="1"></label><button class="btn pri" id="reprint" style="align-self:flex-end">Print again</button>' : ''}<button class="btn" id="dlOrig" style="align-self:flex-end">Download original</button>${(p.originals || []).length ? `<button class="btn" id="dlHd" style="align-self:flex-end">Download HD photos (${p.originals.length})</button>` : ''}${kind === 'photo' && p.media_path ? `<button class="btn" id="dlGif" style="align-self:flex-end">Download ${/\.gif$/.test(p.media_path) ? 'GIF' : 'boomerang'}</button>` : ''}<button class="btn" id="delPhoto" style="align-self:flex-end;color:#ff8a80">Delete</button></div>
       </div>
     </div>`, 780);
   qr(m.querySelector('#photoQr'), link, 112);
   m.querySelector('#copyPhoto').onclick = () => copyText(link, m.querySelector('#photoLink'));
+  if (m.querySelector('#retakeTab')) m.querySelector('#retakeTab').onclick = () => askRetake(p.id);
   m.querySelector('#showTab').onclick = () => { if (!others().some(d => d.role === 'booth')) return toast('The tablet is not connected'); chan.send({ type: 'broadcast', event: 'show-qr', payload: { url: link, label: 'Scan to get your photo' } }); toast('QR shown on the tablet'); };
   // "Duplicate to 4R": the photo four times (2 × 2, each 2R size) on one 4×6 sheet. Toggles back to the normal print.
   let as4r = false, sheet4r = null, sheet4rPath = '';
@@ -2846,12 +2891,32 @@ async function renderQueue() {
     const cls = { waiting: 'chip mute', printing: 'chip hot', done: 'chip', failed: 'chip bad', cancelled: 'chip mute' };
     const lbl = { waiting: 'Waiting', printing: 'Printing', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' };
     $('#queue').innerHTML = jobs.length ? jobs.map(j => `<tr><td class="mono">${timeOf(j.created_at)}</td><td>${esc(j.label)}${j.error ? `<div class="lbl" style="color:#ff8a80">${esc(j.error)}</div>` : ''}</td><td class="mono">${j.copies}</td><td><span class="${cls[j.status] || 'chip'}">${lbl[j.status] || esc(j.status)}</span></td>
-      <td>${['failed', 'cancelled', 'printing', 'done'].includes(j.status) ? `<button class="btn sm" data-q="retry" data-id="${j.id}">Print again</button>` : ''}${j.status === 'waiting' ? `<button class="btn sm" data-q="cancel" data-id="${j.id}">Cancel</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="5" class="lbl">No print jobs yet.</td></tr>';
+      <td>${['failed', 'cancelled', 'printing', 'done'].includes(j.status) ? `<button class="btn sm" data-q="retry" data-id="${j.id}">Print again</button>` : ''}${j.status === 'waiting' ? `<button class="btn sm" data-q="cancel" data-id="${j.id}">Cancel</button>` : ''}${j.photo_id && !/· phone /.test(j.label || '') && Date.now() - new Date(j.created_at) < 4 * 3600e3 ? `<button class="btn sm" data-q="retake" data-photo="${esc(j.photo_id)}" title="The guest takes one of the photos again on the tablet">↺ Retake on tablet</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="5" class="lbl">No print jobs yet.</td></tr>';
   } catch (e) {}
+}
+const retakeWait = new Map();
+function askRetake(photoId) {
+  if (!photoId) return toast('This print is not linked to a photo yet. Try again in a moment.');
+  if (!others().some(d => d.role === 'booth')) return toast('The tablet is not connected', 4000);
+  if (!confirm('Retake on the tablet?\n\nThe tablet opens this guest\'s photos again and they choose which photo to retake, then print again. If the print has not come out yet, it is cancelled. The old photo stays in the Gallery (delete it there if you want).')) return;
+  clearTimeout(retakeWait.get(photoId));
+  retakeWait.set(photoId, setTimeout(() => { retakeWait.delete(photoId); toast('The tablet did not answer. Check it is on and connected.', 5000); }, 10000));
+  chan.send({ type: 'broadcast', event: 'retake', payload: { photo_id: photoId } });
+  toast('Asking the tablet…');
+}
+async function retakeReply(m) {
+  if (!retakeWait.has(m.photo_id)) return;
+  clearTimeout(retakeWait.get(m.photo_id)); retakeWait.delete(m.photo_id);
+  if (!m.ok) return toast(m.msg || 'The tablet could not open the photos.', 7000);
+  let cancelled = 0;
+  try { const r = await sb.from('print_jobs').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('photo_id', m.photo_id).eq('status', 'waiting').select(); cancelled = (r.data || []).length; } catch (e) { }
+  toast('The tablet is showing the guest\'s photos: they choose which one to retake.' + (cancelled ? ' The print that had not come out was cancelled.' : ''), 7000);
+  if (secOn('printer')) renderQueue(); queueBadge();
 }
 async function queueBadge() { try { const r = await sb.from('print_jobs').select('id', { count: 'exact', head: true }).eq('owner', USER.id).eq('status', 'waiting'); $('#qBadge').hidden = !r.count; $('#qBadge').textContent = r.count || 0; } catch (e) {} }
 $('#queue').onclick = async e => {
   const b = e.target.closest('[data-q]'); if (!b) return;
+  if (b.dataset.q === 'retake') return askRetake(b.dataset.photo);
   try {
     if (b.dataset.q === 'retry') check(await sb.from('print_jobs').update({ status: 'waiting', error: '', updated_at: new Date().toISOString() }).eq('id', b.dataset.id));
     else check(await sb.from('print_jobs').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', b.dataset.id).eq('status', 'waiting'));
