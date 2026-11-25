@@ -590,7 +590,18 @@ function connectLive() {
 }
 const others = () => Object.entries(devices).filter(([k]) => k !== deviceId).map(([, v]) => v[0]).filter(Boolean);
 const printerOnline = () => Object.values(devices).some(v => v[0] && v[0].printer);
-function onDevices() { if (ROLE === 'booth') boothStatus(); if (ROLE === 'admin') renderDevices(); }
+// The Raysnap Print Assistant (Windows program) is running and printing: this page leaves the prints to it (backup only)
+const assistantKinds = () => [...new Set(Object.entries(devices).filter(([k, v]) => k !== deviceId && v[0] && v[0].role === 'assistant' && v[0].printer).flatMap(([, v]) => v[0].kinds || ['strip', '4r']))];
+const assistantOn = () => assistantKinds().length > 0;
+// Paper kinds this page still prints: what the Assistant does not cover
+const webKinds = () => ['strip', '4r'].filter(k => (printKinds() === 'all' || printKinds() === k) && !assistantKinds().includes(k));
+function onDevices() { if (ROLE === 'booth') boothStatus(); if (ROLE === 'admin') { renderDevices(); renderAssistant(); runPrinter(); } }
+function renderAssistant() {
+  const el = $('#raState'); if (!el) return;
+  const k = assistantKinds();
+  el.innerHTML = k.length ? `<b style="color:#5fd38a">● Print Assistant is printing ${k.length > 1 ? 'strips and 4R' : k[0] === '4r' ? '4R' : 'strips'}.</b> This page waits as the backup and prints again by itself if the Assistant stops.`
+    : 'Prints straight to the DNP with no print window: strips to the cut printer, 4R to the uncut one. While it runs, this page waits and is the backup.';
+}
 function onEventUpdated() { if (ROLE === 'booth') { if (B.session) B.pendingReload = true; else boothLoad(); } }
 function onJobChange(job) { if (!job) return; if (ROLE === 'booth') boothJob(job); if (ROLE === 'admin') { if (secOn('printer')) renderQueue(); queueBadge(); runPrinter(); } }
 function announce() { if (chan) chan.send({ type: 'broadcast', event: 'event-updated', payload: {} }).catch(() => {}); }
@@ -3005,18 +3016,17 @@ async function printImage(src, copies, label, raw) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 async function runPrinter() {
-  if (!printerOn() || printBusy || !USER) return;
+  if (!printerOn() || printBusy || !USER || !webKinds().length) return;
   printBusy = true;
   try {
     // A job still on "printing" from an earlier page (closed, reloaded or frozen) would block the queue: print it again
     const stale = new Date(Date.now() - 3 * 60e3).toISOString();
-    let sq = sb.from('print_jobs').update({ status: 'waiting', updated_at: new Date().toISOString() }).eq('owner', USER.id).eq('status', 'printing').lt('created_at', stale);
-    if (printKinds() !== 'all') sq = sq.eq('paper', printKinds());
+    const sq = sb.from('print_jobs').update({ status: 'waiting', updated_at: new Date().toISOString() }).eq('owner', USER.id).eq('status', 'printing').lt('created_at', stale).in('paper', webKinds());
     await sq.not('id', 'in', `(${[...myJobs].join(',') || '00000000-0000-0000-0000-000000000000'})`);
     for (;;) {
-      let q = sb.from('print_jobs').select('*').eq('owner', USER.id).eq('status', 'waiting');
-      if (printKinds() !== 'all') q = q.eq('paper', printKinds());   // this window prints only strips or only 4R
-      const next = check(await q.order('created_at', { ascending: true }).limit(1));
+      // this window prints only strips or only 4R when set, and leaves to the Print Assistant what it prints
+      if (!webKinds().length) break;
+      const next = check(await sb.from('print_jobs').select('*').eq('owner', USER.id).eq('status', 'waiting').in('paper', webKinds()).order('created_at', { ascending: true }).limit(1));
       if (!next.length || !printerOn()) break;
       const job = next[0];
       const claimed = check(await sb.from('print_jobs').update({ status: 'printing', updated_at: new Date().toISOString() }).eq('id', job.id).eq('status', 'waiting').select());

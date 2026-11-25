@@ -1,0 +1,32 @@
+{
+  "name": "raysnap-print-assistant",
+  "productName": "Raysnap Print Assistant",
+  "version": "1.0.0",
+  "description": "Prints Raysnap Photobooth photos straight to the DNP printer, without the print window.",
+  "author": "Raysnap Photobooth",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "selftest": "electron . --selftest",
+    "dist": "electron-builder --win nsis --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.raysnap.printassistant",
+    "productName": "Raysnap Print Assistant",
+    "files": ["main.js", "preload.js", "ui/**"],
+    "directories": { "output": "dist" },
+    "win": { "target": "nsis", "icon": "build/icon.png" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Raysnap Print Assistant",
+      "artifactName": "RaysnapPrintAssistant-Setup.exe"
+    }
+  }
+}

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raysnap Print Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Log in -->
+<section class="view on" id="vLogin">
+  <form class="card login" id="loginForm">
+    <img src="img/logo.webp" alt="Raysnap Photobooth" class="login-logo">
+    <h1>Print Assistant</h1>
+    <p class="muted">Log in with your Raysnap studio account. Prints from the tablet and phones come out here, without the print window.</p>
+    <label class="field">Username<input id="lUser" autocomplete="username" required></label>
+    <label class="field">Password<input id="lPass" type="password" autocomplete="current-password" required></label>
+    <button class="btn pri" id="lBtn" type="submit">Log in</button>
+    <p class="msg" id="lMsg" role="status"></p>
+  </form>
+</section>
+
+<!-- Main -->
+<section class="view" id="vMain">
+  <header class="top">
+    <img src="img/logo-word.webp" alt="Raysnap Photobooth" class="top-logo">
+    <span class="top-title">Print Assistant</span>
+    <span class="pill" id="statusPill"><span class="dot"></span><span id="statusText">Starting…</span></span>
+    <nav class="tabs" id="tabs"><button class="on" data-tab="home">Printing</button><button data-tab="queue">Queue</button><button data-tab="settings">Settings</button></nav>
+  </header>
+
+  <main class="wrap">
+    <!-- Printing -->
+    <div class="tab on" data-tab="home">
+      <div class="hero card">
+        <div>
+          <span class="eyebrow">Live</span>
+          <h2 id="heroTitle">Printing automatically</h2>
+          <p class="muted" id="heroSub">Prints from the tablet and the table QR come out by themselves. You can close this window; it keeps printing from the tray.</p>
+        </div>
+        <label class="switch big"><input type="checkbox" id="autoOn" checked><span></span><b>Auto print</b></label>
+      </div>
+
+      <div class="grid3">
+        <div class="card stat"><span class="eyebrow">Event</span><b id="evName">—</b><span class="muted" id="evDate"></span></div>
+        <div class="card stat"><span class="eyebrow">Paper left</span><b><span id="paperLeft">—</span> <small class="muted">/ <span id="paperCap">—</span> sheets</small></b><div class="bar"><i id="paperBar"></i></div></div>
+        <div class="card stat"><span class="eyebrow">Printed today</span><b id="todayCount">0</b><span class="muted" id="waitingText">Nothing waiting</span></div>
+      </div>
+
+      <div class="card">
+        <h3>Printers</h3>
+        <p class="muted">Choose which printer each kind of print goes to. Set up the DNP twice in Windows: one with <b>2inch cut: Enable</b> for strips, one with it disabled for 4R.</p>
+        <div class="printers">
+          <div class="prn"><div class="prn-h"><span class="tag">2×6</span><b>Strips (cut)</b></div><select id="prnStrip"></select><div class="row"><button class="btn sm" data-test="strip">Test print strip</button><span class="muted sm" id="useStrip"></span></div></div>
+          <div class="prn"><div class="prn-h"><span class="tag">4R</span><b>4R photos (not cut)</b></div><select id="prn4r"></select><div class="row"><button class="btn sm" data-test="4r">Test print 4R</button><span class="muted sm" id="use4r"></span></div></div>
+          <div class="prn"><div class="prn-h"><span class="tag ghost">+</span><b>Second strip printer</b></div><select id="prnStrip2"></select><p class="muted sm">Optional. With two DNPs, strips are shared between them.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Queue -->
+    <div class="tab" data-tab="queue">
+      <div class="card">
+        <div class="row between"><h3>Recent prints</h3><button class="btn sm" id="refreshQ">Refresh</button></div>
+        <table class="q"><thead><tr><th>Time</th><th>Print</th><th>Paper</th><th>Copies</th><th>Status</th><th></th></tr></thead><tbody id="queue"></tbody></table>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="tab" data-tab="settings">
+      <div class="card">
+        <h3>Print size &amp; position</h3>
+        <p class="muted">Same settings as the website's Printer page, kept on this computer. Use the edge check print to set them.</p>
+        <div class="form">
+          <label class="field">Paper in the DNP driver<select id="cOrient"><option value="portrait">Portrait 4×6 (default)</option><option value="landscape">Landscape 6×4</option></select></label>
+          <label class="field">Page size<select id="cPaper"><option value="dnp">DNP 4×6 (prints past the edge)</option><option value="plain">Exactly 4×6 in</option></select></label>
+          <label class="field">Move right (mm)<input id="cDx" type="number" step="0.5" min="-15" max="15"></label>
+          <label class="field">Move down (mm)<input id="cDy" type="number" step="0.5" min="-15" max="15"></label>
+          <label class="field">Size (%)<input id="cSc" type="number" step="0.5" min="90" max="110"></label>
+          <label class="field">Edge bleed (%)<input id="cBleed" type="number" step="0.5" min="0" max="8"></label>
+        </div>
+        <div class="row"><button class="btn pri sm" id="cSave">Save</button><button class="btn sm" data-test="edge">Edge check print</button></div>
+      </div>
+      <div class="card">
+        <h3>This computer</h3>
+        <label class="switch"><input type="checkbox" id="autoStart"><span></span><b>Start with Windows (in the tray)</b></label>
+        <p class="muted sm">Logged in as <b id="who">—</b> · Version <span id="ver">—</span></p>
+        <div class="row"><button class="btn sm" id="logout">Log out</button></div>
+      </div>
+    </div>
+  </main>
+</section>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="vendor/supabase.js"></script>
+<script src="printlayout.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

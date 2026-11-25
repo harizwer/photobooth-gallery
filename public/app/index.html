@@ -352,6 +352,11 @@
     <section class="sec" id="s-printer">
       <div><h2 class="title">Printer</h2><div class="lbl">The DNP DS-RX1HS is connected to this laptop with USB. Prints from the tablet come out here.</div></div>
       <div class="wrap">
+        <div class="card" id="raCard" style="flex:1 1 100%;display:flex;gap:16px;align-items:center;flex-wrap:wrap;border-color:rgba(212,175,55,.45)">
+          <img src="/icon-192.png" alt="" width="52" height="52" style="border-radius:50%">
+          <div style="flex:1 1 260px"><b>Raysnap Print Assistant for Windows</b><div class="lbl" id="raState" style="line-height:1.5">Prints straight to the DNP with no print window: strips to the cut printer, 4R to the uncut one. While it runs, this page waits and is the backup.</div></div>
+          <a class="btn sm pri" style="text-decoration:none" href="https://github.com/harizwer/photobooth-gallery/releases/download/assistant/RaysnapPrintAssistant-Setup.exe" download>Download for Windows</a>
+        </div>
         <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:12px">
           <label class="tog" style="padding:12px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line)"><span><b>This laptop prints</b><br><span class="lbl" id="prnState">Off</span></span><input type="checkbox" id="prnOn"></label>
           <label class="field" for="prnKinds">This window prints<select class="in" id="prnKinds"><option value="all">All prints</option><option value="strip">Only 2x6 strips (DNP with 2-inch cut)</option><option value="4r">Only 4R photos (DNP without cut)</option></select></label>

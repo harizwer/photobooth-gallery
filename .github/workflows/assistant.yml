@@ -1,0 +1,47 @@
+# Builds the Raysnap Print Assistant (assistant/) on Windows and puts RaysnapPrintAssistant-Setup.exe on the
+# "assistant" release: https://github.com/<repo>/releases/download/assistant/RaysnapPrintAssistant-Setup.exe
+name: Print Assistant (Windows)
+on:
+  push:
+    branches: [main]
+    paths: ['assistant/**', '.github/workflows/assistant.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: assistant
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Self test (window opens, page laid out at the DNP size)
+        run: |
+          npx electron . --selftest || true
+          cat selftest.json
+          node -e "process.exit(require('./selftest.json').ok ? 0 : 1)"
+      - name: Build the installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis --publish never
+      - name: Publish on the "assistant" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          gh release view assistant --repo "${{ github.repository }}" > /dev/null 2>&1 || \
+            gh release create assistant --repo "${{ github.repository }}" --title "Raysnap Print Assistant" \
+              --notes "Windows program that prints Raysnap Photobooth photos straight to the DNP printer. Download RaysnapPrintAssistant-Setup.exe and run it."
+          gh release upload assistant dist/RaysnapPrintAssistant-Setup.exe --clobber --repo "${{ github.repository }}"
+          echo "Built from ${{ github.sha }} (run ${{ github.run_number }})" > build-info.txt
+          gh release upload assistant build-info.txt --clobber --repo "${{ github.repository }}"
