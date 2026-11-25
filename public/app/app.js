@@ -2038,7 +2038,7 @@ function go(name) {
   $('#crumb').textContent = CRUMB[name];
   try { history.replaceState(null, '', '#' + name); } catch (e) {}
   if (name !== 'media') camTestOff();
-  ({ home: renderHome, events: renderEvents, templates: renderTemplates, media: renderMedia, gallery: () => renderGallery(), printer: () => { renderQueue(); renderPaper(); renderPrintCfg(); }, studio: renderStudio, accounts: renderAccounts, guest: renderGuestPreview })[name]();
+  ({ home: renderHome, events: renderEvents, templates: renderTemplates, media: renderMedia, gallery: () => renderGallery(), printer: () => { renderPhoneList(); renderQueue(); renderPaper(); renderPrintCfg(); }, studio: renderStudio, accounts: renderAccounts, guest: renderGuestPreview })[name]();
   window.scrollTo(0, 0);
 }
 document.addEventListener('click', e => {
@@ -2168,8 +2168,14 @@ function openEventModal(ev) {
     <label class="field" for="neDate">Date (printed on the standard layouts)<input class="in" id="neDate" maxlength="40" value="${esc(ev ? ev.event_date || '' : today())}"></label>
     <div class="field">Layouts guests can choose on the tablet<div id="neTpls" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto"></div></div>
     <p class="lbl" style="margin:0">Tick one or more. With more than one, guests pick their strip before the photos. Add new frames in the Template editor.</p>
+    <div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px">
+      <label class="tog" style="justify-content:flex-start;gap:10px"><span><b>📱 Table QR</b><br><span class="lbl" style="font-size:12.5px">Guests scan a QR on their table, make a strip on their own phone with the layouts above, then show their code at the booth to print.</span></span><input type="checkbox" id="nePhOn" ${ev && ev.settings && ev.settings.phone && ev.settings.phone.on ? 'checked' : ''}></label>
+      <label class="field" for="nePhLim">Strips per phone (0 = no limit)<input class="in mono" id="nePhLim" type="number" min="0" max="20" value="${ev && ev.settings && ev.settings.phone ? +ev.settings.phone.limit || 0 : 2}" style="max-width:120px"></label>
+      ${phoneLink(ev) && ev.settings.phone.on ? `<div class="row" style="gap:14px;align-items:center;flex-wrap:wrap"><div id="nePhQr" style="background:#fff;padding:6px;border-radius:8px;line-height:0"></div><div style="display:flex;flex-direction:column;gap:8px"><button type="button" class="btn sm" id="nePhCards">⬇ Table cards (PDF, 4 per A4)</button><button type="button" class="btn sm" id="nePhCopy">Copy link</button></div></div>` : '<p class="lbl" style="margin:0;font-size:12.5px">Save to get the table QR.</p>'}
+    </div>
     <div class="row" style="justify-content:space-between;flex-wrap:wrap">${ev ? '<button type="button" class="btn" id="neDel" style="color:#ff8a80">Delete event</button>' : '<span></span>'}<div class="row"><button type="button" class="btn" data-close>Cancel</button><button class="btn pri">${ev ? 'Save' : 'Create event'}</button></div></div></form>`);
   m.querySelector('#neName').focus();
+  if (m.querySelector('#nePhQr')) { qr(m.querySelector('#nePhQr'), phoneLink(ev), 110); m.querySelector('#nePhCards').onclick = () => phoneCards(ev).catch(e => toast(e.message, 4000)); m.querySelector('#nePhCopy').onclick = () => navigator.clipboard.writeText(phoneLink(ev)).then(() => toast('Link copied'), () => prompt('Copy this link', phoneLink(ev))); }
   let chosen = ev ? designsFor(ev).map(d => d.id) : null;
   const drawTpls = () => {
     const type = m.querySelector('#neType').value, box = m.querySelector('#neTpls');
@@ -2187,6 +2193,8 @@ function openEventModal(ev) {
     const picked = [...m.querySelectorAll('#neTpls input:checked')].map(i => i.value);
     if (!picked.length) return toast('Tick at least one layout');
     const settings = { ...(ev ? ev.settings || {} : {}), type: m.querySelector('#neType').value, templates: picked }, event_date = m.querySelector('#neDate').value.trim();
+    const oldPh = (ev && ev.settings && ev.settings.phone) || {};
+    settings.phone = { on: m.querySelector('#nePhOn').checked, limit: Math.max(0, Math.min(20, Math.round(+m.querySelector('#nePhLim').value || 0))), token: oldPh.token || token(16) };
     try {
       if (ev) check(await sb.from('events').update({ name, event_date, settings, updated_at: new Date().toISOString() }).eq('id', ev.id));
       else check(await sb.from('events').insert({ id: 'e' + Date.now().toString(36), name, event_date, settings, album_token: token() }));
@@ -3664,8 +3672,169 @@ $('#savePin').onclick = async () => {
   try { await saveStation({ staff_pin: p }); announce(); toast('Staff PIN saved'); } catch (e) { toast(e.message, 4000); }
 };
 
+/* ---------------- Table QR: guests make a strip on their own phone, then print it at the booth ----------------
+   The QR on each table opens  /app/?phone=<event token>.  The phone picks a layout, takes the photos with its own
+   camera, and sends the strip (one-time upload ticket, see phone_start / phone_finish in the database). The phone
+   then shows a 4-digit code; at the booth the crew finds the code under Printer → Photos from phones and prints it. */
+const PHONE_TOKEN = new URLSearchParams(location.search).get('phone');
+const PHN = { info: null, design: null, shots: [], stream: null, facing: 'user', run: 0 };
+const phoneDev = () => { let d = store.get('phoneDev', ''); if (!d) { d = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set('phoneDev', d); } return d; };
+const phoneMine = () => store.get('phoneDone', []).filter(x => x.ev === (ACTIVE && ACTIVE.id));
+function phoneUi(html) { $('#phBody').innerHTML = html; window.scrollTo(0, 0); }
+function phoneMsg(text) { phoneUi(`<div class="phmsg">${text}</div>`); }
+async function phoneBoot() {
+  show('v-phone');
+  phoneMsg('<div class="spin"></div>Membuka…');
+  let r;
+  try { r = check(await sb.rpc('phone_event', { tok: PHONE_TOKEN, dev: phoneDev() })); }
+  catch (e) { return phoneMsg(`Tak dapat buka event ni. Semak internet anda dan imbas QR sekali lagi.<br><small>${esc(e.message)}</small>`); }
+  if (!r) return phoneMsg('QR ini tidak sah lagi. Sila tanya krew photobooth.');
+  const st = r.studio || {};
+  $('#phHead').innerHTML = (st.logo ? `<img src="${esc(st.logo)}" alt="">` : '') + `<div><b>${esc(st.brand || 'Photobooth')}</b><span>${esc(r.event.name || '')}</span></div>`;
+  if (st.brand) document.title = st.brand;
+  if (r.off) return phoneMsg('Bergambar dari telefon sudah ditutup untuk event ini.<br>Jumpa kami di photobooth! 📸');
+  PHN.info = r; ACTIVE = r.event; TEMPLATES = r.templates || [];
+  S = mergeStudio({ brand: st.brand, logo: st.logo, printQr: st.printQr || {}, capture: { ...STUDIO_DEFAULT.capture, countdown: Math.max(1, Math.min(10, +st.countdown || 3)) } });
+  phoneHome();
+}
+const phoneLeft = () => PHN.info.limit > 0 ? Math.max(0, PHN.info.limit - PHN.info.used) : Infinity;
+function phoneHome() {
+  phoneStop();
+  const mine = phoneMine(), left = phoneLeft();
+  const codes = mine.length ? `<div class="phcard"><b>Strip saya</b>${mine.slice().reverse().map(x => `<div class="phrow"><span class="phcode sm">${esc(x.code)}</span><a href="${esc(SITE + '?p=' + x.share)}" target="_blank" rel="noopener">Simpan gambar HD ›</a></div>`).join('')}<p class="phnote">Tunjuk kod di booth photobooth untuk print.</p></div>` : '';
+  if (left <= 0) return phoneUi(`<div class="phmsg">Anda sudah buat ${PHN.info.limit} strip dari telefon ini. Terima kasih! 🎉</div>${codes}`);
+  phoneUi(`<h1 class="phh1">Bergambar dari meja anda 📸</h1>
+    <p class="phlead">Pilih layout, bergambar dengan telefon anda, kemudian tunjuk kod di booth untuk print.${left !== Infinity ? ` <b>Baki: ${left} strip.</b>` : ''}</p>
+    <div class="phgrid" id="phLayouts"></div>${codes}`);
+  designsFor(ACTIVE).forEach(async d => {
+    const b = document.createElement('button'); b.className = 'phlayout';
+    b.innerHTML = `<img alt=""><span>${esc(d.name)}</span>`; b.onclick = () => phoneShoot(d); $('#phLayouts').appendChild(b);
+    try { const c = await compose({ ...d, output_long: 500 }, samples(d.areas.length), 'none', { name: ACTIVE.name, date: ACTIVE.event_date }); b.querySelector('img').src = c.toDataURL('image/jpeg', .7); } catch (e) { }
+  });
+}
+function phoneStop() { if (PHN.stream) { PHN.stream.getTracks().forEach(t => t.stop()); PHN.stream = null; } PHN.run++; }
+async function phoneCamera() {
+  phoneStop();
+  PHN.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: PHN.facing, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
+  const v = $('#phVideo'); v.srcObject = PHN.stream; v.classList.toggle('mirror', PHN.facing === 'user'); await v.play().catch(() => {});
+}
+async function phoneShoot(d) {
+  PHN.design = d; PHN.shots = [];
+  phoneUi(`<div class="phcam"><video id="phVideo" playsinline muted autoplay></video><div class="phcount" id="phCount"></div><div class="phflash" id="phFlash"></div></div>
+    <p class="phlead" id="phInfo">Gambar 1 daripada ${d.areas.length}. Bersedia!</p>
+    <div class="phbtns"><button class="btn rbtn pri" id="phGo">📸 Mula</button><button class="btn rbtn" id="phFlip">🔄 Tukar kamera</button><button class="btn rbtn" id="phBack">← Kembali</button></div>`);
+  $('#phBack').onclick = phoneHome;
+  $('#phFlip').onclick = async () => { PHN.facing = PHN.facing === 'user' ? 'environment' : 'user'; try { await phoneCamera(); } catch (e) { toast(e.message, 4000); } };
+  try { await phoneCamera(); }
+  catch (e) { return phoneMsg(`Kamera tidak dibenarkan. Benarkan kamera untuk laman ini dalam setting browser, kemudian cuba lagi.<br><br><button class="btn rbtn" onclick="location.reload()">Cuba lagi</button>`); }
+  $('#phGo').onclick = async () => {
+    $('#phGo').disabled = true; $('#phFlip').disabled = true; const run = PHN.run;
+    for (let i = 0; i < d.areas.length; i++) {
+      $('#phInfo').textContent = `Gambar ${i + 1} daripada ${d.areas.length}`;
+      for (let n = S.capture.countdown || 3; n > 0; n--) { if (PHN.run !== run) return; $('#phCount').textContent = n; await sleep(1000); }
+      if (PHN.run !== run) return;
+      $('#phCount').textContent = '';
+      const v = $('#phVideo'), c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+      PHN.shots.push(c);
+      const f = $('#phFlash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+      await sleep(900);
+    }
+    phoneReview();
+  };
+}
+async function phoneReview() {
+  phoneStop();
+  const d = PHN.design;
+  phoneMsg('<div class="spin"></div>Menyediakan strip anda…');
+  const c = await compose({ ...d, output_long: 1400 }, PHN.shots, 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
+  phoneUi(`<h1 class="phh1">Cantik! ✨</h1><div class="phprev"><img alt="Strip anda" src="${c.toDataURL('image/jpeg', .85)}"></div>
+    <div class="phbtns"><button class="btn rbtn pri" id="phSend">🖨 Hantar untuk print</button><button class="btn rbtn" id="phRetake">↺ Ambil semula</button></div>`);
+  $('#phRetake').onclick = () => phoneShoot(d);
+  $('#phSend').onclick = phoneSend;
+}
+async function phoneSend() {
+  const d = PHN.design, set = t => { const el = $('#phStep'); if (el) el.textContent = t; };
+  phoneMsg('<div class="spin"></div><span id="phStep">Menghantar…</span>');
+  try {
+    const r = check(await sb.rpc('phone_start', { tok: PHONE_TOKEN, dev: phoneDev() }));
+    if (!r) return phoneMsg('QR ini tidak sah lagi. Sila tanya krew photobooth.');
+    if (r.error === 'limit') { PHN.info.used = PHN.info.limit; return phoneHome(); }
+    if (r.error) return phoneMsg('Bergambar dari telefon sudah ditutup untuk event ini.');
+    const base = `${r.event_id}/${r.photo_id}`;
+    set('Menyediakan gambar…');
+    const full = await compose({ ...d, output_long: Math.min(d.output_long || 2400, 2400) }, PHN.shots, 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
+    const sheet = scaled(full, PRINT_LONG);
+    if (S.printQr && S.printQr.on) drawPrintQr(sheet.getContext('2d'), sheet.width, sheet.height, d, `${SITE}?q=${r.print_token}`);
+    const files = [[base + '-print.jpg', await jpeg(printCanvas(d, sheet), .93)], [base + '.jpg', await jpeg(full, .9)], [base + '-thumb.jpg', await jpeg(scaled(full, 520), .78)]];
+    for (const [i, shot] of PHN.shots.entries()) files.push([`${base}-o${i + 1}.jpg`, await jpeg(scaled(shot, 2400), .9)]);
+    for (const [i, [path, blob]] of files.entries()) {
+      set(`Menghantar ${i + 1} / ${files.length}…`);
+      await retry(async () => {
+        const res = await fetch(fileUrl(path), { method: 'PUT', headers: { 'Content-Type': 'image/jpeg', 'X-Phone-Ticket': r.ticket }, body: blob });
+        if (!res.ok) throw new Error((await res.text().catch(() => '')) || 'Upload failed');
+      });
+    }
+    const fin = check(await sb.rpc('phone_finish', { ticket: r.ticket, layout: d.name, paper: paperOf(d), n_originals: PHN.shots.length }));
+    if (!fin) throw new Error('Masa menghantar sudah tamat. Cuba lagi.');
+    PHN.info.used++;
+    store.set('phoneDone', [...store.get('phoneDone', []), { ev: ACTIVE.id, code: fin.code, share: fin.share_token, at: Date.now() }].slice(-20));
+    phoneUi(`<h1 class="phh1">Siap! 🎉</h1>
+      <div class="phcard center"><p class="phlead">Tunjuk kod ini di booth photobooth untuk print:</p><div class="phcode">${esc(fin.code)}</div></div>
+      <div class="phbtns"><a class="btn rbtn pri" href="${esc(SITE + '?p=' + fin.share_token)}" target="_blank" rel="noopener">💾 Simpan gambar HD</a>${phoneLeft() > 0 ? '<button class="btn rbtn" id="phMore">📸 Buat strip lagi</button>' : ''}</div>`);
+    const more = $('#phMore'); if (more) more.onclick = phoneHome;
+  } catch (e) {
+    phoneUi(`<div class="phmsg">Tak berjaya menghantar: ${esc(netMsg(e))}</div><div class="phbtns"><button class="btn rbtn pri" id="phAgain">Cuba lagi</button><button class="btn rbtn" id="phHome">Mula semula</button></div>`);
+    $('#phAgain').onclick = phoneSend; $('#phHome').onclick = phoneHome;
+  }
+}
+
+/* ---- Admin: table QR settings (Events → Edit) and table cards ---- */
+const phoneLink = ev => ev && ev.settings && ev.settings.phone && ev.settings.phone.token ? `${SITE}app/?phone=${ev.settings.phone.token}` : '';
+async function phoneCards(ev) {
+  const link = phoneLink(ev); if (!link) return toast('Save the event with Table QR on first.');
+  await loadScript('../vendor/jspdf.umd.min.js');
+  const holder = document.createElement('div'); holder.style.cssText = 'position:fixed;left:-9999px'; document.body.appendChild(holder); qr(holder, link, 600);
+  await sleep(50); const qc = holder.querySelector('canvas'), qimg = qc ? qc.toDataURL('image/jpeg', .92) : holder.querySelector('img').src; holder.remove();
+  const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' }), W = 105, H = 148.5;
+  for (let i = 0; i < 4; i++) {
+    const x = (i % 2) * W, y = Math.floor(i / 2) * H;
+    doc.setDrawColor(200); doc.setLineDashPattern([2, 2], 0); doc.rect(x + 4, y + 4, W - 8, H - 8); doc.setLineDashPattern([], 0);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(S.brand || 'Photobooth', x + W / 2, y + 18, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(ev.name || '', x + W / 2, y + 25, { align: 'center' });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text('Bergambar dari meja anda!', x + W / 2, y + 37, { align: 'center' });
+    doc.addImage(qimg, qc ? 'JPEG' : 'PNG', x + (W - 55) / 2, y + 42, 55, 55, 'tableqr');   // one copy of the QR in the file
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+    ['1. Imbas QR dengan kamera telefon', '2. Pilih layout & bergambar', '3. Tunjuk kod di booth untuk print'].forEach((t, k) => doc.text(t, x + 16, y + 108 + k * 7));
+    doc.setFontSize(8); doc.setTextColor(120); doc.text('Scan · Snap · Print', x + W / 2, y + H - 12, { align: 'center' }); doc.setTextColor(0);
+  }
+  doc.save(`Table QR - ${(ev.name || 'event').replace(/[^\w -]/g, '')}.pdf`);
+}
+
+/* ---- Admin: Printer → Photos from phones (find the guest's code, print) ---- */
+let phoneSent = new Set();
+async function renderPhoneList() {
+  const box = $('#phList'); if (!box || !ACTIVE) return;
+  let rows = [];
+  try { rows = check(await sb.from('photos').select('id,event_id,created_at,layout,paper,printed,pickup_code,print_path,path,thumb_path').eq('event_id', ACTIVE.id).eq('source', 'phone').order('created_at', { ascending: false }).limit(60)); } catch (e) { box.innerHTML = `<p class="lbl">${esc(e.message)}</p>`; return; }
+  const f = ($('#phFind').value || '').trim();
+  const list = rows.filter(p => !f || (p.pickup_code || '').startsWith(f));
+  $('#phWait').textContent = rows.length ? `${rows.filter(p => !p.printed).length} waiting · ${rows.length} in this event` : '';
+  box.innerHTML = list.length ? list.map(p => `<div class="phitem ${p.printed ? 'done' : ''}"><img src="${esc(fileUrl(p.thumb_path))}" alt="" loading="lazy"><div class="phinfo"><b class="mono">${esc(p.pickup_code || '—')}</b><span class="lbl">${new Date(p.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · ${esc(p.layout || '')}</span></div>${p.printed ? '<span class="chip">Printed ✓</span>' : phoneSent.has(p.id) ? '<span class="chip mute">Sent to printer</span>' : `<button class="btn pri sm" data-phprint="${esc(p.id)}">Print</button>`}</div>`).join('')
+    : `<p class="lbl" style="margin:0">${rows.length ? 'No code matches.' : 'No photos from phones yet. Turn on Table QR in Events → Edit.'}</p>`;
+  box.querySelectorAll('[data-phprint]').forEach(b => b.onclick = async () => {
+    const p = rows.find(x => x.id === b.dataset.phprint); if (!p) return; b.disabled = true;
+    try {
+      check(await sb.from('print_jobs').insert({ event_id: p.event_id, photo_id: p.id, path: p.print_path || p.path, copies: 1, label: `${ACTIVE.name} · phone ${p.pickup_code}`, paper: p.paper || 'strip' }));
+      phoneSent.add(p.id); toast(printerOn() ? 'Sent to the printer' : 'Added to the print queue'); runPrinter(); renderPhoneList();
+    } catch (e) { b.disabled = false; toast(e.message, 4000); }
+  });
+}
+setInterval(() => { if (ROLE === 'admin' && secOn('printer') && !document.hidden) renderPhoneList(); }, 10000);
+let phFindT = 0; $('#phFind').addEventListener('input', () => { clearTimeout(phFindT); phFindT = setTimeout(renderPhoneList, 250); });
+
 /* ---------------- Start ---------------- */
 (async () => {
+  if (PHONE_TOKEN) return phoneBoot();   // a guest's phone from a table QR: no login, just the phone page
   const { data } = await sb.auth.getSession();
   if (data && data.session) enter(data.session.user); else show('v-login');
   sb.auth.onAuthStateChange((ev, session) => {

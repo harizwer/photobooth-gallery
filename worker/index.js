@@ -3,7 +3,8 @@
 // photos, strips, boomerangs and studio images, stored in Cloudflare R2 (bucket "photobooth-photos").
 //   GET    /files/<path>  anyone with the link (paths contain random ids). Files saved before the move
 //                         to R2 are fetched from the old Supabase storage once and copied into R2.
-//   PUT    /files/<path>  logged-in owner only (Supabase login token).
+//   PUT    /files/<path>  logged-in owner (Supabase login token), or a guest's phone sending one strip from a
+//                         table QR (X-Phone-Ticket: a one-time ticket that only allows that strip's files).
 //   DELETE /files/<path>  logged-in owner only.
 const SUPABASE_URL = 'https://dqeyaimxfkursttbdmyp.supabase.co';
 const PUBLIC_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxZXlhaW14Zmt1cnN0dGJkbXlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODc2NTQsImV4cCI6MjEwODg2MzY1NH0.T5tHvHVpNzNHwxYFASy8WO6xr1bvfBko9gxHCoxVQSc';
@@ -13,7 +14,7 @@ let SB = SUPABASE_URL;
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range, X-Phone-Ticket',
   'Access-Control-Expose-Headers': 'Content-Length, Content-Range, ETag',
 };
 
@@ -125,16 +126,31 @@ async function storageUsage(request, env) {
   return new Response(JSON.stringify({ bytes, objects, folders, freeBytes: 10 * 1e9, at: usageCache.at }), { headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
+// A phone sending a strip from a table QR: its ticket must allow this exact strip's files.
+const MAX_PHONE_UPLOAD = 15 * 1024 * 1024;
+async function phoneMayWrite(ticket, path) {
+  if (!/^[a-f0-9]{32}$/.test(ticket)) return false;
+  const r = await fetch(SB + '/rest/v1/rpc/phone_may_upload', { method: 'POST', headers: { apikey: PUBLIC_KEY, Authorization: 'Bearer ' + PUBLIC_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket, path }) });
+  return r.ok && (await r.json()) === true;
+}
+
 async function put(request, env, path) {
-  const user = await userId(request);
-  if (!user) return text(401, 'Log in again to save photos.');
-  if (!(await mayWrite(user, path))) return text(403, 'Not allowed to save here.');
+  const ticket = request.headers.get('X-Phone-Ticket') || '';
+  let limit = MAX_UPLOAD;
+  if (ticket && !request.headers.get('Authorization')) {
+    if (!(await phoneMayWrite(ticket, path))) return text(403, 'This upload link has expired. Start again from the table QR.');
+    limit = MAX_PHONE_UPLOAD;
+  } else {
+    const user = await userId(request);
+    if (!user) return text(401, 'Log in again to save photos.');
+    if (!(await mayWrite(user, path))) return text(403, 'Not allowed to save here.');
+  }
   const len = +request.headers.get('Content-Length') || 0;
-  if (len > MAX_UPLOAD) return text(413, 'File too big');
+  if (len > limit) return text(413, 'File too big');
   const type = request.headers.get('Content-Type') || 'application/octet-stream';
   const body = await request.arrayBuffer();
   if (!body.byteLength) return text(400, 'Empty file');
-  if (body.byteLength > MAX_UPLOAD) return text(413, 'File too big');
+  if (body.byteLength > limit) return text(413, 'File too big');
   await env.PHOTOS.put(path, body, { httpMetadata: { contentType: type } });
   usageCache = null;
   return new Response(JSON.stringify({ ok: true, path, size: body.byteLength }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });

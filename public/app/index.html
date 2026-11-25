@@ -20,6 +20,9 @@
 <body>
 
 <!-- ================= LOG IN ================= -->
+<section class="view" id="v-phone" aria-label="Photo from your table">
+  <div class="phwrap"><header class="phhead" id="phHead"></header><main id="phBody"></main></div>
+</section>
 <section class="view glow" id="v-login" aria-label="Log in">
   <div class="login">
     <div class="art">
@@ -383,6 +386,11 @@
             <button class="btn sm" id="paperNew" style="height:42px">New roll (full)</button>
           </div>
         </div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;gap:12px">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px"><b>📱 Photos from phones (Table QR)</b><span class="lbl" id="phWait"></span></div>
+        <input class="in mono" id="phFind" inputmode="numeric" maxlength="4" placeholder="Type the guest's code, e.g. 4827" style="max-width:320px;font-size:18px">
+        <div id="phList" class="phlist"></div>
       </div>
       <div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Time</th><th>Job</th><th>Copies</th><th>Status</th><th></th></tr></thead><tbody id="queue"></tbody></table></div></div>
     </section>

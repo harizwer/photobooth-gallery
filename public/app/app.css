@@ -444,3 +444,41 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .sizecard{align-items:center;padding:18px;gap:8px;width:min(260px,42vw)}
 .sizecard img{height:230px;max-width:100%;object-fit:contain;border-radius:4px;background:#2a2a2e}
 .sizecard b{font-size:20px}
+
+/* Table QR: the guest's phone page */
+#v-phone{display:none;min-height:100vh;background:radial-gradient(80% 50% at 50% 0%,#3a0d18,#120306 70%);color:#fff;align-items:flex-start;justify-content:center}
+#v-phone.on{display:flex}
+.phwrap{width:min(560px,100%);padding:16px 16px 40px;display:flex;flex-direction:column;gap:18px}
+.phhead{display:flex;align-items:center;gap:12px;padding:6px 0}
+.phhead img{width:46px;height:46px;border-radius:50%;object-fit:cover}
+.phhead b{display:block;font-size:16px}.phhead span{color:#d9c7bd;font-size:13px}
+.phh1{font-size:26px;margin:4px 0 0}
+.phlead{color:#e8d9cf;font-size:15.5px;margin:0}
+.phmsg{padding:40px 10px;text-align:center;font-size:17px;line-height:1.6;display:flex;flex-direction:column;align-items:center;gap:14px}
+.phgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.phlayout{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px;border-radius:16px;border:1px solid rgba(212,175,55,.35);background:rgba(255,255,255,.05);color:#fff;font:600 14px var(--sans);cursor:pointer}
+.phlayout img{width:100%;height:190px;object-fit:contain;border-radius:4px}
+.phcam{position:relative;border-radius:18px;overflow:hidden;background:#000;aspect-ratio:3/4}
+.phcam video{width:100%;height:100%;object-fit:cover;display:block}
+.phcam video.mirror{transform:scaleX(-1)}
+.phcount{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:120px;font-weight:800;text-shadow:0 4px 30px rgba(0,0,0,.6);pointer-events:none}
+.phflash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+.phflash.go{animation:fl .5s ease-out}
+.phbtns{display:flex;flex-direction:column;gap:10px}
+.phbtns .btn{width:100%;height:54px;font-size:17px;text-decoration:none}
+.phprev{display:flex;justify-content:center}
+.phprev img{max-width:100%;max-height:62vh;border-radius:6px;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+.phcard{padding:16px;border-radius:16px;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,55,.3);display:flex;flex-direction:column;gap:10px}
+.phcard.center{align-items:center;text-align:center}
+.phcode{font:800 64px/1 var(--mono);letter-spacing:.12em;color:#f2cf6b}
+.phcode.sm{font-size:22px}
+.phrow{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.phrow a{color:#f2cf6b;font-weight:600;font-size:14px}
+.phnote{color:#cdb9ad;font-size:13px;margin:0}
+/* Admin: Photos from phones */
+.phlist{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto}
+.phitem{display:flex;align-items:center;gap:12px;padding:8px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line)}
+.phitem img{width:44px;height:66px;object-fit:cover;border-radius:4px;background:#333}
+.phitem .phinfo{flex:1;display:flex;flex-direction:column}
+.phitem .phinfo b{font-size:22px;letter-spacing:.08em}
+.phitem.done{opacity:.6}
