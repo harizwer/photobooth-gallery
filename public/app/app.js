@@ -2169,7 +2169,7 @@ function openEventModal(ev) {
     <div class="field">Layouts guests can choose on the tablet<div id="neTpls" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto"></div></div>
     <p class="lbl" style="margin:0">Tick one or more. With more than one, guests pick their strip before the photos. Add new frames in the Template editor.</p>
     <div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px">
-      <label class="tog" style="justify-content:flex-start;gap:10px"><span><b>📱 Table QR</b><br><span class="lbl" style="font-size:12.5px">Guests scan a QR on their table, make a strip on their own phone with the layouts above, then show their code at the booth to print.</span></span><input type="checkbox" id="nePhOn" ${ev && ev.settings && ev.settings.phone && ev.settings.phone.on ? 'checked' : ''}></label>
+      <label class="tog" style="justify-content:flex-start;gap:10px"><span><b>📱 Table QR</b><br><span class="lbl" style="font-size:12.5px">Guests scan a QR on their table, make a 2x6 strip on their own phone with the strip layouts above, then show their code at the booth to print.</span></span><input type="checkbox" id="nePhOn" ${ev && ev.settings && ev.settings.phone && ev.settings.phone.on ? 'checked' : ''}></label>
       <label class="field" for="nePhLim">Strips per phone (0 = no limit)<input class="in mono" id="nePhLim" type="number" min="0" max="20" value="${ev && ev.settings && ev.settings.phone ? +ev.settings.phone.limit || 0 : 2}" style="max-width:120px"></label>
       ${phoneLink(ev) && ev.settings.phone.on ? `<div class="row" style="gap:14px;align-items:center;flex-wrap:wrap"><div id="nePhQr" style="background:#fff;padding:6px;border-radius:8px;line-height:0"></div><div style="display:flex;flex-direction:column;gap:8px"><button type="button" class="btn sm" id="nePhCards">⬇ Table cards (PDF, 4 per A4)</button><button type="button" class="btn sm" id="nePhCopy">Copy link</button></div></div>` : '<p class="lbl" style="margin:0;font-size:12.5px">Save to get the table QR.</p>'}
     </div>
@@ -3697,6 +3697,7 @@ async function phoneBoot() {
   S = mergeStudio({ brand: st.brand, logo: st.logo, printQr: st.printQr || {}, capture: { ...STUDIO_DEFAULT.capture, countdown: Math.max(1, Math.min(10, +st.countdown || 3)) } });
   phoneHome();
 }
+// From the tables guests can only make 2x6 strips (4R layouts are for the booth)
 const phoneLeft = () => PHN.info.limit > 0 ? Math.max(0, PHN.info.limit - PHN.info.used) : Infinity;
 function phoneHome() {
   phoneStop();
@@ -3706,7 +3707,9 @@ function phoneHome() {
   phoneUi(`<h1 class="phh1">Bergambar dari meja anda 📸</h1>
     <p class="phlead">Pilih layout, bergambar dengan telefon anda, kemudian tunjuk kod di booth untuk print.${left !== Infinity ? ` <b>Baki: ${left} strip.</b>` : ''}</p>
     <div class="phgrid" id="phLayouts"></div>${codes}`);
-  designsFor(ACTIVE).forEach(async d => {
+  const strips = designsFor(ACTIVE).filter(d => paperOf(d) === 'strip');   // from the tables: 2x6 strips only
+  if (!strips.length) $('#phLayouts').outerHTML = '<div class="phmsg">Tiada layout strip 2x6 untuk event ini. Sila ke booth photobooth.</div>';
+  strips.forEach(async d => {
     const b = document.createElement('button'); b.className = 'phlayout';
     b.innerHTML = `<img alt=""><span>${esc(d.name)}</span>`; b.onclick = () => phoneShoot(d); $('#phLayouts').appendChild(b);
     try { const c = await compose({ ...d, output_long: 500 }, samples(d.areas.length), 'none', { name: ACTIVE.name, date: ACTIVE.event_date }); b.querySelector('img').src = c.toDataURL('image/jpeg', .7); } catch (e) { }
