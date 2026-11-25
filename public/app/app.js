@@ -572,7 +572,10 @@ async function loadStation() {
 }
 async function loadAll() { await Promise.all([loadEvents(), loadStudio(), loadTemplates(), loadStation()]); }
 
-const printerOn = () => ROLE === 'admin' && store.get('printer', false);
+// Opened inside the Raysnap Print Assistant (Windows program): it does the printing, this page never prints
+const IN_ASSISTANT = /RaysnapAssistant/.test(navigator.userAgent);
+if (IN_ASSISTANT) document.documentElement.classList.add('in-assistant');
+const printerOn = () => ROLE === 'admin' && !IN_ASSISTANT && store.get('printer', false);
 function track() {
   if (!chan) return;
   chan.track({ role: ROLE || 'home', printer: printerOn(), away: document.hidden, label: ROLE === 'booth' ? 'Tablet (Booth)' : ROLE === 'admin' ? 'Laptop (Admin board)' : 'Device', at: Date.now() }).catch(() => {});
@@ -599,6 +602,7 @@ function onDevices() { if (ROLE === 'booth') boothStatus(); if (ROLE === 'admin'
 function renderAssistant() {
   const el = $('#raState'); if (!el) return;
   const k = assistantKinds();
+  if (IN_ASSISTANT) { el.innerHTML = (k.length ? `<b style="color:#5fd38a">● Printing ${k.length > 1 ? 'strips and 4R' : k[0] === '4r' ? '4R' : 'strips'} here.</b> ` : '<b style="color:#f5b041">● Auto print is off or no printer is chosen.</b> ') + 'Printers, test prints and print position are in the <b>Printing</b> and <b>Settings</b> tabs at the top of this program.'; return; }
   el.innerHTML = k.length ? `<b style="color:#5fd38a">● Print Assistant is printing ${k.length > 1 ? 'strips and 4R' : k[0] === '4r' ? '4R' : 'strips'}.</b> This page waits as the backup and prints again by itself if the Assistant stops.`
     : 'Prints straight to the DNP with no print window: strips to the cut printer, 4R to the uncut one. While it runs, this page waits and is the backup.';
 }
@@ -644,7 +648,7 @@ async function enter(user) {
   const uname = PROFILE ? PROFILE.username : (user.email || '');
   $('#whoami').textContent = uname; $('#avatar').textContent = (uname[0] || '?').toUpperCase();
   connectLive();
-  const role = store.get('role', null);
+  const role = IN_ASSISTANT ? 'admin' : store.get('role', null);   // inside the Print Assistant it is always the admin board
   if (role === 'booth') startBooth(); else if (role === 'admin') startAdmin(); else { ROLE = null; show('v-devices'); track(); }
 }
 $('#roleBooth').onclick = () => { store.set('role', 'booth'); startBooth(); };
@@ -2035,7 +2039,7 @@ const CRUMB = { home: 'Home', events: 'Events', templates: 'Template editor', me
 const secOn = n => $('#s-' + n).classList.contains('on');
 async function startAdmin() {
   ROLE = 'admin'; show('v-admin'); track(); keepAwake();
-  $('#prnOn').checked = store.get('printer', false); printerUi();
+  $('#prnOn').checked = store.get('printer', false); printerUi(); renderAssistant();
   $('#kioskCmd').textContent = `"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --kiosk-printing ${APP_URL}`;
   const start = (location.hash || '').slice(1);
   go(SECS.includes(start) ? start : 'home');
@@ -2140,7 +2144,7 @@ async function renderHome() {
 function renderDevices() {
   const list = others(), tab = list.find(d => d.role === 'booth');
   $('#sideDot').className = 'dot' + (tab ? '' : ' off'); $('#sideDev').textContent = tab ? 'Tablet connected' : 'Tablet not connected';
-  $('#sidePrn').textContent = printerOn() ? 'Booth · printing here' : 'Printing off on this laptop';
+  $('#sidePrn').textContent = IN_ASSISTANT ? (assistantOn() ? 'Print Assistant · printing' : 'Print Assistant · printing off') : printerOn() ? 'Booth · printing here' : 'Printing off on this laptop';
   const el = $('#hDevices'); if (!el) return;
   el.innerHTML = `<div class="devrow"><span class="dot${printerOn() ? '' : ' warn'}"></span>This laptop${printerOn() ? ' · prints' : ' · printing off'}</div>` + (list.length ? list.map(d => `<div class="devrow"><span class="dot"></span>${esc(d.label)}${d.printer ? ' · prints' : ''}</div>`).join('') : '<div class="devrow"><span class="dot off"></span>No tablet yet. Log in on the tablet and choose Booth.</div>');
 }

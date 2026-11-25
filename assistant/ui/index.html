@@ -30,10 +30,10 @@
     <img src="img/logo-word.webp" alt="Raysnap Photobooth" class="top-logo">
     <span class="top-title">Print Assistant</span>
     <span class="pill" id="statusPill"><span class="dot"></span><span id="statusText">Starting…</span></span>
-    <nav class="tabs" id="tabs"><button class="on" data-tab="home">Printing</button><button data-tab="queue">Queue</button><button data-tab="settings">Settings</button></nav>
+    <nav class="tabs" id="tabs"><button data-tab="studio">Admin board</button><button class="on" data-tab="home">Printing</button><button data-tab="queue">Queue</button><button data-tab="settings">Settings</button></nav>
   </header>
 
-  <main class="wrap">
+  <div class="scroll" id="mainScroll"><main class="wrap">
     <!-- Printing -->
     <div class="tab on" data-tab="home">
       <div class="hero card">
@@ -92,7 +92,13 @@
         <div class="row"><button class="btn sm" id="logout">Log out</button></div>
       </div>
     </div>
-  </main>
+  </main></div>
+
+  <!-- The whole admin board (events, templates, gallery, accounts...): the studio website, logged in for you -->
+  <div class="studio" id="studioPane">
+    <webview id="studio" partition="persist:studio" allowpopups></webview>
+    <div class="studio-msg" id="studioMsg"><img src="img/icon.png" alt=""><b>Opening the admin board…</b><span class="muted" id="studioErr"></span><button class="btn sm" id="studioRetry" hidden>Try again</button></div>
+  </div>
 </section>
 
 <div class="toast" id="toast" role="status" hidden></div>

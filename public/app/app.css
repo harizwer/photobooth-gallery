@@ -482,3 +482,4 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .phitem .phinfo{flex:1;display:flex;flex-direction:column}
 .phitem .phinfo b{font-size:22px;letter-spacing:.08em}
 .phitem.done{opacity:.6}
+.in-assistant .web-only{display:none!important}

@@ -11,6 +11,9 @@ body{font-family:var(--body);color:var(--text);background:var(--bg);line-height:
   background-image:radial-gradient(60% 45% at 12% 8%,rgba(160,30,60,.38),transparent 70%),radial-gradient(50% 40% at 92% 30%,rgba(195,104,70,.18),transparent 70%),radial-gradient(70% 50% at 50% 100%,rgba(120,20,45,.35),transparent 70%);background-attachment:fixed}
 button,input,select{font:inherit;color:inherit}
 .view{display:none;min-height:100vh}.view.on{display:block}
+#vMain.on{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.scroll{flex:1;overflow:auto;min-height:0}
+.scroll.off{display:none}
 #vLogin.on{display:flex;align-items:center;justify-content:center;padding:24px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;backdrop-filter:blur(10px)}
 .muted{color:var(--muted)}.sm{font-size:12.5px}
@@ -35,7 +38,7 @@ h3{font-size:21px;margin-bottom:6px}
 .msg{min-height:20px;font-size:14px;color:var(--bad)}
 
 /* top bar */
-.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:16px;padding:12px 28px;background:rgba(24,3,9,.9);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}
+.top{position:relative;flex:none;z-index:5;display:flex;align-items:center;gap:16px;padding:12px 28px;background:rgba(24,3,9,.9);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}
 .top-logo{height:42px}
 .top-title{font-family:var(--head);font-size:18px;color:var(--text2);border-left:1px solid var(--line);padding-left:16px}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--line);font-size:13px;font-weight:700}
@@ -75,3 +78,11 @@ h3{font-size:21px;margin-bottom:6px}
 
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#000d;border:1px solid var(--line-s);padding:12px 22px;border-radius:24px;z-index:20;max-width:calc(100% - 32px)}
 @media (max-width:900px){.grid3,.printers,.form{grid-template-columns:1fr}.top{flex-wrap:wrap}.tabs{margin-left:0}}
+
+/* admin board */
+.studio{position:relative;flex:1;min-height:0;display:flex;background:#111}
+.studio:not(.on){position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
+.studio webview{flex:1;width:100%;height:100%;border:0}
+.studio-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--bg);text-align:center;padding:24px}
+.studio-msg img{width:72px;height:72px;border-radius:50%}
+.studio-msg[hidden]{display:none}

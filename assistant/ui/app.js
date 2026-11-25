@@ -31,12 +31,17 @@ $('#loginForm').onsubmit = async e => {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'Could not log in');
     check(await sb.auth.setSession({ access_token: j.access_token, refresh_token: j.refresh_token }));
-    store.set('lastUser', u); $('#lPass').value = '';
+    store.set('lastUser', u);
+    try {   // a second login for the admin board tab
+      const r2 = await fetch(`${SUPABASE_URL}/functions/v1/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: PUBLIC_KEY, Authorization: 'Bearer ' + PUBLIC_KEY }, body: JSON.stringify({ username: u, password: p }) });
+      const j2 = await r2.json(); if (r2.ok && j2.access_token) { await A.studioClear(); store.set('studioSeed', { access_token: j2.access_token, refresh_token: j2.refresh_token }); }
+    } catch (e) { }
+    $('#lPass').value = '';
     const { data } = await sb.auth.getSession(); await start(data.session.user);
   } catch (err) { $('#lMsg').textContent = /fetch|network/i.test(err.message) ? 'No internet connection. Check the WiFi and try again.' : err.message; }
   finally { $('#lBtn').disabled = false; }
 };
-$('#logout').onclick = async () => { if (!confirm('Log out? Printing stops until you log in again.')) return; await sb.auth.signOut(); location.reload(); };
+$('#logout').onclick = async () => { if (!confirm('Log out? Printing stops until you log in again.')) return; await A.studioClear().catch(() => {}); await sb.auth.signOut(); location.reload(); };
 
 /* ---------- Start ---------- */
 async function start(user) {
@@ -49,6 +54,7 @@ async function start(user) {
   renderCfg();
   await Promise.all([loadEvent(), loadStation()]).catch(() => {});
   renderStats(); renderQueue();
+  showTab(store.get('tab', 'studio'));
   sb.channel('ra-jobs').on('postgres_changes', { event: '*', schema: 'public', table: 'print_jobs', filter: `owner=eq.${USER.id}` }, () => { run(); renderQueue(); renderStats(); }).subscribe();
   presence = sb.channel('booth-' + USER.id, { config: { presence: { key: deviceId } } });
   presence.subscribe(st => { if (st === 'SUBSCRIBED') track(); });
@@ -214,7 +220,42 @@ $('#cSave').onclick = () => {
   renderCfg(); toast('Print settings saved on this computer');
 };
 $('#autoStart').onchange = async () => { try { $('#autoStart').checked = await A.autostart($('#autoStart').checked); } catch (e) { toast(e.message); } };
-$('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (!b) return; $$('#tabs button').forEach(x => x.classList.toggle('on', x === b)); $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === b.dataset.tab)); if (b.dataset.tab === 'queue') renderQueue(); };
+function showTab(name) {
+  $$('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+  $('#mainScroll').classList.toggle('off', name === 'studio'); $('#studioPane').classList.toggle('on', name === 'studio');
+  if (name === 'studio') openStudio();
+  if (name === 'queue') renderQueue();
+  store.set('tab', name);
+}
+$('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); };
+
+/* ---------- Admin board: the studio website inside this window, logged in with the same account ---------- */
+let studioOpen = false;
+async function openStudio() {
+  if (studioOpen) return; studioOpen = true;
+  const wv = $('#studio'), msg = $('#studioMsg');
+  wv.setAttribute('useragent', navigator.userAgent.replace(/\s*Electron\/\S+/, '') + ' RaysnapAssistant');
+  wv.addEventListener('dom-ready', seedStudio);
+  wv.addEventListener('did-finish-load', () => { msg.hidden = true; });
+  wv.addEventListener('did-fail-load', e => {
+    if (!e.isMainFrame || e.errorCode === -3) return;   // -3: a page change interrupted the load
+    msg.hidden = false; $('#studioErr').textContent = 'No internet connection, or the website did not answer. Printing keeps working.'; $('#studioRetry').hidden = false;
+  });
+  $('#studioRetry').onclick = () => { $('#studioRetry').hidden = true; $('#studioErr').textContent = ''; wv.reload(); };
+  wv.src = (await A.studioUrl()) + '/app/';
+}
+// Right after logging in, the admin board gets its own login (a second session, so the two never fight over one token)
+async function seedStudio() {
+  const seed = store.get('studioSeed', null); if (!seed) return;
+  store.set('studioSeed', null);
+  const wv = $('#studio');
+  const r = await wv.executeJavaScript(`(async () => {
+    const c = (window.__SB_FAKE__ || window.supabase).createClient(${JSON.stringify(SUPABASE_URL)}, ${JSON.stringify(PUBLIC_KEY)});
+    const { data } = await c.auth.getSession(); if (data && data.session) return 'has';
+    const r = await c.auth.setSession(${JSON.stringify(seed)}); return r.error ? 'err ' + r.error.message : 'ok'; })()`).catch(e => 'err ' + e.message);
+  if (r === 'ok') wv.reload();
+}
 window.addEventListener('online', () => { online = true; renderStatus(); run(); });
 window.addEventListener('offline', () => { online = false; renderStatus(); });
 

@@ -2,7 +2,7 @@
 // It logs in to the studio, takes print jobs from the tablet and phones, and prints them straight to the chosen
 // printer (no print window): 2x6 strips to the DNP set up with the 2-inch cut, 4R photos to the DNP without it.
 // The window (ui/) does the work; this file opens it, keeps it running in the tray and prints pages silently.
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session } = require('electron');
 const path = require('path'), fs = require('fs'), os = require('os');
 
 const SELFTEST = process.argv.includes('--selftest');
@@ -13,9 +13,9 @@ app.on('second-instance', () => { if (win) { win.show(); win.focus(); } });
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1100, height: 780, minWidth: 820, minHeight: 600, show: !process.argv.includes('--hidden') && !SELFTEST,
+    width: 1320, height: 860, minWidth: 900, minHeight: 600, show: !process.argv.includes('--hidden') && !SELFTEST,
     backgroundColor: '#180309', title: 'Raysnap Print Assistant', icon: path.join(__dirname, 'ui/img/icon.png'), autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, backgroundThrottling: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, backgroundThrottling: false, webviewTag: true },
   });
   win.loadFile(path.join(__dirname, 'ui/index.html'));
   // Closing the window keeps the assistant printing in the background (tray icon); Quit from the tray stops it.
@@ -37,6 +37,23 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => { quitting = true; });
 app.on('window-all-closed', () => { if (quitting || SELFTEST) app.quit(); });
 
+// The admin board (the website) runs inside the window in a <webview>. Links it opens in a new tab (guest page,
+// album, WhatsApp...) open in the normal browser; it may not navigate away from the studio website itself.
+const STUDIO = process.env.RA_STUDIO_URL || 'https://photobooth-studio.harizwer03.workers.dev';
+app.on('web-contents-created', (e, wc) => {
+  if (wc.getType() !== 'webview') return;
+  wc.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+  wc.on('will-navigate', (ev, url) => { if (!url.startsWith(STUDIO)) { ev.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); } });
+});
+app.on('web-contents-created', (e, wc) => {
+  // The admin board gets no access to the computer: no Node, no preload script, only the studio website
+  wc.on('will-attach-webview', (ev, prefs, params) => {
+    delete prefs.preload; prefs.nodeIntegration = false; prefs.contextIsolation = true;
+    if (!params.src.startsWith(STUDIO) && params.src !== 'about:blank') ev.preventDefault();
+  });
+});
+ipcMain.handle('studio-url', () => STUDIO);
+ipcMain.handle('studio-clear', () => session.fromPartition('persist:studio').clearStorageData());
 ipcMain.handle('printers', async () => (await win.webContents.getPrintersAsync()).map(p => ({ name: p.name, label: p.displayName || p.name, isDefault: !!p.isDefault })));
 ipcMain.handle('version', () => app.getVersion());
 ipcMain.handle('open-external', (e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });

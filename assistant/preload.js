@@ -6,4 +6,6 @@ contextBridge.exposeInMainWorld('assistant', {
   autostart: on => ipcRenderer.invoke('autostart', on),
   version: () => ipcRenderer.invoke('version'),
   openExternal: url => ipcRenderer.invoke('open-external', url),
+  studioUrl: () => ipcRenderer.invoke('studio-url'),
+  studioClear: () => ipcRenderer.invoke('studio-clear'),
 });
