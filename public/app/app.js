@@ -1826,6 +1826,7 @@ function startSave(s, reuse) {
         src.forEach((shot, i) => {
           const cam = !lv && s.originals && s.originals[i], useCam = cam && cam.size <= 6e6 && /jpe?g/i.test(cam.type || 'image/jpeg');
           work.push((useCam ? Promise.resolve(cam) : jpeg(shot, .92)).then(b => retry(() => upload(row.originals[i], b, 'image/jpeg'))));
+          work.push(jpeg(scaled(shot, 480), .78).then(b => retry(() => upload(row.originals[i].replace(/\.jpg$/, '-t.jpg'), b, 'image/jpeg'))));   // small copy for the guest page
         });
         s.originals = null;
       }
@@ -2301,7 +2302,7 @@ function openEventModal(ev) {
     if (!confirm(`Delete “${ev.name}” and all of its photos? This cannot be undone.`)) return;
     try {
       const photos = check(await sb.from('photos').select('path,thumb_path,media_path,print_path,message_path,originals').eq('event_id', ev.id));
-      const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, ...(p.originals || []), p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]).filter(Boolean);
+      const paths = photos.flatMap(p => [p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, ...(p.originals || []), ...(p.originals || []).map(o => o.replace(/\.jpg$/, '-t.jpg')), p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]).filter(Boolean);
       await removeFiles(paths);
       check(await sb.from('events').delete().eq('id', ev.id));
       await loadEvents(); if (!EVENTS.some(x => x.is_active)) await setActive(EVENTS[0].id);
@@ -2843,7 +2844,7 @@ $('#thumbs').addEventListener('click', e => {
   m.querySelector('#dlOrig').onclick = async () => { if (as4r && sheet4r) return download(await jpeg(sheet4r, .95), p.path.split('/').pop().replace(/\.jpg$/, '') + '-4R.jpg'); const path = kind === 'photo' ? p.path : (p.media_path || p.path); try { download(await (await fetch(fileUrl(path))).blob(), path.split('/').pop()); } catch (err) { window.open(fileUrl(path), '_blank'); } };
   m.querySelector('#delPhoto').onclick = async () => {
     if (!confirm('Delete this from the gallery? The guest link stops working.')) return;
-    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, ...(p.originals || []), p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
+    try { await removeFiles([p.path, p.thumb_path, p.media_path, p.print_path, p.message_path, ...(p.originals || []), ...(p.originals || []).map(o => o.replace(/\.jpg$/, '-t.jpg')), p.path && p.path.replace(/\.jpg$/, '-4r.jpg')]); check(await sb.from('photos').delete().eq('id', p.id)); m.remove(); renderGallery(); toast('Deleted'); } catch (err) { toast(err.message, 4000); }
   };
 });
 $('#copyAlbum').onclick = () => copyText($('#albumLink').value, $('#albumLink'));
