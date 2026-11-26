@@ -3909,11 +3909,19 @@ async function phoneBoot() {
   phoneHome();
 }
 // From the tables guests can only make 2x6 strips (4R layouts are for the booth)
+// The pass the guest shows at the booth: a QR for the scanner and the code in big gold tiles
+const scanCode = pt => 'RS' + String(pt || '').toUpperCase();
+const codeTiles = code => `<div class="pcode" aria-label="Kod ${esc(code)}">${[...String(code || '')].map(c => `<span>${esc(c)}</span>`).join('')}</div>`;
+function phonePass(code, pt) {
+  setTimeout(() => { const el = $('#phPassQr'); if (el && pt) { const img = new Image(); img.alt = 'QR tiket'; img.src = qrCanvas(scanCode(pt), 520, 'M').toDataURL(); img.style.cssText = 'width:100%;height:auto;display:block;image-rendering:pixelated'; el.innerHTML = ''; el.appendChild(img); } }, 0);
+  return `<div class="ppass"><div class="ppass-h">Tiket cetakan anda</div>${pt ? '<div class="ppass-qr" id="phPassQr"></div>' : ''}<div class="ppass-l">${pt ? 'Tunjuk di booth untuk di-scan, atau beri kod ini' : 'Beri kod ini di booth photobooth'}</div>${codeTiles(code)}<div class="ppass-f">Terangkan skrin telefon untuk scan yang lebih cepat</div></div>`;
+}
 const phoneLeft = () => PHN.info.limit > 0 ? Math.max(0, PHN.info.limit - PHN.info.used) : Infinity;
 function phoneHome() {
   phoneStop();
   const mine = phoneMine(), left = phoneLeft();
-  const codes = mine.length ? `<div class="phcard"><b>Strip saya</b>${mine.slice().reverse().map(x => `<div class="phrow"><span class="phcode sm">${esc(x.code)}</span><a href="${esc(LINK() + '?p=' + x.share)}" target="_blank" rel="noopener">Simpan gambar HD ›</a></div>`).join('')}<p class="phnote">Tunjuk kod di booth photobooth untuk print.</p></div>` : '';
+  const codes = mine.length ? `<div class="phcard"><b>Strip saya</b>${mine.slice().reverse().map(x => `<div class="phrow"><button class="phcode sm" data-pass="${esc(x.code)}" data-pt="${esc(x.pt || '')}">${esc(x.code)}</button><a href="${esc(LINK() + '?p=' + x.share)}" target="_blank" rel="noopener">Simpan gambar HD ›</a></div>`).join('')}<p class="phnote">Tunjuk kod di booth photobooth untuk print.</p></div>` : '';
+  setTimeout(() => $$('[data-pass]').forEach(b => b.onclick = () => { phoneUi(`<h1 class="phh1">Tiket anda</h1>${phonePass(b.dataset.pass, b.dataset.pt)}<div class="phbtns"><button class="btn rbtn" id="phBackHome">← Kembali</button></div>`); $('#phBackHome').onclick = phoneHome; }), 0);
   if (left <= 0) return phoneUi(`<div class="phmsg">Anda sudah buat ${PHN.info.limit} strip dari telefon ini. Terima kasih! 🎉</div>${codes}`);
   phoneUi(`<h1 class="phh1">Bergambar dari meja anda 📸</h1>
     <p class="phlead">Pilih layout, bergambar dengan telefon anda, kemudian tunjuk kod di booth untuk print.${left !== Infinity ? ` <b>Baki: ${left} strip.</b>` : ''}</p>
@@ -4019,9 +4027,9 @@ async function phoneSend() {
     const fin = check(await sb.rpc('phone_finish', { ticket: r.ticket, layout: d.name, paper: paperOf(d), n_originals: PHN.shots.length }));
     if (!fin) throw new Error('Masa menghantar sudah tamat. Cuba lagi.');
     PHN.info.used++;
-    store.set('phoneDone', [...store.get('phoneDone', []), { ev: ACTIVE.id, code: fin.code, share: fin.share_token, at: Date.now() }].slice(-20));
+    store.set('phoneDone', [...store.get('phoneDone', []), { ev: ACTIVE.id, code: fin.code, share: fin.share_token, pt: r.print_token, at: Date.now() }].slice(-20));
     phoneUi(`<h1 class="phh1">Siap! 🎉</h1>
-      <div class="phcard center"><p class="phlead">Tunjuk kod ini di booth photobooth untuk print:</p><div class="phcode">${esc(fin.code)}</div></div>
+      ${phonePass(fin.code, r.print_token)}
       <div class="phbtns"><a class="btn rbtn pri" href="${esc(LINK() + '?p=' + fin.share_token)}" target="_blank" rel="noopener">💾 Simpan gambar HD</a>${phoneLeft() > 0 ? '<button class="btn rbtn" id="phMore">📸 Buat strip lagi</button>' : ''}</div>`);
     const more = $('#phMore'); if (more) more.onclick = phoneHome;
   } catch (e) {
@@ -4073,6 +4081,47 @@ async function renderPhoneList() {
 }
 setInterval(() => { if (ROLE === 'admin' && secOn('printer') && !document.hidden) renderPhoneList(); }, 10000);
 let phFindT = 0; $('#phFind').addEventListener('input', () => { clearTimeout(phFindT); phFindT = setTimeout(renderPhoneList, 250); });
+
+/* ---- Admin: barcode scanner at the booth. The scanner types fast and ends with Enter; catch it anywhere. ---- */
+let scanBuf = '', scanLast = 0;
+function scanBeep(ok) {
+  try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination);
+    o.frequency.value = ok ? 1320 : 220; g.gain.value = .15; o.start(); o.stop(a.currentTime + (ok ? .12 : .4)); setTimeout(() => a.close(), 600); } catch (e) { }
+}
+function scanFlash(ok, title, sub) {
+  let el = $('#scanFlash'); if (!el) { el = document.createElement('div'); el.id = 'scanFlash'; document.body.appendChild(el); }
+  el.className = ok ? 'ok' : 'bad'; el.innerHTML = `<b>${esc(title)}</b><span>${esc(sub || '')}</span>`; el.hidden = false;
+  clearTimeout(el.t); el.t = setTimeout(() => { el.hidden = true; }, ok ? 2600 : 4200); scanBeep(ok);
+}
+async function scanPrint(raw) {
+  const v = raw.trim();
+  let q = sb.from('photos').select('id,event_id,printed,pickup_code,print_path,path,paper,layout,source').eq('owner', USER.id);
+  if (/^RS[0-9A-F]{12,}$/i.test(v)) q = q.eq('print_token', v.slice(2).toLowerCase());
+  else if (/^\d{4,6}$/.test(v)) q = q.eq('pickup_code', v).eq('event_id', ACTIVE.id).eq('source', 'phone');
+  else return scanFlash(false, 'Kod tidak dikenali', v.slice(0, 30));
+  try {
+    const rows = check(await q.order('created_at', { ascending: false }).limit(1)); const p = rows[0];
+    if (!p) return scanFlash(false, 'Tiket tidak dijumpai', 'Bukan dari majlis ini, atau belum siap dihantar.');
+    const done = check(await sb.from('print_jobs').select('id,status').eq('photo_id', p.id).neq('status', 'cancelled').limit(1));
+    if (p.printed > 0 || done.length) return scanFlash(false, `Kod ${p.pickup_code || ''} sudah dicetak`, 'Tiket hanya boleh dicetak sekali. Cetak semula dari Gallery jika perlu.');
+    check(await sb.from('print_jobs').insert({ event_id: p.event_id, photo_id: p.id, path: p.print_path || p.path, copies: 1, label: `${ACTIVE.name} · phone ${p.pickup_code}`, paper: p.paper || 'strip' }));
+    scanFlash(true, `Kod ${p.pickup_code || ''} · dihantar ke printer`, p.layout || '');
+    runPrinter(); queueBadge(); if (secOn('printer')) renderPhoneList();
+  } catch (e) { scanFlash(false, 'Tak dapat cetak', e.message); }
+}
+document.addEventListener('keydown', e => {
+  if (ROLE !== 'admin' || e.ctrlKey || e.metaKey || e.altKey) return;
+  const now = Date.now(), inFind = e.target && e.target.id === 'phFind';
+  if (e.key === 'Enter') {
+    const fast = now - scanLast < 80, v = scanBuf; scanBuf = '';
+    if (fast && v.length >= 6) { e.preventDefault(); if (e.target && 'value' in e.target && e.target.value.endsWith(v)) e.target.value = e.target.value.slice(0, -v.length); return scanPrint(v); }   // the scanner
+    if (inFind && /^\d{4,6}$/.test(e.target.value.trim())) { e.preventDefault(); const c = e.target.value.trim(); e.target.value = ''; return scanPrint(c); }   // a code typed by hand + Enter
+    return;
+  }
+  if (now - scanLast > 80) scanBuf = '';
+  scanLast = now;
+  if (e.key.length === 1) scanBuf += e.key;
+}, true);
 
 /* ---------------- Start ---------------- */
 (async () => {

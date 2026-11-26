@@ -622,3 +622,21 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .phbg.on{border-color:var(--accent);background:rgba(255,90,38,.15)}
 .phbg img,.phbg span{width:62px;height:42px;border-radius:7px;object-fit:cover;display:flex;align-items:center;justify-content:center;background:#2a2a2e;font-size:20px}
 .phbg small{font-size:11px;line-height:1.2;text-align:center}
+
+/* Table QR: the pickup pass on the guest's phone */
+.ppass{width:100%;background:linear-gradient(160deg,#3b0a17,#24060e);border:1px solid rgba(212,175,55,.55);border-radius:24px;padding:20px 18px 18px;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 18px 40px rgba(0,0,0,.45);position:relative}
+.ppass::before{content:'';position:absolute;inset:6px;border:1px solid rgba(212,175,55,.2);border-radius:19px;pointer-events:none}
+.ppass-h{font:600 12px var(--sans);letter-spacing:.22em;text-transform:uppercase;color:#E6C35C}
+.ppass-qr{width:min(78%,260px);background:#fff;padding:12px;border-radius:16px;box-shadow:0 0 0 3px #D4AF37}
+.ppass-l{font-size:13.5px;color:#E2D0C2;text-align:center}
+.pcode{display:flex;gap:8px;justify-content:center}
+.pcode span{width:54px;height:68px;border-radius:12px;display:flex;align-items:center;justify-content:center;font:700 40px/1 'Playfair Display',Georgia,serif;color:#2a1408;background:linear-gradient(172deg,#FFF1C2,#E6C35C 45%,#B8862B 80%,#F2D58C);box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 6px 14px rgba(0,0,0,.35);font-variant-numeric:lining-nums}
+.ppass-f{font-size:11.5px;color:#B8A598}
+button.phcode.sm{all:unset;cursor:pointer;font:800 22px/1 var(--mono);letter-spacing:.12em;color:#f2cf6b;text-decoration:underline dotted rgba(242,207,107,.5);text-underline-offset:5px}
+/* admin: scan result */
+#scanFlash{position:fixed;left:50%;top:22px;transform:translateX(-50%);z-index:9999;min-width:min(520px,92vw);padding:16px 22px;border-radius:16px;display:flex;flex-direction:column;gap:2px;font-family:var(--sans);box-shadow:0 18px 40px rgba(0,0,0,.5)}
+#scanFlash[hidden]{display:none}
+#scanFlash b{font-size:19px}
+#scanFlash span{font-size:14px;opacity:.85}
+#scanFlash.ok{background:#14532d;border:1px solid #5fd38a;color:#eafff1}
+#scanFlash.bad{background:#5c1414;border:1px solid #ff8a80;color:#fff0ee}
