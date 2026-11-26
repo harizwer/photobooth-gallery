@@ -290,7 +290,7 @@ function segAsk(msg, transfer) {
     w.postMessage({ ...msg, id }, transfer || []);
   });
 }
-const aiOn = () => ROLE === 'booth' && S.aiBg && S.aiBg.on !== false;
+const aiOn = () => false;   // the tablet never runs the AI (it took too long there); guests' phones do, see phoneAiRow
 function aiWarm() { if (aiOn()) segAsk({ kind: 'photo', warm: true }); }
 async function personMaskNow(src, kind) {
   if (!segWBroken && window.Worker && window.createImageBitmap) {
@@ -377,7 +377,7 @@ let voiceAudio = null, music = null, musicWanted = false;
 function duck(on) { if (music) music.volume = Math.max(0, Math.min(1, (S.music.volume ?? .35) * (on ? .25 : 1))); }
 // Speak a line: the studio's own recording if there is one, otherwise the device's text-to-speech (Malay where available)
 function say(key) {
-  const V = S.voice || {}; if (!V.on || ROLE !== 'booth') return Promise.resolve();
+  const V = S.voice || {}; if (!V.on || ROLE !== 'booth' || !can('branding')) return Promise.resolve();
   const text = voiceLine(key), clip = V.clips && V.clips[key];
   if (!text && !clip) return Promise.resolve();
   hush(); duck(true);
@@ -396,7 +396,7 @@ function hush() { if (voiceAudio) { voiceAudio.pause(); voiceAudio = null; } if 
 // Theme music: the track picked for this event's type (or for all types), looping quietly
 // The tracks for this event's type, in the order they were added
 function musicList() {
-  const M = S.music || {}; if (!M.on) return [];
+  const M = S.music || {}; if (!M.on || !can('theme')) return [];
   const type = evType(ACTIVE); return (M.tracks || []).filter(t => !t.types || !t.types.length || t.types.includes(type));
 }
 let musicIdx = 0, musicDone = false;
@@ -553,6 +553,45 @@ function designsFor(ev) {
   const t = TEMPLATES.filter(x => x.event_type === evType(ev) && x.frame_url); return t.length ? t.map(tplToDesign) : BUILTIN;
 }
 
+// The admin board shows only the settings in the active event's package
+function applyPackageUi() {
+  if (!ACTIVE) return;
+  const k = pkgOf(ACTIVE), P = PACKAGES[k], vid = addonsOf(ACTIVE).video && k !== 'vip';
+  if ($('#pkgName')) { $('#pkgName').textContent = P.name; $('#pkgAdd').textContent = vid ? ' + Video' : ''; $('#pkgBtn').dataset.p = k; }
+  $$('[data-feat]').forEach(el => { el.hidden = !can(el.dataset.feat); });
+  const off = Object.keys(FEAT_LEVEL).filter(f => !can(f) && f !== 'filters').map(f => FEAT_NAME[f]);
+  $$('[data-pkgnote]').forEach(el => {
+    el.innerHTML = `<b>${esc(ACTIVE.name)}</b> · package <b>${P.name}</b>${vid ? ' + Video guestbook' : ''} (RM${pkgPrice(ACTIVE).toLocaleString('en-MY')}). ` +
+      (off.length ? `Not in this package, so hidden here and off on the tablet: ${off.map(esc).join(', ')}.` : 'Everything is included.') + ' <button class="btn sm" data-pkgopen>Change package</button>';
+  });
+}
+document.addEventListener('click', e => { if (e.target.closest('#pkgBtn,[data-pkgopen]')) openPackageModal(); });
+function openPackageModal(ev = ACTIVE) {
+  if (!ev) return;
+  let cur = pkgOf(ev), vid = !!addonsOf(ev).video;
+  const m = modal(`<div style="display:flex;flex-direction:column;gap:14px"><h3 style="margin:0">Package for ${esc(ev.name)}</h3>
+    <p class="lbl" style="margin:0">Tap the package the customer paid for. The tablet offers only what is in it, and the admin board shows only its settings.</p>
+    <div class="pkgcards" id="pkCards"></div>
+    <label class="tog" id="pkVidRow" style="justify-content:flex-start;gap:10px;padding:10px 12px;border-radius:12px;background:#1a1a1c;border:1px solid var(--line)"><input type="checkbox" id="pkVid"><span><b>Add-on: Video guestbook</b> +RM${ADDON_VIDEO}<br><span class="lbl" style="font-size:12.5px">Video button on the tablet and the video montage (already in VIP)</span></span></label>
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap"><span>Total <b id="pkTotal" style="font-size:18px"></b></span><div class="row"><button class="btn" data-close>Cancel</button><button class="btn pri" id="pkSave">Save</button></div></div></div>`, 720);
+  const draw = () => {
+    m.querySelector('#pkCards').innerHTML = Object.entries(PACKAGES).map(([k, P]) => `<button type="button" class="pkgcard ${k === cur ? 'on' : ''}" data-k="${k}"><span class="pkgtop"><b>${P.name}</b><span>${P.hours} hours</span></span><span class="pkgrm">RM${P.price.toLocaleString('en-MY')}</span><ul>${P.has.map(h => `<li>${esc(h)}</li>`).join('')}</ul></button>`).join('');
+    const box = m.querySelector('#pkVid'); box.checked = vid && cur !== 'vip'; box.disabled = cur === 'vip'; m.querySelector('#pkVidRow').style.opacity = cur === 'vip' ? .45 : 1;
+    m.querySelector('#pkTotal').textContent = 'RM' + (PACKAGES[cur].price + (vid && cur !== 'vip' ? ADDON_VIDEO : 0)).toLocaleString('en-MY');
+  };
+  m.querySelector('#pkCards').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) { cur = b.dataset.k; draw(); } });
+  m.querySelector('#pkVid').onchange = e => { vid = e.target.checked; draw(); };
+  m.querySelector('#pkSave').onclick = async () => {
+    const settings = { ...(ev.settings || {}), package: cur, addons: { ...addonsOf(ev), video: vid && cur !== 'vip' } };
+    try {
+      check(await sb.from('events').update({ settings, updated_at: new Date().toISOString() }).eq('id', ev.id));
+      await loadEvents(); announce(); m.remove();
+      if (secOn('events')) renderEvents();
+      toast(`${PACKAGES[cur].name} saved. The tablet follows it now.`);
+    } catch (err) { toast(err.message, 4000); }
+  };
+  draw();
+}
 async function loadEvents() {
   EVENTS = check(await sb.from('events').select('*').eq('owner', USER.id).order('created_at', { ascending: false }));
   if (!EVENTS.length) {
@@ -560,6 +599,7 @@ async function loadEvents() {
     EVENTS = [ev];
   }
   ACTIVE = EVENTS.find(e => e.is_active) || EVENTS[0];
+  applyPackageUi();
 }
 async function loadStudio() {
   const r = await sb.from('studio').select('data').eq('owner', USER.id).maybeSingle();
@@ -697,7 +737,26 @@ function carousel(car, prev, next, dots, onChange) {
 }
 function bscreen(id) { $$('#v-booth .bs').forEach(s => s.classList.toggle('on', s.id === id)); }
 const MODE_INFO = { photo: ['Photo', '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'], gif: ['GIF', '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 12h3v3M14 9v6M17 9h-3M17 12h-2"/>'], boom: ['Boomerang', '<path d="M4 12a8 8 0 0114-5M20 12a8 8 0 01-14 5"/><path d="M18 3v4h-4M6 21v-4h4"/>'], video: ['Video message', '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/>'] };
-const enabledModes = () => Object.keys(MODE_INFO).filter(k => S.modes[k]);
+/* ---------- Packages: each event has the package the customer paid for (raysnapphotobooth.com). The tablet only offers
+   what that package includes, and the admin board only shows those settings. Events made before packages count as VIP. ---------- */
+const PACKAGES = {
+  basic: { name: 'Basic', price: 599, hours: 2, level: 0, has: ['Unlimited 2×6 strips', 'Custom layout', 'Beauty filter', 'Boomerang on every strip', 'HD photos by QR', 'Event album (7 days)'] },
+  standard: { name: 'Standard', price: 799, hours: 3, level: 1, has: ['Everything in Basic', 'E-guestbook (messages, PDF)', 'Stickers & filters', 'Event theme: start screen, countdown, music, printing screen'] },
+  vip: { name: 'VIP', price: 1399, hours: 4, level: 2, has: ['Everything in Standard', 'Video guestbook + montage', 'Voice guide (welcome voice)', '4R prints', 'Table QR: guests use their own phone (with AI backgrounds)'] },
+};
+const ADDON_VIDEO = 400;
+// feature → lowest package that includes it (everything else is in every package)
+const FEAT_LEVEL = { guestbook: 1, stickers: 1, filters: 1, theme: 1, video: 2, branding: 2, tableQr: 2, print4r: 2 };
+const FEAT_NAME = { guestbook: 'E-guestbook', stickers: 'Stickers', filters: 'Filters', theme: 'Event theme', video: 'Video guestbook', branding: 'Voice guide', tableQr: 'Table QR & AI backgrounds', print4r: '4R prints' };
+const pkgOf = ev => { const k = ev && ev.settings && ev.settings.package; return PACKAGES[k] ? k : 'vip'; };
+const addonsOf = ev => (ev && ev.settings && ev.settings.addons) || {};
+function can(feat, ev = ACTIVE) {
+  if (!(feat in FEAT_LEVEL)) return true;
+  if (feat === 'video' && addonsOf(ev).video) return true;
+  return PACKAGES[pkgOf(ev)].level >= FEAT_LEVEL[feat];
+}
+const pkgPrice = ev => PACKAGES[pkgOf(ev)].price + (addonsOf(ev).video && pkgOf(ev) !== 'vip' ? ADDON_VIDEO : 0);
+const enabledModes = () => Object.keys(MODE_INFO).filter(k => S.modes[k] && (k !== 'video' || can('video')));
 
 async function startBooth() {
   ROLE = 'booth'; show('v-booth'); bscreen('b-attract'); track(); keepAwake();
@@ -722,10 +781,11 @@ async function boothLoad() {
   $('#bTitle').textContent = ACTIVE ? ACTIVE.name : '';
   if (!B.session && (musicWanted || (S.music && S.music.on))) musicPlay();   // music only while nobody is using the booth
   const evDate = ACTIVE && ACTIVE.event_date ? new Date(ACTIVE.event_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
-  $('#bSub').textContent = [evDate, S.bg.sub || (evDate ? '' : 'Tap to make memories')].filter(Boolean).join(' · ');
+  const bg = can('theme') ? S.bg : { ...STUDIO_DEFAULT.bg, sub: S.bg.sub };   // Basic: the Raysnap velvet, not the event theme
+  $('#bSub').textContent = [evDate, bg.sub || (evDate ? '' : 'Tap to make memories')].filter(Boolean).join(' · ');
   $('#bBadge').hidden = !S.logo; if (S.logo && $('#bBadge').src !== S.logo) $('#bBadge').src = S.logo;
-  $('#bSparks').hidden = !(S.bg.kind === 'color' || !S.bg.src);   // the gold stars only on the velvet
-  paintBg($('#boothBgLayer'), $('#boothShade'), S.bg);
+  $('#bSparks').hidden = !(bg.kind === 'color' || !bg.src);   // the gold stars only on the velvet
+  paintBg($('#boothBgLayer'), $('#boothShade'), bg);
   const modes = enabledModes(); const list = modes.length ? modes : ['photo'];
   // One square button per mode, icon only (the staff starts each session)
   $('#bModes').innerHTML = list.map((m, i) => `<button class="bmode ${i === 0 ? 'first' : ''}" data-mode="${m}" aria-label="${MODE_INFO[m][0]}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${MODE_INFO[m][1]}</svg></button>`).join('');
@@ -1286,7 +1346,7 @@ function goHome() {
 const pickDesign = d => S.beautyStep !== false ? openLook(d) : startSession(d);
 // Print size: a 2x6 strip (two on a 4x6 sheet, cut by the printer) or a 4R photo (one 4x6, not cut)
 const paperOf = d => d && d.paper === 'strip' ? 'strip' : '4r';
-function sizeGroups() { const all = designsFor(ACTIVE); return { all, strip: all.filter(d => paperOf(d) === 'strip'), '4r': all.filter(d => paperOf(d) === '4r') }; }
+function sizeGroups() { let all = designsFor(ACTIVE).filter(d => can('print4r') || paperOf(d) === 'strip'); if (!all.length) all = BUILTIN.filter(d => paperOf(d) === 'strip'); return { all, strip: all.filter(d => paperOf(d) === 'strip'), '4r': all.filter(d => paperOf(d) === '4r') }; }
 const sizeChoice = g => S.capture.sizeChoice !== false && g.strip.length > 0 && g['4r'].length > 0;
 function startFlow(mode, again) {
   if (!again) { ac(); keepAwake(); musicPause(); say(mode === 'video' ? 'video' : 'welcome'); B.look = null; B.size = null; }
@@ -1346,7 +1406,7 @@ function showCount(el, n) {
   el.textContent = n; styleCount(el);
 }
 // root: where to draw (the booth countdown or the admin preview); vmin: how big the screen is, in px of 1vh/1vw
-function showSmile(el, m = S.smile || {}, preview) {
+function showSmile(el, m = can('theme') ? S.smile || {} : {}, preview) {
   const emo = m.emoji || '', text = (m.text || 'Smile!').trim() || 'Smile!';
   const chars = [...text].length + (emo ? 4 : 0), k = (m.size || 100) / 100;
   el.removeAttribute('style');
@@ -1378,7 +1438,8 @@ function styleShotPrev(box, o = cdOpt()) {
   box.style.setProperty('--sp-size', ((o.prevSize || 100) / 100).toFixed(2));
   const fr = box.querySelector('.spframe'); fr.hidden = st !== 'image'; if (st === 'image') fr.src = o.prevSrc;
 }
-const cdOpt = () => ({ frame: 'none', frameSrc: '', prevBorder: '#ffffff', prevStyle: 'classic', prevSrc: '', prevAnim: 'pop', prevSize: 100, tick: 'beep', tickSrc: '', last: 'beep', lastSrc: '', shutter: 'click', shutterSrc: '', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', size: 100, anim: 'pop', volume: 1, ...(S.countdown || {}) });
+const cdOpt = () => ({ ...cdBase(), ...(can('theme') ? S.countdown || {} : {}) });
+const cdBase = () => ({ frame: 'none', frameSrc: '', prevBorder: '#ffffff', prevStyle: 'classic', prevSrc: '', prevAnim: 'pop', prevSize: 100, tick: 'beep', tickSrc: '', last: 'beep', lastSrc: '', shutter: 'click', shutterSrc: '', font: 'Geist', color: '#ffffff', stroke: 0, strokeColor: '#000000', size: 100, anim: 'pop', volume: 1 });
 // Painted sounds (no files needed). last = the final second, a little higher.
 function cdTone(kind, last, vol) {
   try {
@@ -1602,8 +1663,9 @@ async function openReview() {
   catch (e) { camLog('review not shown: ' + e.message); return showErr('Something went wrong', e.message + ' Tap Try again.', () => openReview(), goHome); }
   const isPhoto = s.mode === 'photo';
   $('#rvTabs').hidden = !isPhoto;
-  $('#rvTabs [data-tab=stk]').hidden = !(S.stickers && S.stickers.on !== false);
-  $('#rvTabs [data-tab=aibg]').hidden = !(S.aiBg && S.aiBg.on !== false) || segWDead;   // hidden if the AI stopped answering on this tablet
+  $('#rvTabs [data-tab=stk]').hidden = !(S.stickers && S.stickers.on !== false) || !can('stickers');
+  $('#rvTabs [data-tab=filter]').hidden = !can('filters');
+  $('#rvTabs [data-tab=aibg]').hidden = true;   // AI backgrounds only on guests' phones (Table QR)
   if (isPhoto) { renderAiBgPanel(); say('review'); }
   // (The AI background runs only when the guest picks one: preparing it in advance froze the tablet's screen.)
   showReviewTab(isPhoto ? 'adj' : '');
@@ -1908,7 +1970,7 @@ function playPs(root, sec) {
   return pic.animate([{ transform: 'translateY(-100%)' }, { transform: 'translateY(0)' }], { duration: sec * 1000, easing: 'linear', fill: 'forwards' });
 }
 function showPrinting(s, shot) {
-  const P = S.printScreen || {}, root = $('#b-print');
+  const P = (can('theme') ? S.printScreen : STUDIO_DEFAULT.printScreen) || {}, root = $('#b-print');
   root.style.setProperty('--ps-ink', paintPs($('#psLayer'), $('#psShade'), P));
   $('#psText').textContent = P.text || 'Printing your photo…'; say('printing');
   const pic = $('#psImg'); pic.src = shot.toDataURL('image/jpeg', .85);
@@ -1984,7 +2046,7 @@ function backToDone(msg) {
   let left = 30; const tick = () => $('#doneTimer').textContent = `Going back automatically in ${left}s`;
   tick(); clearInterval(B.doneT); B.doneT = setInterval(() => { left--; tick(); if (left <= 0) goHome(); }, 1000);
 }
-const gbAvailable = s => !!(S.guestbook && S.guestbook.on && s && s.row && s.mode === 'photo' && !s.messageSaved);
+const gbAvailable = s => !!(can('guestbook') && S.guestbook && S.guestbook.on && s && s.row && s.mode === 'photo' && !s.messageSaved);
 $('#gbOpen').onclick = openGuestbook;
 $('#gbCancel').onclick = () => backToDone();
 $('#gbSave').onclick = async () => {
@@ -2115,7 +2177,7 @@ document.addEventListener('keydown', e => {
    ADMIN BOARD (laptop)
    ===================================================================== */
 const SECS = ['home', 'events', 'templates', 'media', 'gallery', 'printer', 'studio', 'accounts', 'guest'];
-const CRUMB = { home: 'Home', events: 'Events', templates: 'Template editor', media: 'Capture & media', gallery: 'Gallery & share', printer: 'Printer', studio: 'Studio settings', accounts: 'Accounts & PIN', guest: 'Guest view' };
+const CRUMB = { home: 'Home', events: 'Events & package', templates: 'Template editor', media: 'Camera & tablet', gallery: 'Gallery & share', printer: 'Printer', studio: 'Studio settings', accounts: 'Accounts & PIN', guest: 'Guest view' };
 const secOn = n => $('#s-' + n).classList.contains('on');
 async function startAdmin() {
   ROLE = 'admin'; show('v-admin'); track(); keepAwake();
@@ -2233,10 +2295,11 @@ function renderDevices() {
 function renderEvents() {
   fillCmd(); $('#evCount').textContent = EVENTS.length;
   const per = id => STATS.filter(p => p.event_id === id).length;
-  $('#evTable').innerHTML = EVENTS.map(e => `<tr><td><b>${esc(e.name)}</b> ${e.id === ACTIVE.id ? '<span class="chip" style="margin-left:6px">Active on tablet</span>' : ''}</td><td>${esc(evType(e))}</td><td class="mono">${esc(e.event_date || '')}</td><td>${designsFor(e).map(d => esc(d.name)).join(', ')}</td><td class="mono">${per(e.id)}</td>
+  $('#evTable').innerHTML = EVENTS.map(e => `<tr><td><b>${esc(e.name)}</b> <button class="pkgchip" data-pk="${e.id}" data-p="${pkgOf(e)}" title="Change the package">${PACKAGES[pkgOf(e)].name}${addonsOf(e).video && pkgOf(e) !== 'vip' ? ' + Video' : ''}</button> ${e.id === ACTIVE.id ? '<span class="chip" style="margin-left:6px">Active on tablet</span>' : ''}</td><td>${esc(evType(e))}</td><td class="mono">${esc(e.event_date || '')}</td><td>${designsFor(e).map(d => esc(d.name)).join(', ')}</td><td class="mono">${per(e.id)}</td>
     <td><div class="row" style="justify-content:flex-end;gap:6px;flex-wrap:wrap">${e.id === ACTIVE.id ? '' : `<button class="btn sm" data-activate="${e.id}">Make active</button>`}<button class="btn sm" data-edit="${e.id}">Edit</button><button class="btn sm" data-tpl="${e.id}">Templates</button><button class="btn sm" data-gal="${e.id}">Gallery</button></div></td></tr>`).join('');
 }
 $('#evTable').addEventListener('click', async e => {
+  const pk = e.target.closest('[data-pk]'); if (pk) return openPackageModal(EVENTS.find(x => x.id === pk.dataset.pk));
   const a = e.target.closest('[data-activate]'), ed = e.target.closest('[data-edit]'), t = e.target.closest('[data-tpl]'), g = e.target.closest('[data-gal]');
   try {
     if (a) { await setActive(a.dataset.activate); toast('Event is now active on the tablet'); renderEvents(); }
@@ -2261,15 +2324,25 @@ function openEventModal(ev) {
     <label class="field" for="neName">Event name<input class="in" id="neName" required maxlength="80" value="${esc(ev ? ev.name : '')}" placeholder="e.g. Iman &amp; Danial"></label>
     <label class="field" for="neType">Event type<select class="in" id="neType">${allTypes().map(t => `<option ${ev && evType(ev) === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
     <label class="field" for="neDate">Date (printed on the standard layouts)<input class="in" id="neDate" maxlength="40" value="${esc(ev ? ev.event_date || '' : today())}"></label>
+    <div class="field">Package the customer paid for<div class="row" id="nePkg" style="gap:6px;flex-wrap:wrap">${Object.entries(PACKAGES).map(([k, P]) => `<button type="button" class="pill ${k === (ev ? pkgOf(ev) : 'basic') ? 'on' : ''}" data-k="${k}">${P.name} · RM${P.price}</button>`).join('')}</div>
+      <label class="tog" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="neVid" ${ev && addonsOf(ev).video ? 'checked' : ''}>Add-on: Video guestbook (+RM${ADDON_VIDEO})</label></div>
     <div class="field">Layouts guests can choose on the tablet<div id="neTpls" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto"></div></div>
     <p class="lbl" style="margin:0">Tick one or more. With more than one, guests pick their strip before the photos. Add new frames in the Template editor.</p>
-    <div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px">
-      <label class="tog" style="justify-content:flex-start;gap:10px"><span><b>📱 Table QR</b><br><span class="lbl" style="font-size:12.5px">Guests scan a QR on their table, make a 2x6 strip on their own phone with the strip layouts above, then show their code at the booth to print.</span></span><input type="checkbox" id="nePhOn" ${ev && ev.settings && ev.settings.phone && ev.settings.phone.on ? 'checked' : ''}></label>
+    <div id="nePhBox" style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px">
+      <label class="tog" style="justify-content:flex-start;gap:10px"><span><b>📱 Table QR</b> <span class="chip" style="margin-left:4px">VIP</span><br><span class="lbl" style="font-size:12.5px">Guests scan a QR on their table, make a 2x6 strip on their own phone with the strip layouts above, then show their code at the booth to print.</span></span><input type="checkbox" id="nePhOn" ${ev && ev.settings && ev.settings.phone && ev.settings.phone.on ? 'checked' : ''}></label>
       <label class="field" for="nePhLim">Strips per phone (0 = no limit)<input class="in mono" id="nePhLim" type="number" min="0" max="20" value="${ev && ev.settings && ev.settings.phone ? +ev.settings.phone.limit || 0 : 2}" style="max-width:120px"></label>
       ${phoneLink(ev) && ev.settings.phone.on ? `<div class="row" style="gap:14px;align-items:center;flex-wrap:wrap"><div id="nePhQr" style="background:#fff;padding:6px;border-radius:8px;line-height:0"></div><div style="display:flex;flex-direction:column;gap:8px"><button type="button" class="btn sm" id="nePhCards">⬇ Table cards (PDF, 4 per A4)</button><button type="button" class="btn sm" id="nePhCopy">Copy link</button></div></div>` : '<p class="lbl" style="margin:0;font-size:12.5px">Save to get the table QR.</p>'}
     </div>
     <div class="row" style="justify-content:space-between;flex-wrap:wrap">${ev ? '<button type="button" class="btn" id="neDel" style="color:#ff8a80">Delete event</button>' : '<span></span>'}<div class="row"><button type="button" class="btn" data-close>Cancel</button><button class="btn pri">${ev ? 'Save' : 'Create event'}</button></div></div></form>`);
   m.querySelector('#neName').focus();
+  let nePkg = ev ? pkgOf(ev) : 'basic';
+  const drawPkg = () => {
+    m.querySelectorAll('#nePkg [data-k]').forEach(b => b.classList.toggle('on', b.dataset.k === nePkg));
+    m.querySelector('#nePhBox').hidden = nePkg !== 'vip';   // Table QR is VIP only
+    const v = m.querySelector('#neVid'); v.disabled = nePkg === 'vip'; v.parentNode.style.opacity = nePkg === 'vip' ? .45 : 1;
+  };
+  m.querySelector('#nePkg').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) { nePkg = b.dataset.k; drawPkg(); } });
+  drawPkg();
   if (m.querySelector('#nePhQr')) { qr(m.querySelector('#nePhQr'), phoneLink(ev), 110); m.querySelector('#nePhCards').onclick = () => phoneCards(ev).catch(e => toast(e.message, 4000)); m.querySelector('#nePhCopy').onclick = () => navigator.clipboard.writeText(phoneLink(ev)).then(() => toast('Link copied'), () => prompt('Copy this link', phoneLink(ev))); }
   let chosen = ev ? designsFor(ev).map(d => d.id) : null;
   const drawTpls = () => {
@@ -2277,7 +2350,7 @@ function openEventModal(ev) {
     const mine = TEMPLATES.filter(t => t.frame_url).map(tplToDesign).sort((a, b) => (b.event_type === type) - (a.event_type === type));
     const list = [...mine, ...BUILTIN];
     if (!chosen) { const t = mine.filter(d => d.event_type === type); chosen = (t.length ? t : BUILTIN).map(d => d.id); }
-    const paper = { strip: '2x6 strip', portrait: '4R portrait', landscape: '4R landscape' };
+    const paper = { strip: '2x6 strip', portrait: '4R portrait · VIP only', landscape: '4R landscape · VIP only' };
     box.innerHTML = list.map(d => `<label class="tog" style="justify-content:flex-start;gap:10px;padding:6px 10px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line);color:var(--fg)"><input type="checkbox" value="${esc(d.id)}" ${chosen.includes(d.id) ? 'checked' : ''}>${d.frame_url ? `<img src="${esc(d.frame_url)}" alt="" crossorigin="anonymous" style="height:40px;width:28px;object-fit:contain;background:#2a2a2e;border-radius:3px">` : ''}<span><b style="font-size:13px">${esc(d.name)}</b><br><span class="lbl" style="font-size:11.5px">${d.builtin ? 'Standard' : esc(d.event_type)} · ${paper[d.paper]} · ${d.areas.length} photo${d.areas.length === 1 ? '' : 's'}</span></span></label>`).join('');
   };
   drawTpls();
@@ -2287,7 +2360,7 @@ function openEventModal(ev) {
     e.preventDefault(); const name = m.querySelector('#neName').value.trim(); if (!name) return;
     const picked = [...m.querySelectorAll('#neTpls input:checked')].map(i => i.value);
     if (!picked.length) return toast('Tick at least one layout');
-    const settings = { ...(ev ? ev.settings || {} : {}), type: m.querySelector('#neType').value, templates: picked }, event_date = m.querySelector('#neDate').value.trim();
+    const settings = { ...(ev ? ev.settings || {} : {}), type: m.querySelector('#neType').value, templates: picked, package: nePkg, addons: { ...(ev ? addonsOf(ev) : {}), video: m.querySelector('#neVid').checked && nePkg !== 'vip' } }, event_date = m.querySelector('#neDate').value.trim();
     const oldPh = (ev && ev.settings && ev.settings.phone) || {};
     settings.phone = { on: m.querySelector('#nePhOn').checked, limit: Math.max(0, Math.min(20, Math.round(+m.querySelector('#nePhLim').value || 0))), token: oldPh.token || token(16) };
     try {
@@ -3832,7 +3905,7 @@ async function phoneBoot() {
   if (st.brand) document.title = st.brand;
   if (r.off) return phoneMsg('Bergambar dari telefon sudah ditutup untuk event ini.<br>Jumpa kami di photobooth! 📸');
   PHN.info = r; ACTIVE = r.event; TEMPLATES = r.templates || [];
-  S = mergeStudio({ brand: st.brand, logo: st.logo, printQr: st.printQr || {}, capture: { ...STUDIO_DEFAULT.capture, countdown: Math.max(1, Math.min(10, +st.countdown || 3)) } });
+  S = mergeStudio({ brand: st.brand, logo: st.logo, printQr: st.printQr || {}, aiBg: st.aiBg || {}, capture: { ...STUDIO_DEFAULT.capture, countdown: Math.max(1, Math.min(10, +st.countdown || 3)) } });
   phoneHome();
 }
 // From the tables guests can only make 2x6 strips (4R layouts are for the booth)
@@ -3860,7 +3933,7 @@ async function phoneCamera() {
   const v = $('#phVideo'); v.srcObject = PHN.stream; v.classList.toggle('mirror', PHN.facing === 'user'); await v.play().catch(() => {});
 }
 async function phoneShoot(d) {
-  PHN.design = d; PHN.shots = [];
+  PHN.design = d; PHN.shots = []; PHN.bg = ''; PHN.bgShots = null;
   phoneUi(`<div class="phcam"><video id="phVideo" playsinline muted autoplay></video><div class="phcount" id="phCount"></div><div class="phflash" id="phFlash"></div></div>
     <p class="phlead" id="phInfo">Gambar 1 daripada ${d.areas.length}. Bersedia!</p>
     <div class="phbtns"><button class="btn rbtn pri" id="phGo">📸 Mula</button><button class="btn rbtn" id="phFlip">🔄 Tukar kamera</button><button class="btn rbtn" id="phBack">← Kembali</button></div>`);
@@ -3885,13 +3958,41 @@ async function phoneShoot(d) {
 }
 async function phoneReview() {
   phoneStop();
-  const d = PHN.design;
   phoneMsg('<div class="spin"></div>Menyediakan strip anda…');
-  const c = await compose({ ...d, output_long: 1400 }, PHN.shots, 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
+  await phoneDraw();
+}
+// AI backgrounds run here, on the guest's own phone (never on the tablet)
+function phoneBgItems() {
+  const A = S.aiBg || {}; if (A.on === false || !window.Worker || !window.createImageBitmap) return [];
+  return [['', 'Asal', ''], ...(A.blur !== false ? [['blur', 'Kabur', '']] : []), ...(A.builtin || []).filter(k => AIBG_BUILTIN[k]).map(k => [k, AIBG_BUILTIN[k][0], aibgThumb(k)]), ...(A.list || []).map((u, i) => ['u:' + i, u.name || 'Latar ' + (i + 1), u.url])];
+}
+const phoneShots = () => PHN.bgShots || PHN.shots;
+async function phoneDraw() {
+  const d = PHN.design;
+  const c = await compose({ ...d, output_long: 1400 }, phoneShots(), 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
+  const items = phoneBgItems();
   phoneUi(`<h1 class="phh1">Cantik! ✨</h1><div class="phprev"><img alt="Strip anda" src="${c.toDataURL('image/jpeg', .85)}"></div>
+    ${items.length > 1 ? `<div class="phbgs"><b>✨ Tukar latar belakang (AI)</b><div class="phbgrow" id="phBgs">${items.map(([k, n, img]) => `<button class="phbg ${k === PHN.bg ? 'on' : ''}" data-bg="${esc(k)}">${img ? `<img src="${esc(img)}" alt="" crossorigin="anonymous">` : `<span>${k === 'blur' ? '◐' : '◻'}</span>`}<small>${esc(n)}</small></button>`).join('')}</div></div>` : ''}
     <div class="phbtns"><button class="btn rbtn pri" id="phSend">🖨 Hantar untuk print</button><button class="btn rbtn" id="phRetake">↺ Ambil semula</button></div>`);
   $('#phRetake').onclick = () => phoneShoot(d);
   $('#phSend').onclick = phoneSend;
+  const row = $('#phBgs');
+  if (row) row.onclick = async e => {
+    const b = e.target.closest('[data-bg]'); if (!b || b.dataset.bg === PHN.bg) return;
+    const key = b.dataset.bg; PHN.bg = key;
+    if (!key) { PHN.bgShots = null; return phoneDraw(); }
+    const first = !segReady;
+    phoneMsg(`<div class="spin"></div><span id="phStep">${first ? 'Memuat AI kali pertama, tunggu sebentar…' : 'AI sedang tukar latar…'}</span>`);
+    try {
+      const out = [];
+      for (const [i, shot] of PHN.shots.entries()) {
+        const el = $('#phStep'); if (el) el.textContent = `AI sedang tukar latar… ${i + 1} / ${PHN.shots.length}`;
+        out.push(await withBackground(shot, key));
+      }
+      PHN.bgShots = out;
+    } catch (err) { PHN.bg = ''; PHN.bgShots = null; toast('AI tak dapat tukar latar di telefon ini. Gambar asal digunakan.', 5000); }
+    phoneDraw();
+  };
 }
 async function phoneSend() {
   const d = PHN.design, set = t => { const el = $('#phStep'); if (el) el.textContent = t; };
@@ -3903,11 +4004,11 @@ async function phoneSend() {
     if (r.error) return phoneMsg('Bergambar dari telefon sudah ditutup untuk event ini.');
     const base = `${r.event_id}/${r.photo_id}`;
     set('Menyediakan gambar…');
-    const full = await compose({ ...d, output_long: Math.min(d.output_long || 2400, 2400) }, PHN.shots, 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
+    const full = await compose({ ...d, output_long: Math.min(d.output_long || 2400, 2400) }, phoneShots(), 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
     const sheet = scaled(full, PRINT_LONG);
     if (S.printQr && S.printQr.on) drawPrintQr(sheet.getContext('2d'), sheet.width, sheet.height, d, `${LINK()}?q=${r.print_token}`);
     const files = [[base + '-print.jpg', await jpeg(printCanvas(d, sheet), .93)], [base + '.jpg', await jpeg(full, .9)], [base + '-thumb.jpg', await jpeg(scaled(full, 520), .78)]];
-    for (const [i, shot] of PHN.shots.entries()) files.push([`${base}-o${i + 1}.jpg`, await jpeg(scaled(shot, 2400), .9)]);
+    for (const [i, shot] of phoneShots().entries()) files.push([`${base}-o${i + 1}.jpg`, await jpeg(scaled(shot, 2400), .9)]);
     for (const [i, [path, blob]] of files.entries()) {
       set(`Menghantar ${i + 1} / ${files.length}…`);
       await retry(async () => {

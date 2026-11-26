@@ -61,15 +61,14 @@
 <section class="view glow" id="v-admin" aria-label="Admin board">
   <nav class="side" aria-label="Admin menu">
     <div class="brand"><span class="logo" data-logo data-size="24"></span><span data-brand>Photobooth Studio</span></div>
-    <div class="grp">General</div>
+    <div class="grp">This event</div>
     <button class="nav" data-go="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>Home</button>
-    <button class="nav" data-go="events"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Events<span class="badge" id="evCount">0</span></button>
+    <button class="nav" data-go="events"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Events &amp; package<span class="badge" id="evCount">0</span></button>
     <button class="nav" data-go="gallery"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-9 8"/></svg>Gallery &amp; share</button>
-    <div class="grp">Tools</div>
-    <button class="nav" data-go="templates"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>Template editor</button>
-    <button class="nav" data-go="media"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Capture &amp; media</button>
     <button class="nav" data-go="printer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 8V3h10v5"/><rect x="3" y="8" width="18" height="9" rx="2"/><rect x="7" y="14" width="10" height="7"/></svg>Printer<span class="badge" id="qBadge" hidden>0</span></button>
-    <div class="grp">Other</div>
+    <div class="grp">Set up once</div>
+    <button class="nav" data-go="templates"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>Template editor</button>
+    <button class="nav" data-go="media"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Camera &amp; tablet</button>
     <button class="nav" data-go="studio"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M3 14l5-4 4 3 3-2 6 4"/></svg>Studio settings</button>
     <button class="nav" data-go="accounts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Accounts &amp; PIN</button>
     <button class="nav" data-go="guest"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>Guest view (preview)</button>
@@ -82,6 +81,7 @@
       <div class="crumb">Dashboard / <b id="crumb">Home</b></div>
       <label class="search" for="cmd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cmd" placeholder="Search events or go to a page" list="cmdList"><datalist id="cmdList"></datalist></label>
       <div class="row" style="gap:4px">
+        <button class="pkgbtn" id="pkgBtn" title="The package the customer paid for (active event)">Package <b id="pkgName">VIP</b><span id="pkgAdd"></span></button>
         <button class="ico" id="swDevice" aria-label="Switch device" title="Switch device"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg></button>
         <button class="ico" data-logout aria-label="Log out" title="Log out" id="avatar" style="background:linear-gradient(180deg,#3a3a3e,#222225);border-radius:50%;font-weight:700;font-size:13px">?</button>
       </div>
@@ -196,6 +196,7 @@
 
     <!-- CAPTURE & MEDIA -->
     <section class="sec" id="s-media">
+      <div class="pkgnote" data-pkgnote></div>
       <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">Camera &amp; photos</h2><div class="lbl">Guests get photos only. The Canon shows the live preview and takes every photo.</div></div><button class="btn pri" id="mediaSave">Save</button></div>
       <div class="grid-auto" id="modes" hidden></div>
       <div class="wrap">
@@ -212,7 +213,7 @@
           <label class="field" for="capCam">Camera on the tablet<select class="in" id="capCam"><option value="user">Front camera</option><option value="environment">Back camera</option><option value="dslr">Canon DSLR plugged into the tablet (USB)</option></select></label>
           <label class="tog">Mirror the live preview (like a mirror)<input type="checkbox" id="capMirror"></label>
           <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Canon live preview<br><span class="lbl" style="font-size:12px">Preview from the Canon over USB (keep a charger plugged into the USB hub). If it ever freezes, the booth uses the tablet camera for the preview until the Canon is switched off and on — photos still come from the Canon.</span></span><input type="checkbox" id="capCanonLive"></label>
-          <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Guests choose 2x6 strip or 4R<br><span class="lbl" style="font-size:12px">When the event has both kinds of layout (tick them in Events → Edit)</span></span><input type="checkbox" id="capSize"></label>
+          <label class="tog" data-feat="print4r" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Guests choose 2x6 strip or 4R<br><span class="lbl" style="font-size:12px">When the event has both kinds of layout (tick them in Events → Edit)</span></span><input type="checkbox" id="capSize"></label>
           <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>Boomerang on the strip<br><span class="lbl" style="font-size:12px">Records the last seconds of the countdown (see Boomerang length) before each photo and plays all the photos moving together on the strip the guest chose. Guests get the photo and the boomerang with the same QR. The boomerang is not printed.</span></span><input type="checkbox" id="capPhotoGif"></label>
           <label class="tog" style="padding:10px 12px;border-radius:10px;background:#1a1a1c;border:1px solid var(--line)"><span>HD camera photos for guests<br><span class="lbl" style="font-size:12px">Besides the strip, each photo from the camera is saved in full HD (up to 4000 px), and the guest can download every one. Uses about 8 MB more storage per session.</span></span><input type="checkbox" id="capOriginals"></label>
           <label class="field" for="capQ">Photo quality <span class="mono" id="capQv">95%</span><input type="range" id="capQ" min="70" max="100" value="95" style="accent-color:var(--accent)"></label>
@@ -224,7 +225,7 @@
           <div class="banner" style="background:#1a1a1c;border:1px solid var(--line);color:#c8c8cc;line-height:1.5">Photos, GIFs, boomerangs and videos always use the highest resolution your camera can do.</div>
         </div>
       </div>
-      <div class="card" id="vbCard" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card" id="vbCard" data-feat="video" style="display:flex;flex-direction:column;gap:12px">
         <div class="row" style="justify-content:space-between"><b style="font-size:15px">🎥 Video guestbook</b><label class="tog" style="gap:8px">On<input type="checkbox" id="vbOn"></label></div>
         <div class="lbl" style="margin-top:-6px">Adds a “Video message” button on the tablet's start screen. Guests record a short video with sound for the couple. In Gallery &amp; share, “🎬 Video guestbook” joins all the messages into one video.</div>
         <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
@@ -233,7 +234,7 @@
         </div>
         <div class="lbl" style="font-size:12px">The tablet's microphone records the sound (the Canon has no microphone over USB). Press Save at the top to send it to the tablet.</div>
       </div>
-      <div class="card" id="cdCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+      <div class="card" id="cdCard" data-feat="theme" style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
         <div style="flex:2 1 400px;min-width:0;display:flex;flex-direction:column;gap:12px">
           <b style="font-size:15px">⏱ Countdown screen</b>
           <div class="lbl" style="margin-top:-6px">What guests see and hear while the booth counts down to each photo.</div>
@@ -273,7 +274,7 @@
           <button class="btn sm" id="cdShotPlay">▶ Show the photo between shots</button>
         </div>
       </div>
-      <div class="card" id="smileCard" style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+      <div class="card" id="smileCard" data-feat="theme" style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
         <div style="flex:2 1 380px;min-width:0;display:flex;flex-direction:column;gap:12px">
           <b style="font-size:15px">Smile screen</b>
           <div class="lbl" style="margin-top:-6px">The word that shows just before each photo is taken.</div>
@@ -392,7 +393,7 @@
           </div>
         </div>
       </div>
-      <div class="card" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card" data-feat="tableQr" style="display:flex;flex-direction:column;gap:12px">
         <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px"><b>📱 Photos from phones (Table QR)</b><span class="lbl" id="phWait"></span></div>
         <input class="in mono" id="phFind" inputmode="numeric" maxlength="4" placeholder="Type the guest's code, e.g. 4827" style="max-width:320px;font-size:18px">
         <div id="phList" class="phlist"></div>
@@ -402,6 +403,7 @@
 
     <!-- STUDIO SETTINGS -->
     <section class="sec" id="s-studio">
+      <div class="pkgnote" data-pkgnote></div>
       <div class="wrap" style="justify-content:space-between;align-items:center"><div><h2 class="title">Studio settings</h2><div class="lbl">Your photobooth name, logo and the tablet's start screen.</div></div><button class="btn pri" id="studioSave">Save</button></div>
       <div class="wrap">
         <div class="card" style="flex:1 1 320px;display:flex;flex-direction:column;gap:12px">
@@ -438,7 +440,7 @@
             <p class="lbl" style="margin:0;line-height:1.55">Guests scan the QR on their print to download the soft copy. <b style="color:#fff">The link works for 12 hours</b> after the photo is taken (the QR on the tablet screen too). For later, share the event album: it works for 7 days after the event. After that it shows “This link has expired”.</p>
           </div>
         </div>
-        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+        <div class="card" data-feat="theme" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
           <b>Tablet start screen background</b>
           <div class="row" style="flex-wrap:wrap;gap:8px" id="bgKinds" role="group" aria-label="Background type">
             <button class="pill on" data-k="color">Colour glow</button><button class="pill" data-k="image">Photo</button><button class="pill" data-k="gif">GIF</button><button class="pill" data-k="video">Video</button>
@@ -455,25 +457,27 @@
           <label class="field" for="bgSub">Line under the event name<input class="in" id="bgSub" maxlength="60" placeholder="Tap to make memories"></label>
           <div class="lbl">Photo: JPG or PNG. GIF: animated GIF. Video: MP4 or WebM (up to 50 MB), plays silently on loop. Best size: 1920 × 1080 or larger.</div>
         </div>
-        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
-          <div class="row" style="justify-content:space-between"><b>🖼 AI backgrounds (no green screen)</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="abOn"></label></div>
+        <div class="card" data-feat="tableQr" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><b>🖼 AI backgrounds · guests' phones (Table QR)</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="abOn"></label></div>
           <div class="lbl" style="margin-top:-6px">Guests pick a new background on the review screen. The AI finds the people in each photo on the tablet itself. Works best with people standing clear of the backdrop and good light.</div>
           <div><div class="lbl" style="margin-bottom:6px">Ready-made</div><div class="row" id="abBuiltin" style="gap:6px;flex-wrap:wrap"></div></div>
           <div><div class="lbl" style="margin-bottom:6px">Your backgrounds (e.g. pelamin, Paris, beach). Landscape photos, 3:2 like the camera, look best. Use pictures you have the rights to.</div><div id="abList" style="display:flex;flex-direction:column;gap:6px"></div>
             <div class="row" style="gap:10px;margin-top:8px"><label class="btn sm" for="abFile" style="cursor:pointer">Upload backgrounds</label><input type="file" id="abFile" accept="image/jpeg,image/png,image/webp" multiple hidden></div></div>
         </div>
-        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+        <div class="card" data-feat="branding" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><b>🗣 Voice guide</b><label class="tog" style="gap:8px">On<input type="checkbox" id="voOn"></label></div>
           <div class="lbl" style="margin-top:-6px">The booth talks the guest through each step. Record your own voice for any line, or let the tablet's computer voice read it.</div>
           <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="field" for="voLang" style="width:200px">Computer voice language<select class="in" id="voLang"><option value="ms-MY">Bahasa Melayu</option><option value="en-GB">English</option><option value="id-ID">Bahasa Indonesia</option><option value="zh-CN">中文</option></select></label><label class="field" for="voVol" style="flex:1;min-width:160px">Voice volume<input type="range" id="voVol" min="0" max="100" style="accent-color:var(--accent)"></label></div>
           <div id="voLines" style="display:flex;flex-direction:column;gap:6px"></div><input type="file" id="voFile" accept="audio/*,video/*,.mp3,.m4a,.mp4,.mov,.wav" hidden>
-          <div class="row" style="justify-content:space-between;margin-top:6px"><b>🎵 Theme music</b><label class="tog" style="gap:8px">On<input type="checkbox" id="muOn"></label></div>
+          </div>
+        <div class="card" data-feat="theme" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <div class="row" style="justify-content:space-between"><b>🎵 Theme music</b><label class="tog" style="gap:8px">On<input type="checkbox" id="muOn"></label></div>
           <div class="lbl" style="margin-top:-6px">Plays quietly on the tablet, softer while the booth talks, and stops while a video message is recorded. Tick which event types each track is for (none ticked = every event). Use music you have the rights to play.</div>
           <div id="muList" style="display:flex;flex-direction:column;gap:6px"></div>
           <div class="row" id="muRepeat" style="gap:6px;flex-wrap:wrap;align-items:center"><span class="lbl" style="margin-right:4px">🔁 Repeat</span><button class="pill" data-rep="one">🔂 Repeat this song</button><button class="pill" data-rep="all">🔁 Repeat all</button><button class="pill" data-rep="once">▶ Play once</button></div>
           <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap"><label class="btn sm" for="muFile" style="cursor:pointer">Upload music (MP3 or video)</label><input type="file" id="muFile" accept="audio/*,video/*" multiple hidden><label class="field" for="muVol" style="flex:1;min-width:160px">Music volume<input type="range" id="muVol" min="0" max="100" style="accent-color:var(--accent)"></label></div>
         </div>
-        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+        <div class="card" data-feat="stickers" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><b>Stickers on the review screen</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="stOn"></label></div>
           <div class="lbl" style="margin-top:-6px">Guests add stickers on top of their strip. They are printed and saved with the photo.</div>
           <div><div class="lbl" style="margin-bottom:6px">Sticker packs guests can use</div><div class="row" id="stPacksAdmin" style="flex-wrap:wrap;gap:6px"></div></div>
@@ -482,7 +486,7 @@
           <div><div class="lbl" style="margin-bottom:6px">Text stickers</div><div class="row" id="stTexts" style="flex-wrap:wrap;gap:6px"></div>
             <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:flex-end"><label class="field" for="stTextIn" style="flex:1;min-width:180px">New text sticker<input class="in" id="stTextIn" maxlength="40" placeholder="Selamat Pengantin Baru"></label><label class="field" for="stTextFont" style="width:170px">Font<select class="in" id="stTextFont"></select></label><label class="field" for="stTextColor" style="width:80px">Colour<input type="color" id="stTextColor" value="#ffffff" style="width:100%;height:42px;border:0;background:none;padding:0"></label><button class="btn sm" id="stTextAdd" style="height:42px">Add</button></div></div>
         </div>
-        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+        <div class="card" data-feat="guestbook" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><b>Guestbook (messages for the couple)</b><label class="tog" style="gap:8px">On<input type="checkbox" id="gbOn"></label></div>
           <div class="lbl" style="margin-top:-6px">After each session the tablet offers “Write a message”. Guests write with a finger. Download the guestbook PDF in Gallery &amp; share.</div>
           <label class="field" for="gbPromptIn">Button and title text<input class="in" id="gbPromptIn" maxlength="50" placeholder="Write a message for the couple ✍️"></label>
@@ -494,7 +498,9 @@
           <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center"><span class="row" id="gbScreens" style="gap:6px"></span><label class="btn sm" for="gbScreenFile" style="cursor:pointer">Upload picture</label><input type="file" id="gbScreenFile" accept="image/jpeg,image/png,image/webp" hidden><span class="lbl" id="gbScreenFileName" style="font-size:12px"></span><button class="btn sm" id="gbScreenClear" hidden>Remove picture</button></div>
           <div class="gbprev" id="gbPrev"><div class="gbprevtitle">Write a message ✍️</div><div class="gbprevpad" id="gbPrevPad"><span style="font-family:'Dancing Script',cursive;font-size:22px;color:#1d1d1f">Selamat pengantin baru!</span></div></div>
           <label class="tog" style="justify-content:flex-start;gap:10px">Use the card look for the guestbook PDF pages<input type="checkbox" id="gbPdfBg"></label>
-          <div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px">
+        </div>
+        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;flex-direction:column;gap:10px">
             <label class="tog" style="justify-content:flex-start;gap:10px"><span><b style="font-size:15px">✨ Beauty screen</b><br><span class="lbl" style="font-size:12.5px">After picking the strip, guests set Smooth skin and Brighten skin (0–100), seen live on the camera, for all their photos.</span></span><input type="checkbox" id="lookOn"></label>
             <div class="lbl">Where the sliders start</div>
             <label class="field" for="lookSm">Smooth skin <span class="mono" id="lookSmV"></span><input type="range" id="lookSm" min="0" max="100" style="accent-color:var(--accent)"></label>
@@ -502,7 +508,7 @@
             <canvas id="beautyPrevCv" width="480" height="320" style="width:100%;max-width:360px;border-radius:12px;border:1px solid var(--line2)"></canvas>
           </div>
         </div>
-        <div class="card" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
+        <div class="card" data-feat="theme" style="flex:2 1 460px;display:flex;flex-direction:column;gap:12px">
           <div class="row" style="justify-content:space-between"><b>Printing screen (while the photo prints)</b><label class="tog" style="gap:8px">Show<input type="checkbox" id="psOn"></label></div>
           <div class="lbl" style="margin-top:-6px">After the guest taps Print, the tablet shows their photo sliding out of a printer slot on this background, then the thank-you screen with the QR.</div>
           <div class="row" style="flex-wrap:wrap;gap:8px" id="psKinds" role="group" aria-label="Printing screen background">
