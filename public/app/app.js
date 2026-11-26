@@ -41,7 +41,9 @@ const timeOf = d => new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', m
 const shortDate = d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 function check(res) { if (res.error) throw new Error(res.error.message || String(res.error)); return res.data; }
 function toast(m, ms = 2800) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(t._t); t._t = setTimeout(() => t.hidden = true, ms); }
-function qr(el, text, size) { el.innerHTML = ''; if (window.QRCode) new QRCode(el, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel.M }); else el.textContent = text; }
+function qr(el, text, size, level) { el.innerHTML = ''; if (window.QRCode) new QRCode(el, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel[level || 'M'] }); else el.textContent = text; }
+// The guest's QR on the tablet: the studio logo in the middle (the strongest error level keeps it scannable)
+function guestQr(url) { const el = $('#guestQr'); qr(el, url, 240, S.logo ? 'H' : 'M'); if (S.logo) { const i = new Image(); i.className = 'qrlogo'; i.alt = ''; i.src = S.logo; el.appendChild(i); } }
 function qrCanvas(text, size, level) { const d = document.createElement('div'); new QRCode(d, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel[level || 'M'] }); return d.querySelector('canvas'); }
 const shareLink = p => `${LINK()}?p=${p.share_token}`;
 const albumLink = e => `${LINK()}?album=${e.album_token}`;
@@ -668,6 +670,31 @@ let actx;
 const ac = () => actx || (actx = new (window.AudioContext || window.webkitAudioContext)());
 function beep(f = 880, d = .12) { try { const a = ac(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = f; g.gain.setValueAtTime(.25, a.currentTime); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + d); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + d); } catch (e) {} }
 function shutter() { try { const a = ac(), n = a.sampleRate * .18, b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); const s = a.createBufferSource(), g = a.createGain(); g.gain.value = .5; s.buffer = b; s.connect(g).connect(a.destination); s.start(); } catch (e) {} }
+// A carousel of large pictures: swipe, the arrows, the dots, or tap a picture at the side
+function carousel(car, prev, next, dots, onChange) {
+  let cur = 0, x0 = null;
+  const slides = () => [...car.querySelectorAll('.cslide')];
+  const go = k => {
+    const sl = slides(), n = sl.length; if (!n) return; cur = (k + n) % n;
+    const w = Math.max(...sl.map(el => el.offsetWidth || 0), 200), step = w * .87 + 24;
+    sl.forEach((el, i) => { let d = i - cur; if (n > 2) { if (d > n / 2) d -= n; if (d < -n / 2) d += n; } const a = Math.abs(d);
+      el.style.transform = `translate(-50%,-50%) translateX(${d * step}px) scale(${a ? .74 : 1})`; el.style.opacity = a > 1 ? 0 : a ? .38 : 1;
+      el.style.filter = a ? 'saturate(.7)' : 'none'; el.style.zIndex = 10 - a; el.style.pointerEvents = a > 1 ? 'none' : ''; el.classList.toggle('on', !a); });
+    dots.innerHTML = n > 1 ? sl.map((el, i) => `<i data-k="${i}" class="${i === cur ? 'on' : ''}"></i>`).join('') : '';
+    prev.hidden = next.hidden = n < 2; onChange(cur);
+  };
+  prev.onclick = () => go(cur - 1); next.onclick = () => go(cur + 1);
+  dots.onclick = e => { const d = e.target.closest('[data-k]'); if (d) go(+d.dataset.k); };
+  car.onpointerdown = e => { x0 = e.clientX; };
+  car.onpointerup = e => {
+    if (x0 === null) return; const dx = e.clientX - x0; x0 = null;
+    if (Math.abs(dx) > 30) return go(cur + (dx < 0 ? 1 : -1));
+    const t = e.target.closest('.cslide'); if (t && !t.classList.contains('on')) go(slides().indexOf(t));
+  };
+  if (car._ld) car.removeEventListener('load', car._ld, true);   // pictures that arrive later: place them again
+  car._ld = () => go(cur); car.addEventListener('load', car._ld, true);
+  return { go, get cur() { return cur; } };
+}
 function bscreen(id) { $$('#v-booth .bs').forEach(s => s.classList.toggle('on', s.id === id)); }
 const MODE_INFO = { photo: ['Photo', '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'], gif: ['GIF', '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 12h3v3M14 9v6M17 9h-3M17 12h-2"/>'], boom: ['Boomerang', '<path d="M4 12a8 8 0 0114-5M20 12a8 8 0 01-14 5"/><path d="M18 3v4h-4M6 21v-4h4"/>'], video: ['Video message', '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/>'] };
 const enabledModes = () => Object.keys(MODE_INFO).filter(k => S.modes[k]);
@@ -680,7 +707,8 @@ async function startBooth() {
   setTimeout(aiWarm, 3000);   // load the AI in the background while the start screen shows
 }
 function bgMarkup(bg) {
-  if (bg.kind === 'color' || !bg.src) return { html: '', css: `radial-gradient(70% 70% at 50% 45%,${bg.color || '#ff5a26'}59 0%,rgba(0,0,0,0) 70%),linear-gradient(160deg,#2a2a2e,#0e0e10)` };
+  // "Colour glow": the Raysnap velvet maroon, with a soft glow of the chosen colour
+  if (bg.kind === 'color' || !bg.src) return { html: '', css: `radial-gradient(55% 50% at 50% 42%,${bg.color || '#ff5a26'}26 0%,rgba(0,0,0,0) 70%),radial-gradient(70% 60% at 50% 42%,#4a0d1e 0,#2a0612 55%,#16030a 100%)` };
   return { html: bg.kind === 'video' ? `<video src="${esc(bg.src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(bg.src)}" alt="">`, css: '#0e0e10' };
 }
 function paintBg(layer, shade, bg) { const m = bgMarkup(bg); if (layer.dataset.k !== m.html + m.css) { layer.innerHTML = m.html; layer.style.background = m.css; layer.dataset.k = m.html + m.css; } shade.style.opacity = (bg.dim ?? 45) / 100; }
@@ -693,12 +721,14 @@ async function boothLoad() {
   }
   $('#bTitle').textContent = ACTIVE ? ACTIVE.name : '';
   if (!B.session && (musicWanted || (S.music && S.music.on))) musicPlay();   // music only while nobody is using the booth
-  $('#bSub').textContent = S.bg.sub || 'Tap to make memories';
+  const evDate = ACTIVE && ACTIVE.event_date ? new Date(ACTIVE.event_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  $('#bSub').textContent = [evDate, S.bg.sub || (evDate ? '' : 'Tap to make memories')].filter(Boolean).join(' · ');
+  $('#bBadge').hidden = !S.logo; if (S.logo && $('#bBadge').src !== S.logo) $('#bBadge').src = S.logo;
+  $('#bSparks').hidden = !(S.bg.kind === 'color' || !S.bg.src);   // the gold stars only on the velvet
   paintBg($('#boothBgLayer'), $('#boothShade'), S.bg);
   const modes = enabledModes(); const list = modes.length ? modes : ['photo'];
-  $('#bModes').innerHTML = list.length === 1
-    ? `<button class="bmode first" data-mode="${list[0]}">Touch to start</button>`
-    : list.map((m, i) => `<button class="bmode ${i === 0 ? 'first' : ''}" data-mode="${m}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">${MODE_INFO[m][1]}</svg>${MODE_INFO[m][0]}</button>`).join('');
+  // One square button per mode, icon only (the staff starts each session)
+  $('#bModes').innerHTML = list.map((m, i) => `<button class="bmode ${i === 0 ? 'first' : ''}" data-mode="${m}" aria-label="${MODE_INFO[m][0]}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${MODE_INFO[m][1]}</svg></button>`).join('');
   applyMirror(); liveLook(null);
   boothStatus();
 }
@@ -1267,15 +1297,20 @@ function startFlow(mode, again) {
   if (sizeChoice(g) && !B.size) return showSizes(g);
   const ds = B.size && sizeChoice(g) ? g[B.size] : g.all;
   if (ds.length === 1) return pickDesign(ds[0]);
-  $('#pickList').innerHTML = '';
-  ds.forEach(async (d, i) => {
-    const b = document.createElement('button'); b.className = 'role'; b.style.cssText = 'align-items:center;padding:16px;gap:8px;width:200px';
-    b.innerHTML = `<img alt="" style="height:200px;max-width:170px;object-fit:contain;border-radius:3px;background:#2a2a2e"><b style="font-size:15px">${esc(d.name)}</b>`;
-    b.onclick = () => pickDesign(d); $('#pickList').appendChild(b);
-    const c = await compose({ ...d, output_long: 600 }, samples(d.areas.length), 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
-    b.querySelector('img').src = c.toDataURL('image/jpeg', .7);
+  // Every design large, one at a time: the guest swipes through them
+  const ratio = d => (d.w || d.width || 600) / (d.h || d.height || 1800);
+  $('#pickList').innerHTML = ds.map((d, i) => `<div class="cslide wait" data-k="${i}"><img alt="${esc(d.name)}" style="aspect-ratio:${ratio(d)}"></div>`).join('');
+  const pc = carousel($('#pickCar'), $('#pickPrev'), $('#pickNext'), $('#pickDots'), k => {
+    const d = ds[k]; $('#pickName').textContent = d.name;
+    $('#pickMeta').textContent = `${d.areas.length} photo${d.areas.length > 1 ? 's' : ''} · ${paperOf(d) === 'strip' ? '2×6 strip' : '4R photo'}${ds.length > 1 ? ` · ${k + 1} of ${ds.length}` : ''}`;
   });
-  bscreen('b-pick');
+  $('#pickGo').onclick = () => pickDesign(ds[pc.cur]);
+  bscreen('b-pick'); pc.go(0);
+  ds.forEach(async (d, i) => {
+    const c = await compose({ ...d, output_long: 1000 }, samples(d.areas.length), 'none', { name: ACTIVE.name, date: ACTIVE.event_date });
+    const el = $(`#pickList [data-k="${i}"]`); if (!el) return;
+    el.querySelector('img').src = c.toDataURL('image/jpeg', .82); el.classList.remove('wait'); pc.go(pc.cur);
+  });
 }
 function showSizes(g) {
   const SZ = { strip: ['2×6 Photo Strip', 'Two strips, cut apart'], '4r': ['4R Photo', 'One 4×6 photo'] };
@@ -1895,7 +1930,7 @@ function openDone(status, printing) {
   const s = B.session; clearInterval(B.reviewT);
   $('#printMsg').textContent = status; $('#printBarWrap').hidden = !printing; $('#printBar').style.width = printing ? '10%' : '0';
   $('#gqrBox').hidden = !(s && s.row);
-  if (s && s.row) qr($('#guestQr'), shareLink(s.row), 200);
+  if (s && s.row) guestQr(shareLink(s.row));
   bscreen('b-done');
   $('#gbOpen').hidden = !gbAvailable(s); $('#gbOpen').textContent = (S.guestbook && S.guestbook.prompt) || 'Write a message ✍️';
   if (s && s.mode !== 'show') say('thanks');
@@ -1980,7 +2015,7 @@ function boothShowQr(p) {
   if (B.session || !p.url) return;
   B.session = { mode: 'show' };
   $('#printMsg').textContent = p.label || 'Scan to get your photo'; $('#printBarWrap').hidden = true; $('#gqrBox').hidden = false;
-  qr($('#guestQr'), p.url, 200); bscreen('b-done');
+  guestQr(p.url); bscreen('b-done');
   let left = 45; const tick = () => $('#doneTimer').textContent = `Going back automatically in ${left}s`;
   tick(); clearInterval(B.doneT); B.doneT = setInterval(() => { left--; tick(); if (left <= 0) goHome(); }, 1000);
 }
@@ -1995,17 +2030,14 @@ $('#printBtn').onclick = doPrint; $('#doneBtn').onclick = finish; $('#backStart'
 $('#retakeBtn').onclick = () => {
   const s = B.session; if (!s) return;
   if (s.mode !== 'photo' || !s.shots || s.shots.length < 2) { B.mode = s.mode; return startSession(s.design); }
-  $('#rtList').innerHTML = s.shots.map((c, i) => `<button class="rtshot" data-rt="${i}"><img alt="" src="${scaled(c, 360).toDataURL('image/jpeg', .7)}"><span>Photo ${i + 1}</span></button>`).join('')
-    + `<button class="rtshot rtall" data-rt="all"><span class="rtic">↺</span><span>All photos</span></button>`;
+  $('#rtList').innerHTML = s.shots.map((c, i) => `<div class="cslide rt" data-rt="${i}"><img alt="Photo ${i + 1}" src="${scaled(c, 900).toDataURL('image/jpeg', .8)}"></div>`).join('');
   $('#rtPick').hidden = false;
+  B.rtCar = carousel($('#rtCar'), $('#rtPrev'), $('#rtNext'), $('#rtDots'), k => { $('#rtName').textContent = `Photo ${k + 1} of ${s.shots.length}`; });
+  B.rtCar.go(0);
 };
 $('#rtCancel').onclick = () => { $('#rtPick').hidden = true; };
-$('#rtList').addEventListener('click', e => {
-  const b = e.target.closest('[data-rt]'), s = B.session; if (!b || !s) return;
-  $('#rtPick').hidden = true;
-  if (b.dataset.rt === 'all') { B.mode = s.mode; return startSession(s.design); }
-  retakeOne(s, +b.dataset.rt);
-});
+$('#rtGo').onclick = () => { const s = B.session; if (!s || !B.rtCar) return; $('#rtPick').hidden = true; retakeOne(s, B.rtCar.cur); };
+$('#rtAll').onclick = () => { const s = B.session; if (!s) return; $('#rtPick').hidden = true; B.mode = s.mode; startSession(s.design); };
 async function retakeOne(s, i) {
   clearInterval(B.reviewT);
   paintCdFrame($('#cdFrame')); styleShotPrev($('#shotPrevBox')); $('#shotPrevBox').hidden = true;
